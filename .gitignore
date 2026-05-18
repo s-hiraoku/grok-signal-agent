@@ -1,0 +1,17 @@
+# Local secrets and runtime state
+.env
+.env.*
+!.env.example
+!examples/.env.example
+.hermes/
+auth.json
+*.token
+*.secret
+
+# OS/editor noise
+.DS_Store
+.vscode/
+.idea/
+
+# Tool-local metadata
+.serena/

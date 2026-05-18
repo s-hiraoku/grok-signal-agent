@@ -1,0 +1,26 @@
+[Unit]
+Description=Hermes Agent Messaging Gateway
+Documentation=https://hermes-agent.nousresearch.com/docs/user-guide/messaging/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu
+Environment=HOME=/home/ubuntu
+Environment=HERMES_HOME=/home/ubuntu/.hermes
+EnvironmentFile=-/home/ubuntu/.hermes/.env
+ExecStart=/home/ubuntu/.local/bin/hermes gateway
+Restart=always
+RestartSec=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/.hermes
+
+[Install]
+WantedBy=multi-user.target
