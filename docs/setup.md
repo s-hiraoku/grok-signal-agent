@@ -1,6 +1,10 @@
-# Setup Guide
+# Cloud VM Setup Guide
 
-This guide builds a private Grok-powered assistant on an Oracle Cloud Ubuntu VM. The assistant runs Hermes Agent, uses xAI Grok OAuth instead of an xAI API key, searches X through Hermes X Search, and responds through Telegram DM.
+The current primary setup path is Mac-local. Use
+[Mac Local Setup](mac-local.md) first unless you specifically need a remote
+server.
+
+This guide builds a private Grok-powered assistant on an Ubuntu VM. The assistant runs Hermes Agent, uses xAI Grok OAuth instead of an xAI API key, searches X through Hermes X Search, and responds through Discord.
 
 ## 1. Create the VM
 
@@ -80,13 +84,8 @@ Open the printed authorization URL in your local browser, sign in to the xAI acc
 Then set the model:
 
 ```bash
-hermes model
-```
-
-Choose:
-
-```text
-xAI Grok OAuth (SuperGrok Subscription)
+hermes config set model.provider xai-oauth
+hermes config set model.default grok-4.3
 ```
 
 Verify:
@@ -119,36 +118,20 @@ xAI Grok OAuth (SuperGrok Subscription)
 
 X Search is off by default. Hermes hides the tool from the model unless a valid xAI credential is available.
 
-## 6. Create the Telegram Bot
+## 6. Create the Discord Bot
 
-In Telegram:
+In Discord:
 
-1. Message `@BotFather`.
-2. Run `/newbot`.
-3. Save the bot token somewhere private, not in this repo.
-4. Message `@userinfobot`.
-5. Save your numeric Telegram user ID.
+1. Open <https://discord.com/developers/applications>.
+2. Create a new application and bot.
+3. Enable **Server Members Intent** and **Message Content Intent** on the Bot page.
+4. Save the bot token somewhere private, not in this repo.
+5. Invite the bot to a private Discord server with `bot` and `applications.commands` scopes.
+6. Enable Discord Developer Mode, then copy your numeric Discord User ID.
 
-Optional BotFather commands:
+Keep the first version in a private server. Do not add public or shared servers until allowlists are confirmed.
 
-```text
-/setdescription
-/setabouttext
-/setuserpic
-/setcommands
-```
-
-Useful command menu:
-
-```text
-help - Show help information
-new - Start a new conversation
-sethome - Set this chat as the home channel
-```
-
-Keep the first version DM-only. Do not add groups until allowlists and privacy mode behavior are understood.
-
-## 7. Configure Telegram Gateway
+## 7. Configure Discord Gateway
 
 On the VM:
 
@@ -156,7 +139,7 @@ On the VM:
 hermes gateway setup
 ```
 
-Choose Telegram, enter the bot token, and allow only your numeric Telegram user ID.
+Choose Discord, enter the bot token, and allow only your numeric Discord user ID.
 
 If you use environment variables, copy [examples/.env.example](../examples/.env.example) to a private file outside the repo, for example:
 
@@ -176,7 +159,7 @@ Start the gateway in the foreground:
 hermes gateway
 ```
 
-In the Telegram DM with the bot:
+In a Discord DM or private server channel where the bot is present:
 
 ```text
 こんにちは。短く自己紹介して。
@@ -188,7 +171,7 @@ Then test X Search:
 今日のAIエージェント関連のXの重要投稿を調べて、日本語で要約して
 ```
 
-If that works, set the DM as the home channel:
+If that works, set the current DM or channel as the home channel:
 
 ```text
 /sethome
@@ -228,7 +211,7 @@ journalctl -u hermes-gateway -f
 
 ## 10. Daily X Summary Prompt
 
-Use [prompts/x-daily-summary.md](../prompts/x-daily-summary.md) as the base instruction for a manual Telegram request first.
+Use [prompts/x-daily-summary.md](../prompts/x-daily-summary.md) as the base instruction for a manual Discord request first.
 
 After the DM flow is stable, automate it with Hermes cron or another scheduler and deliver the result to the home channel set by `/sethome`.
 
@@ -259,16 +242,21 @@ hermes doctor
 
 Confirm `X (Twitter) Search` is enabled and `xai-oauth` credentials are valid.
 
-### Telegram replies to unexpected users
+### Discord replies to unexpected users
 
-Stop the gateway and inspect your Telegram configuration and environment:
+Stop the gateway and inspect your Discord configuration and environment:
 
 ```bash
 hermes gateway stop || true
-grep -R "TELEGRAM_ALLOWED_USERS" ~/.hermes
+grep -R "DISCORD_ALLOWED_USERS" ~/.hermes
 ```
 
 Only your numeric user ID should be allowed.
+
+### Discord bot is online but does not answer
+
+Confirm **Message Content Intent** is enabled in the Discord Developer Portal,
+then restart the gateway.
 
 ### Service starts but bot does not answer
 
@@ -283,6 +271,6 @@ Also confirm the service runs as the same user that completed Hermes login, usua
 ## Next Steps
 
 1. Add a daily X summary automation.
-2. Add Discord only after Telegram DM is stable.
-3. Add Slack after deciding which workspace/channel scopes are acceptable.
+2. Add Slack only after deciding which workspace/channel scopes are acceptable.
+3. Keep Discord allowlists tight before adding shared servers.
 4. Enable image, video, TTS, or transcription tools through `hermes tools` after the core assistant is reliable.
