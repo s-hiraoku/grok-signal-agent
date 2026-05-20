@@ -1,0 +1,4 @@
+interface:
+  display_name: "X Search"
+  short_description: "Search X through Hermes x_search"
+  default_prompt: "Use $x-search to find current discussion on X about a topic."
