@@ -43,13 +43,13 @@ send_discord_message() {
       chunk="${message:0:max_chars}"
     fi
 
-    "${HERMES_BIN}" send --to "${TARGET}" --quiet "$(printf 'Hermes tech notes (%d)\n\n%s' "${part}" "${chunk}")"
+    "${HERMES_BIN}" send --to "${TARGET}" --quiet "$(printf 'Tech curation (%d)\n\n%s' "${part}" "${chunk}")"
     message="${message:${#chunk}}"
     message="${message#"${message%%[![:space:]]*}"}"
     part=$((part + 1))
   done
 
-  "${HERMES_BIN}" send --to "${TARGET}" --quiet "$(printf 'Hermes tech notes (%d)\n\n%s' "${part}" "${message}")"
+  "${HERMES_BIN}" send --to "${TARGET}" --quiet "$(printf 'Tech curation (%d)\n\n%s' "${part}" "${message}")"
 }
 
 if [[ ! -x "${HERMES_BIN}" ]]; then
@@ -75,8 +75,8 @@ trap 'rm -rf "${LOCK_DIR}" 2>/dev/null || true' EXIT
 
 now="$(date '+%Y-%m-%d %H:%M:%S %z')"
 today="$(date '+%Y-%m-%d')"
-prompt="Use x_search to search X/Twitter for recent, high-signal posts about programming, software engineering, AI agents, coding agents, LLM application development, MCP/tool use, developer tools, IDEs, frameworks, infrastructure for developers, and practical AI engineering. Prefer posts from the last 3 hours that are visibly getting traction; if the tool cannot filter by hour, use from_date=${today} and prioritize posts that are newest AND talked about. Rank candidates by engagement and conversation signals: reposts, likes, replies, quote posts, bookmark/share-like signals if available, notable builders commenting, or the same topic being discussed by multiple independent developer/AI accounts. Prefer original posts or substantial technical threads over repost-only summaries. Avoid broad AI hype, business funding news, stock/crypto chatter, and generic productivity posts unless they clearly matter to builders and are being actively discussed. Do not use xurl. Do not use web_search or browser tools. Return a friendly, relaxed Japanese curation. Keep it warm and conversational, not stiff or corporate. Format: a short soft opening sentence explaining that these are the posts with some momentum, then 4-6 curated items. For each item include a gentle title, what happened, why it is interesting for programmers or AI-agent builders, a short '話題感:' note describing the engagement/conversation signal you saw, and a 'Links:' line with one or more direct source URLs exactly as returned by x_search. Each URL must start with https://x.com/ or https://twitter.com/. Do not synthesize URLs. Omit any item that has no direct source URL or no visible traction signal. End with one short '気になる流れ' note. Do not over-explain."
-retry_prompt="${prompt} Previous attempts sometimes omitted links. This time, every curated item must include a visible Links: line containing direct https://x.com/ or https://twitter.com/ URLs. Return only items with direct source URLs. If fewer linked items are available, return fewer items rather than unlinking or citing vaguely."
+prompt="Use x_search to search X/Twitter for recent, high-signal posts about AI agents, coding agents, LLM app development, MCP/tool use, developer tools, IDEs, programming, software engineering, Web frontend/backend development, frameworks, runtimes, infrastructure for developers, and practical AI engineering. Prefer posts from the last 3 hours that are visibly getting traction; if the tool cannot filter by hour, use from_date=${today} and prioritize posts that are newest AND talked about. Rank candidates by engagement and conversation signals: reposts, likes, replies, quote posts, bookmark/share-like signals if available, notable builders commenting, or the same topic being discussed by multiple independent developer/AI/Web accounts. Prefer original posts, substantial technical threads, release announcements, hands-on experiments, and posts that developers can act on. Avoid broad AI hype, business funding news, stock/crypto chatter, hardware-only news, and generic productivity posts unless they clearly matter to builders and are being actively discussed. Do not use xurl. Do not use web_search or browser tools. Return a friendly, relaxed Japanese tech briefing in this exact structure: 1) first line: a concise headline that summarizes the two or three biggest themes, like '<topic A>と<topic B>が話題に'. 2) two short intro paragraphs, warm and approachable, explaining the main movement. 3) one sentence: '本日の主要な動向を順番に追っていきましょう。'. 4) a '目次' section listing 6-10 topic titles, one per line. 5) detailed sections in the same order. Each section starts with the title on its own line, then 2-4 concise paragraphs explaining what happened, why it matters for developers/AI-agent builders/Web engineers, and the observed traction. Use '【続報】' in a title only when the post is clearly a continuation of an already ongoing topic. 6) under each section, include 1-3 related post entries in this style: '<account name>: <short Japanese summary or translated quote>' followed by the direct URL on the next line. Every section must include at least one direct source URL exactly as returned by x_search. Each URL must start with https://x.com/ or https://twitter.com/. Do not synthesize URLs. Omit any topic that has no direct source URL or no visible traction signal. Keep the writing friendly like a helpful colleague, not stiff or corporate."
+retry_prompt="${prompt} Previous attempts sometimes omitted links. This time, every detailed section must include at least one visible direct https://x.com/ or https://twitter.com/ URL directly under a related post entry. Return only sections with direct source URLs. If fewer linked topics are available, return fewer sections rather than unlinking or citing vaguely."
 
 log "starting X curation heartbeat"
 if ! curation="$(run_curation "${prompt}")"; then
@@ -99,7 +99,7 @@ if [[ -z "${curation//[[:space:]]/}" ]]; then
   exit 1
 fi
 
-message="$(printf 'Hermes tech notes\n%s\n\n%s' "${now}" "${curation}")"
+message="$(printf '%s\n\n更新: %s' "${curation}" "${now}")"
 
 if send_discord_message "${message}"; then
   log "sent X curation heartbeat to ${TARGET}"
