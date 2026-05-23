@@ -153,7 +153,15 @@ The script renders
 ~/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway.plist
 ```
 
-It then starts the service in your user session.
+It also installs the Discord curation heartbeat. The heartbeat posts three
+times per day in the local macOS user session:
+
+- 08:00
+- 12:30
+- 18:00
+
+The gateway and healthcheck services start immediately. The heartbeat waits for
+the next scheduled time after installation.
 
 ## 7. Operate the Service
 

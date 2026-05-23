@@ -61,10 +61,9 @@ install_agent "${HEARTBEAT_LABEL}"
 
 launchctl kickstart -k "${GUI_DOMAIN}/${GATEWAY_LABEL}"
 launchctl kickstart -k "${GUI_DOMAIN}/${HEALTHCHECK_LABEL}"
-launchctl kickstart -k "${GUI_DOMAIN}/${HEARTBEAT_LABEL}"
 
 echo "Installed and started ${GATEWAY_LABEL}"
 echo "Installed and started ${HEALTHCHECK_LABEL}"
-echo "Installed and started ${HEARTBEAT_LABEL}"
+echo "Installed ${HEARTBEAT_LABEL}; it will run at its scheduled times"
 echo "Status:"
 launchctl print "${GUI_DOMAIN}/${GATEWAY_LABEL}" | sed -n '1,80p'
