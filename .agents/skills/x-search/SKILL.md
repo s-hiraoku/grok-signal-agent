@@ -5,7 +5,9 @@ description: Use when searching X/Twitter posts, profiles, threads, reactions, r
 
 # x-search
 
-Delegate X (Twitter) search to Hermes Agent's `x_search` toolset. Hermes runs as a one-shot subprocess and returns results via stdout.
+Delegate X (Twitter) search to Hermes Agent's `x_search` toolset. This is the required path for search-only X/Twitter lookups, current-discussion checks, profile/post discovery, reactions, rumors, and X-based summaries.
+
+Never use `xurl` for X/Twitter search or discovery. `xurl` is only for explicit account operations or known-post/API operations when the user specifically asks for them.
 
 ## Required Command Shape
 
@@ -15,7 +17,7 @@ Run Hermes in oneshot mode with only the `x_search` toolset enabled:
 ~/.local/bin/hermes -t x_search -z '<prompt>'
 ```
 
-This root-level `-z` / `--oneshot` form prints only the final response text. Do not omit `-t x_search`; otherwise Hermes may choose non-X tools.
+This root-level `-z` / `--oneshot` form prints only the final response text. Do not omit `-t x_search`; otherwise Hermes may choose non-X tools or the `xurl` skill.
 
 ## Prompt Template
 
