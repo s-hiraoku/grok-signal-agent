@@ -163,6 +163,15 @@ times per day in the local macOS user session:
 The gateway and healthcheck services start immediately. The heartbeat waits for
 the next scheduled time after installation.
 
+The installer also installs エルメスちゃん's self-growth loop:
+
+- Each digest is saved under `~/.hermes/state/digests/`.
+- Each digest is evaluated under `~/.hermes/state/evaluations/`.
+- A weekly reflection job updates `~/.hermes/state/hermes-chan-memory.md` on
+  Sunday at 21:10 local time.
+
+Details are in [self-growth.md](self-growth.md).
+
 ## 7. Operate the Service
 
 Check status:
@@ -211,6 +220,7 @@ Use macOS Battery or Lock Screen settings for a longer-lived setup.
 - Allow only your numeric Discord user ID.
 - Do not commit `~/.hermes/auth.json`.
 - Do not commit `~/.hermes/.env`.
+- Do not commit `~/.hermes/state/`.
 - Do not commit Discord bot tokens.
 - If a token leaks, reset it in the Discord Developer Portal and run
   `hermes gateway setup` again.

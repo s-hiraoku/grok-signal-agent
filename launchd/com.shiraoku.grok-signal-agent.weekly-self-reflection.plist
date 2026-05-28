@@ -4,14 +4,12 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.shiraoku.grok-signal-agent.hermes-gateway</string>
+  <string>com.shiraoku.grok-signal-agent.weekly-self-reflection</string>
 
   <key>ProgramArguments</key>
   <array>
-    <string>__HOME__/.local/bin/hermes</string>
-    <string>gateway</string>
-    <string>run</string>
-    <string>--replace</string>
+    <string>/bin/bash</string>
+    <string>__HOME__/.hermes/bin/hermes-weekly-self-reflection.sh</string>
   </array>
 
   <key>EnvironmentVariables</key>
@@ -25,16 +23,20 @@
   <key>WorkingDirectory</key>
   <string>__HOME__</string>
 
-  <key>RunAtLoad</key>
-  <true/>
-
-  <key>KeepAlive</key>
-  <true/>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>21</integer>
+    <key>Minute</key>
+    <integer>10</integer>
+  </dict>
 
   <key>StandardOutPath</key>
-  <string>__HOME__/.hermes/logs/hermes-gateway.out.log</string>
+  <string>__HOME__/.hermes/logs/hermes-weekly-self-reflection.out.log</string>
 
   <key>StandardErrorPath</key>
-  <string>__HOME__/.hermes/logs/hermes-gateway.err.log</string>
+  <string>__HOME__/.hermes/logs/hermes-weekly-self-reflection.err.log</string>
 </dict>
 </plist>

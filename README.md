@@ -31,6 +31,9 @@ launchd/com.shiraoku.grok-signal-agent.hermes-gateway.plist
 scripts/install-macos-launchagent.sh
 scripts/uninstall-macos-launchagent.sh
 prompts/x-daily-summary.md
+prompts/hermes-chan-identity.md
+prompts/evaluate-digest.md
+prompts/weekly-self-reflection.md
 examples/.env.example
 ```
 
@@ -85,6 +88,8 @@ chmod +x scripts/install-macos-launchagent.sh scripts/uninstall-macos-launchagen
 ```
 
 Full Mac-local details are in [docs/mac-local.md](docs/mac-local.md).
+The self-growth loop for エルメスちゃん is in
+[docs/self-growth.md](docs/self-growth.md).
 The older cloud VM notes are in [docs/setup.md](docs/setup.md).
 
 ## Running as a Service
@@ -112,6 +117,7 @@ The file [systemd/hermes-gateway.service](systemd/hermes-gateway.service) is a c
 - Allow only your Discord numeric user ID.
 - Do not commit `~/.hermes/auth.json`.
 - Do not commit `~/.hermes/.env`.
+- Do not commit runtime self-memory or digest logs from `~/.hermes/state/`.
 - Do not commit Discord, xAI, or any other messaging credentials.
 - Use SSH key authentication if you later move the setup to a VM.
 - Keep the Discord bot in a private server first; add public or shared servers later only after allowlists are confirmed.

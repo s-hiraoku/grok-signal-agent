@@ -4,6 +4,7 @@ set -euo pipefail
 GATEWAY_LABEL="com.shiraoku.grok-signal-agent.hermes-gateway"
 HEALTHCHECK_LABEL="com.shiraoku.grok-signal-agent.hermes-gateway-healthcheck"
 HEARTBEAT_LABEL="com.shiraoku.grok-signal-agent.discord-heartbeat"
+WEEKLY_REFLECTION_LABEL="com.shiraoku.grok-signal-agent.weekly-self-reflection"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HERMES_BIN="${HOME}/.local/bin/hermes"
 GUI_DOMAIN="gui/$(id -u)"
@@ -14,13 +15,28 @@ if [[ ! -x "${HERMES_BIN}" ]]; then
   exit 1
 fi
 
-mkdir -p "${HOME}/.hermes/bin" "${HOME}/.hermes/logs" "${HOME}/.hermes/state" "${HOME}/Library/LaunchAgents"
+mkdir -p \
+  "${HOME}/.hermes/bin" \
+  "${HOME}/.hermes/logs" \
+  "${HOME}/.hermes/prompts" \
+  "${HOME}/.hermes/state/digests" \
+  "${HOME}/.hermes/state/evaluations" \
+  "${HOME}/.hermes/state/weekly-reflections" \
+  "${HOME}/Library/LaunchAgents"
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-gateway-healthcheck.sh" \
   "${HOME}/.hermes/bin/hermes-gateway-healthcheck.sh"
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-discord-heartbeat.sh" \
   "${HOME}/.hermes/bin/hermes-discord-heartbeat.sh"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-weekly-self-reflection.sh" \
+  "${HOME}/.hermes/bin/hermes-weekly-self-reflection.sh"
+install -m 644 \
+  "${REPO_DIR}/prompts/hermes-chan-identity.md" \
+  "${REPO_DIR}/prompts/evaluate-digest.md" \
+  "${REPO_DIR}/prompts/weekly-self-reflection.md" \
+  "${HOME}/.hermes/prompts/"
 
 render_plist() {
   local label="$1"
@@ -54,10 +70,12 @@ pmset -g log 2>/dev/null | awk '
 render_plist "${GATEWAY_LABEL}"
 render_plist "${HEALTHCHECK_LABEL}"
 render_plist "${HEARTBEAT_LABEL}"
+render_plist "${WEEKLY_REFLECTION_LABEL}"
 
 install_agent "${GATEWAY_LABEL}"
 install_agent "${HEALTHCHECK_LABEL}"
 install_agent "${HEARTBEAT_LABEL}"
+install_agent "${WEEKLY_REFLECTION_LABEL}"
 
 launchctl kickstart -k "${GUI_DOMAIN}/${GATEWAY_LABEL}"
 launchctl kickstart -k "${GUI_DOMAIN}/${HEALTHCHECK_LABEL}"
@@ -65,5 +83,6 @@ launchctl kickstart -k "${GUI_DOMAIN}/${HEALTHCHECK_LABEL}"
 echo "Installed and started ${GATEWAY_LABEL}"
 echo "Installed and started ${HEALTHCHECK_LABEL}"
 echo "Installed ${HEARTBEAT_LABEL}; it will run at its scheduled times"
+echo "Installed ${WEEKLY_REFLECTION_LABEL}; it will update self-memory weekly"
 echo "Status:"
 launchctl print "${GUI_DOMAIN}/${GATEWAY_LABEL}" | sed -n '1,80p'
