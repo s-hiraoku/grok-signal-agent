@@ -159,12 +159,30 @@ Ordered so each phase is useful on its own and reversible.
    slug looks like a real content slug; the timestamped slugs we use work,
    while ad-hoc test slugs may be rejected — verified during implementation.)
 
-4. **Full automation (append + update).** Let gbrain's auto-linking,
-   deduplication, citation fixing, and cron-driven enrichment run over the
-   brain, and allow the weekly reflection to update brain pages (e.g.
-   consolidating recurring learnings into a `learnings` page) rather than only
-   rewriting the flat memory file. The weekly job becomes "reflect, then
-   reconcile the brain" instead of "rewrite one Markdown file".
+4. **Full automation (append + update).** The weekly reflection, after
+   rewriting the flat memory file, also reconciles the brain
+   (`scripts/hermes-weekly-self-reflection.sh`, gated behind
+   `HERMES_GBRAIN_RECONCILE=1`):
+
+   1. upsert the reflection as a `learnings-<timestamp>` page
+      (`type: reflection`) so recurring learnings accumulate in the brain;
+   2. `gbrain export --dir ~/.hermes/brain/pages` and `git commit` the result,
+      so every enrichment write is revertable;
+   3. `gbrain dream --dir …` once — the overnight maintenance cycle (lint,
+      back-links, consolidate, emotional-weight recompute, etc.).
+
+   Each step is defensive: a failure is logged and ignored so the flat memory
+   update is never blocked. Unset, the weekly job behaves exactly as before.
+
+   **Storage-model correction.** Contrary to the original assumption, gbrain's
+   *primary* store is the PGLite DB created by `gbrain init` (under
+   `~/.gbrain/`), not a git repo of markdown. The markdown "brain repo" is a
+   **derived export** (`gbrain export`). `list`/`get`/`search`/`put` operate on
+   the DB; `gbrain dream` (and `extract --source fs`) operate on the exported
+   markdown directory, which is why the weekly reconcile exports first. Until
+   the digest corpus develops `[[wikilinks]]` between pages, `dream` reports all
+   pages as orphans and the consolidate/back-link steps are no-ops — Phase 4 is
+   wired up but only pays off once the corpus is larger and interlinked.
 
 ### Revised Safety Boundary for the Brain
 
@@ -172,17 +190,19 @@ The Safety Boundary above (エルメスちゃん updates runtime memory but does
 rewrite this repo or the LaunchAgents) still holds for the **code** repository.
 With full write-back enabled, the boundary is restated for the brain:
 
-- **She may write.** The brain repo at `~/.hermes/brain` is runtime memory.
-  エルメスちゃん may create, link, update, dedupe, and enrich pages there
-  automatically, including page updates from the weekly reflection.
+- **She may write.** The brain (PGLite DB under `~/.gbrain/`) and its exported
+  markdown view (`~/.hermes/brain/pages`) are runtime memory. エルメスちゃん may
+  create, link, update, dedupe, and enrich pages there automatically, including
+  the weekly `learnings` page and `dream`-driven enrichment.
 - **She may not write.** This code repository (`scripts/`, `prompts/`,
   `launchd/`, `docs/`), the LaunchAgents, and the gbrain deployment
   configuration remain human-reviewed. She does not change her own schedule,
   prompts, or runtime.
-- **Recoverability.** Because the brain is a git repo, every automatic write is
-  a commit. Bad enrichment is recoverable with `git revert`; the brain is never
-  the only copy of a digest (the original `state/` Markdown files remain the
-  source of truth for backfill).
+- **Recoverability.** The DB is not the only copy: the weekly reconcile exports
+  to `~/.hermes/brain/pages` and `git commit`s it before running `dream`, so
+  every enrichment cycle is a commit recoverable with `git revert`. The
+  original `state/` Markdown files remain the source of truth and can re-backfill
+  the brain from scratch at any time.
 
 ### Operating Notes (when adopted)
 

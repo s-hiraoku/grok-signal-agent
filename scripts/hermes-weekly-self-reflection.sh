@@ -14,10 +14,90 @@ LOG_FILE="${LOG_DIR}/hermes-weekly-self-reflection.log"
 LOCK_DIR="${STATE_DIR}/hermes-weekly-self-reflection.lock"
 LOCK_PID="${LOCK_DIR}/pid"
 
+# gbrain reconcile (Phase 4, see docs/self-growth.md). Off by default.
+# The brain's primary store is the PGLite DB created by `gbrain init`; the
+# markdown "brain repo" under PAGES_DIR is the exported, git-tracked view that
+# `gbrain dream` operates on.
+GBRAIN_PAGES_DIR="${GBRAIN_PAGES_DIR:-${HOME}/.hermes/brain/pages}"
+
 mkdir -p "${STATE_DIR}" "${LOG_DIR}" "${EVAL_DIR}" "${REPORT_DIR}"
 
 log() {
   printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$*" >> "${LOG_FILE}"
+}
+
+resolve_gbrain_bin() {
+  if [[ -n "${GBRAIN_BIN:-}" ]]; then
+    printf '%s' "${GBRAIN_BIN}"
+  elif command -v gbrain >/dev/null 2>&1; then
+    command -v gbrain
+  elif [[ -x "${HOME}/.bun/bin/gbrain" ]]; then
+    printf '%s' "${HOME}/.bun/bin/gbrain"
+  fi
+}
+
+# gbrain_put SLUG TYPE BODY: upsert a page into the brain DB via stdin.
+# Echoes nothing; returns non-zero on failure. Caller logs.
+gbrain_put() {
+  local bin="$1" slug="$2" type="$3" body="$4"
+  {
+    printf -- '---\n'
+    printf 'type: "%s"\n' "${type}"
+    printf 'slug: "%s"\n' "${slug}"
+    printf 'created_at: "%s"\n' "${now}"
+    printf -- '---\n\n'
+    printf '%s\n' "${body}"
+  } | "${bin}" put "${slug}"
+}
+
+# gbrain_reconcile LEARNINGS_SLUG LEARNINGS_BODY: Phase 4 brain reconcile.
+# Off unless HERMES_GBRAIN_RECONCILE=1. Steps, each defensive (logged + ignored
+# on failure so the weekly memory update is never blocked):
+#   1. upsert a learnings-<week> page from the reflection,
+#   2. export the DB to the git-tracked markdown brain repo and commit it,
+#   3. run `gbrain dream --dir` once (lint, backlinks, consolidate, ...).
+gbrain_reconcile() {
+  local learnings_slug="$1" learnings_body="$2"
+  [[ "${HERMES_GBRAIN_RECONCILE:-}" == "1" ]] || return 0
+
+  local bin
+  bin="$(resolve_gbrain_bin)"
+  if [[ -z "${bin}" ]]; then
+    log "gbrain reconcile enabled but gbrain not found; skipping"
+    return 0
+  fi
+
+  if [[ -n "${learnings_body//[[:space:]]/}" ]]; then
+    if gbrain_put "${bin}" "${learnings_slug}" "reflection" "${learnings_body}" \
+         >>"${LOG_FILE}" 2>&1; then
+      log "gbrain learnings upsert ok: ${learnings_slug}"
+    else
+      log "gbrain learnings upsert failed: ${learnings_slug}; continuing"
+    fi
+  fi
+
+  mkdir -p "${GBRAIN_PAGES_DIR}"
+  if "${bin}" export --dir "${GBRAIN_PAGES_DIR}" >>"${LOG_FILE}" 2>&1; then
+    log "gbrain export ok: ${GBRAIN_PAGES_DIR}"
+    # Commit the exported repo so dream's writes are revertable (Safety Boundary).
+    local repo="${GBRAIN_PAGES_DIR}"
+    if ! git -C "${repo}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git -C "${repo}" init -q >>"${LOG_FILE}" 2>&1 || true
+    fi
+    git -C "${repo}" add -A >>"${LOG_FILE}" 2>&1 || true
+    git -C "${repo}" -c user.name=hermes -c user.email=hermes@localhost \
+      commit -q -m "weekly export ${timestamp}" >>"${LOG_FILE}" 2>&1 \
+      || log "gbrain export commit skipped (nothing to commit?)"
+  else
+    log "gbrain export failed; skipping dream"
+    return 0
+  fi
+
+  if "${bin}" dream --dir "${GBRAIN_PAGES_DIR}" >>"${LOG_FILE}" 2>&1; then
+    log "gbrain dream cycle ok"
+  else
+    log "gbrain dream cycle failed; continuing"
+  fi
 }
 
 read_optional_file() {
@@ -99,6 +179,10 @@ if updated_memory="$("${HERMES_BIN}" -z "${prompt}" 2>>"${LOG_FILE}")"; then
   printf '%s\n' "${updated_memory}" > "${report_file}"
   install -m 600 "${report_file}" "${MEMORY_FILE}"
   log "updated memory from weekly reflection: ${MEMORY_FILE}"
+
+  # Phase 4: reconcile the brain (learnings page + export/commit + dream).
+  # Flag-gated and defensive; the flat memory update above already succeeded.
+  gbrain_reconcile "learnings-${timestamp}" "${updated_memory}"
 else
   code=$?
   log "weekly self-reflection failed exit=${code}"
