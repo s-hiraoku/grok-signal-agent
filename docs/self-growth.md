@@ -67,19 +67,117 @@ Run weekly reflection manually:
 repository or change LaunchAgents by herself. Code, prompts in this repo, and
 service schedules remain human-reviewed.
 
-## gbrain Fit
+## gbrain Integration Design
 
-`garrytan/gbrain` looks well aligned with the long-term version of this idea:
-it provides a Markdown-backed brain, hybrid search, synthesized answers,
-gap analysis, and MCP/agent integration.
+`garrytan/gbrain` is the planned long-term memory backend. It provides a
+Markdown-backed brain (a git "brain repo"), hybrid search (pgvector HNSW + BM25
++ reciprocal-rank fusion), synthesized cited answers, a self-wiring knowledge
+graph with typed edges, gap analysis, and an MCP server exposing 30+ tools.
 
-For this repo, the recommended path is:
+The current loop already produces exactly the raw material gbrain wants:
+identity, per-digest curation, per-digest self-evaluation, and weekly memory
+rewrites. This section specifies how those flow into gbrain.
 
-1. Start with the local Markdown memory loop in `~/.hermes/state/`.
-2. Let it produce enough digests and evaluations to learn the shape of useful
-   memory.
-3. Add gbrain later as the memory backend once there are real pages worth
-   searching, linking, and auditing.
+### Deployment Target
 
-Do not add gbrain as a hard dependency until the basic loop proves useful. It
-adds another runtime, storage model, and operational surface area.
+- Runtime: TypeScript / Bun. gbrain runs as a separate process from the
+  `hermes` heartbeat scripts.
+- Storage: embedded Postgres via PGLite, initialized once with
+  `gbrain init --pglite`. No external database to operate.
+- Access: stdio MCP, single machine. Register it with Claude Code via
+  `claude mcp add gbrain -- gbrain serve`. No HTTP server, OAuth, or remote
+  surface in this phase.
+- Brain repo: a git repository of Markdown pages, kept separate from this
+  code repo. Suggested location: `~/.hermes/brain` (git-managed,
+  `gbrain`-synced into PGLite).
+
+### What Becomes a Page
+
+The loop's existing artifacts map onto gbrain page types as follows. Each
+already carries `---` frontmatter, so the mapping is mechanical.
+
+| Source artifact                         | gbrain page type | Key fields to carry over                          |
+| --------------------------------------- | ---------------- | ------------------------------------------------- |
+| `state/digests/<ts>.md`                 | `digest`         | `created_at`, `digest_prefix`, source X URLs      |
+| `state/evaluations/<ts>.md`             | `evaluation`     | `created_at`, `digest_file`, scores, improvements |
+| `state/weekly-reflections/<ts>.md`      | `reflection`     | `created_at`, the rewritten memory snapshot       |
+| `prompts/hermes-chan-identity.md`       | `identity`       | stable identity (written once, rarely updated)    |
+
+Entities to extract into graph edges (gbrain does this with zero LLM calls):
+each digest section's X/Twitter account and the topic/title become nodes, with
+edges like `digest -> mentions -> account` and `digest -> covers -> topic`.
+Over time this answers questions like "which accounts repeatedly surface MCP
+news" and "what topics are we over-covering".
+
+### Phased Rollout
+
+Ordered so each phase is useful on its own and reversible.
+
+1. **Bootstrap, read-only.** Stand up gbrain with PGLite and the stdio MCP
+   server. Backfill existing `~/.hermes/state/digests` and `evaluations` as
+   `digest` / `evaluation` pages via `scripts/hermes-gbrain-backfill.sh`. No
+   change to the heartbeat scripts yet. Validate keyword search by hand.
+   Hybrid (vector) search needs an embedding provider key (OpenAI / Voyage /
+   ZeroEntropy); the bootstrap defaults to `--no-embedding` so it runs with no
+   key, and embeddings are enabled in Phase 2 once a key is available
+   (`gbrain config set embedding_model …`, then `gbrain embed --all`).
+
+2. **Retrieval injection.** Before building the heartbeat prompt, query gbrain
+   for the most relevant prior digests/evaluations for the upcoming window and
+   inject a short "what we already covered / what scored poorly" block as soft
+   guidance — replacing or augmenting the flat `memory_context` read. This is
+   read-only against the brain and is the highest-value, lowest-risk win.
+
+3. **Automatic write-back (append).** After a digest is sent and evaluated,
+   write the digest and its evaluation into the brain as new pages via MCP.
+   Append-only: never overwrite or delete existing pages in this step. This is
+   the point where digests start to accumulate as a searchable, linked corpus.
+
+4. **Full automation (append + update).** Let gbrain's auto-linking,
+   deduplication, citation fixing, and cron-driven enrichment run over the
+   brain, and allow the weekly reflection to update brain pages (e.g.
+   consolidating recurring learnings into a `learnings` page) rather than only
+   rewriting the flat memory file. The weekly job becomes "reflect, then
+   reconcile the brain" instead of "rewrite one Markdown file".
+
+### Revised Safety Boundary for the Brain
+
+The Safety Boundary above (エルメスちゃん updates runtime memory but does not
+rewrite this repo or the LaunchAgents) still holds for the **code** repository.
+With full write-back enabled, the boundary is restated for the brain:
+
+- **She may write.** The brain repo at `~/.hermes/brain` is runtime memory.
+  エルメスちゃん may create, link, update, dedupe, and enrich pages there
+  automatically, including page updates from the weekly reflection.
+- **She may not write.** This code repository (`scripts/`, `prompts/`,
+  `launchd/`, `docs/`), the LaunchAgents, and the gbrain deployment
+  configuration remain human-reviewed. She does not change her own schedule,
+  prompts, or runtime.
+- **Recoverability.** Because the brain is a git repo, every automatic write is
+  a commit. Bad enrichment is recoverable with `git revert`; the brain is never
+  the only copy of a digest (the original `state/` Markdown files remain the
+  source of truth for backfill).
+
+### Operating Notes (when adopted)
+
+```bash
+# one-time
+bun install -g github:garrytan/gbrain
+gbrain init --pglite                 # creates embedded Postgres (PGLite)
+claude mcp add gbrain -- gbrain serve   # serve = stdio MCP server
+
+# backfill existing state into the brain (phase 1)
+scripts/hermes-gbrain-backfill.sh    # stages state/*.md with type+slug, imports
+```
+
+The real gbrain CLI has no `import --type` flag: page **type** lives in each
+file's YAML frontmatter, and `import <dir>` ingests a directory of such files.
+Our `state/` digests and evaluations carry `created_at` but no `type`/`slug`,
+so the backfill script stages copies with a `type:` (and a stable `slug:`
+derived from the timestamp) added to the frontmatter, then runs
+`gbrain import <staging-dir>`. Page writes use `gbrain put <slug> --content …`;
+hybrid retrieval uses `gbrain query "<question>"`.
+
+Do not advance past a phase until the previous one has proven useful in
+practice. gbrain adds another runtime, storage model, and operational surface
+area; each phase should earn the next.
