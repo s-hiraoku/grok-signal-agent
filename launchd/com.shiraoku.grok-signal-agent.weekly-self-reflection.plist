@@ -17,7 +17,9 @@
     <key>HOME</key>
     <string>__HOME__</string>
     <key>PATH</key>
-    <string>__HOME__/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>__HOME__/.local/bin:__HOME__/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HERMES_GBRAIN_RECONCILE</key>
+    <string>1</string>
   </dict>
 
   <key>WorkingDirectory</key>

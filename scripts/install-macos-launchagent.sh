@@ -32,6 +32,9 @@ install -m 755 \
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-weekly-self-reflection.sh" \
   "${HOME}/.hermes/bin/hermes-weekly-self-reflection.sh"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-gbrain-retrieval.sh" \
+  "${HOME}/.hermes/bin/hermes-gbrain-retrieval.sh"
 install -m 644 \
   "${REPO_DIR}/prompts/hermes-chan-identity.md" \
   "${REPO_DIR}/prompts/evaluate-digest.md" \
