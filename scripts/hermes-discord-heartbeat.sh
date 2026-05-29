@@ -15,6 +15,9 @@ EVAL_DIR="${STATE_DIR}/evaluations"
 LOCK_DIR="${STATE_DIR}/hermes-discord-heartbeat.lock"
 LOCK_PID="${LOCK_DIR}/pid"
 
+# gbrain write-back (Phase 3, see docs/self-growth.md). Off by default.
+GBRAIN_BRAIN="${GBRAIN_BRAIN:-${HOME}/.hermes/brain}"
+
 mkdir -p "${LOG_DIR}" "${STATE_DIR}" "${DIGEST_DIR}" "${EVAL_DIR}"
 
 log() {
@@ -29,6 +32,52 @@ run_curation() {
 run_reflection() {
   local prompt="$1"
   "${HERMES_BIN}" -z "${prompt}" 2>>"${LOG_FILE}"
+}
+
+# resolve_gbrain_bin: echo the gbrain path or empty if unavailable.
+resolve_gbrain_bin() {
+  if [[ -n "${GBRAIN_BIN:-}" ]]; then
+    printf '%s' "${GBRAIN_BIN}"
+  elif command -v gbrain >/dev/null 2>&1; then
+    command -v gbrain
+  elif [[ -x "${HOME}/.bun/bin/gbrain" ]]; then
+    printf '%s' "${HOME}/.bun/bin/gbrain"
+  fi
+}
+
+# gbrain_writeback SLUG TYPE BODY_FILE: append the artifact to the brain as a
+# page (Phase 3, append/upsert only — never deletes). Off unless
+# HERMES_GBRAIN_WRITEBACK=1. Defensive: any failure is logged and ignored so
+# the heartbeat is never broken. The slug matches the backfill convention
+# (<type>-<timestamp>), so re-runs upsert the same page rather than duplicate.
+gbrain_writeback() {
+  local slug="$1" type="$2" body_file="$3"
+  [[ "${HERMES_GBRAIN_WRITEBACK:-}" == "1" ]] || return 0
+
+  local bin
+  bin="$(resolve_gbrain_bin)"
+  if [[ -z "${bin}" ]]; then
+    log "gbrain write-back enabled but gbrain not found; skipping"
+    return 0
+  fi
+  if [[ ! -d "${GBRAIN_BRAIN}" ]]; then
+    log "gbrain write-back enabled but brain missing at ${GBRAIN_BRAIN}; skipping"
+    return 0
+  fi
+
+  # Build page content with type/slug frontmatter, then upsert via stdin.
+  if {
+        printf -- '---\n'
+        printf 'type: "%s"\n' "${type}"
+        printf 'slug: "%s"\n' "${slug}"
+        printf 'created_at: "%s"\n' "${now}"
+        printf -- '---\n\n'
+        cat "${body_file}"
+      } | ( cd "${GBRAIN_BRAIN}" && "${bin}" put "${slug}" >>"${LOG_FILE}" 2>&1 ); then
+    log "gbrain write-back ok: ${slug}"
+  else
+    log "gbrain write-back failed for ${slug}; continuing"
+  fi
 }
 
 read_optional_file() {
@@ -207,6 +256,12 @@ digest_file="${DIGEST_DIR}/${timestamp}.md"
 } > "${digest_file}"
 log "saved digest ${digest_file}"
 
+# Phase 3: append the digest body to the brain (flag-gated, defensive).
+digest_body_tmp="${DIGEST_DIR}/.${timestamp}.writeback.md"
+printf '%s\n' "${curation}" > "${digest_body_tmp}"
+gbrain_writeback "digest-${timestamp}" "digest" "${digest_body_tmp}"
+rm -f "${digest_body_tmp}"
+
 message="$(printf '%s\n\n更新: %s' "${curation}" "${now}")"
 
 if send_discord_message "${message}"; then
@@ -229,6 +284,12 @@ if [[ -f "${EVALUATION_PROMPT_FILE}" ]]; then
       printf '%s\n' "${evaluation}"
     } > "${eval_file}"
     log "saved self-evaluation ${eval_file}"
+
+    # Phase 3: append the evaluation body to the brain (flag-gated, defensive).
+    eval_body_tmp="${EVAL_DIR}/.${timestamp}.writeback.md"
+    printf '%s\n' "${evaluation}" > "${eval_body_tmp}"
+    gbrain_writeback "evaluation-${timestamp}" "evaluation" "${eval_body_tmp}"
+    rm -f "${eval_body_tmp}"
   else
     code=$?
     log "self-evaluation failed exit=${code}"

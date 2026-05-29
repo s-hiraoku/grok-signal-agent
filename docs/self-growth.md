@@ -145,9 +145,19 @@ Ordered so each phase is useful on its own and reversible.
    ```
 
 3. **Automatic write-back (append).** After a digest is sent and evaluated,
-   write the digest and its evaluation into the brain as new pages via MCP.
-   Append-only: never overwrite or delete existing pages in this step. This is
-   the point where digests start to accumulate as a searchable, linked corpus.
+   the heartbeat writes the digest and its evaluation into the brain via
+   `gbrain put <slug>` (content piped on stdin with `type`/`slug`/`created_at`
+   frontmatter). Slugs reuse the backfill convention — `digest-<timestamp>` /
+   `evaluation-<timestamp>` — so a write-back and a later backfill of the same
+   `state/` file upsert the same page rather than duplicating it. This step is
+   append/upsert only; it never deletes pages.
+
+   Gated behind `HERMES_GBRAIN_WRITEBACK=1`; unset, the heartbeat does not
+   touch the brain. The write-back is defensive: a missing gbrain binary,
+   missing brain, or a failed `put` is logged and ignored so curation and
+   delivery are never blocked. (Note: `gbrain put` only creates a page when the
+   slug looks like a real content slug; the timestamped slugs we use work,
+   while ad-hoc test slugs may be rejected — verified during implementation.)
 
 4. **Full automation (append + update).** Let gbrain's auto-linking,
    deduplication, citation fixing, and cron-driven enrichment run over the
