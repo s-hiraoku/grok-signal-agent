@@ -125,8 +125,24 @@ Ordered so each phase is useful on its own and reversible.
 2. **Retrieval injection.** Before building the heartbeat prompt, query gbrain
    for the most relevant prior digests/evaluations for the upcoming window and
    inject a short "what we already covered / what scored poorly" block as soft
-   guidance — replacing or augmenting the flat `memory_context` read. This is
-   read-only against the brain and is the highest-value, lowest-risk win.
+   guidance — augmenting the flat `memory_context` read. This is read-only
+   against the brain and is the highest-value, lowest-risk win.
+
+   Implemented by `scripts/hermes-gbrain-retrieval.sh`, which prints a Japanese
+   guidance block (recent digest headlines to avoid repeating + the latest
+   self-evaluation's "次回の改善指示" bullets) and stays silent on any failure.
+   The heartbeat injects it only when `HERMES_GBRAIN_RETRIEVAL=1`; unset, the
+   prompt is unchanged. The helper defaults to keyword search (`gbrain search`,
+   no embedding key needed) and switches to hybrid search with
+   `GBRAIN_SEARCH_MODE=query` once embeddings are configured:
+
+   ```bash
+   export OPENAI_API_KEY=sk-…           # or VOYAGE_API_KEY / ZEROENTROPY_API_KEY
+   ( cd ~/.hermes/brain && gbrain config set embedding_model openai:text-embedding-3-large )
+   ( cd ~/.hermes/brain && gbrain embed --all )
+   # then run the heartbeat with:
+   #   HERMES_GBRAIN_RETRIEVAL=1 GBRAIN_SEARCH_MODE=query
+   ```
 
 3. **Automatic write-back (append).** After a digest is sent and evaluated,
    write the digest and its evaluation into the brain as new pages via MCP.

@@ -140,6 +140,29 @@ digest_prefix="$(digest_prefix_for_hour "$(date '+%H')")"
 message_title="${digest_prefix}気になる技術メモだよ"
 identity_context="$(read_optional_file "${IDENTITY_FILE}")"
 memory_context="$(read_optional_file "${MEMORY_FILE}")"
+
+# Optional gbrain retrieval injection (Phase 2, see docs/self-growth.md).
+# Off by default; set HERMES_GBRAIN_RETRIEVAL=1 to enable. The helper is
+# defensive and prints nothing on any failure, so a non-empty result is the
+# only thing that changes the prompt. With the flag unset, behaviour is
+# identical to before.
+gbrain_context=""
+if [[ "${HERMES_GBRAIN_RETRIEVAL:-}" == "1" ]]; then
+  retrieval_script="${HERMES_GBRAIN_RETRIEVAL_SCRIPT:-$(dirname "$0")/hermes-gbrain-retrieval.sh}"
+  if [[ -x "${retrieval_script}" ]]; then
+    if gbrain_context="$("${retrieval_script}" 2>>"${LOG_FILE}")"; then
+      if [[ -n "${gbrain_context//[[:space:]]/}" ]]; then
+        log "injected gbrain retrieval guidance ($(printf '%s' "${gbrain_context}" | wc -l | tr -d ' ') lines)"
+      fi
+    else
+      log "gbrain retrieval helper failed; continuing without it"
+      gbrain_context=""
+    fi
+  else
+    log "gbrain retrieval enabled but helper not executable: ${retrieval_script}"
+  fi
+fi
+
 prompt="Use x_search to search X/Twitter for recent, high-signal posts across AI, Web development, programming, and broader IT news. Cover these categories as evenly as the available high-traction posts allow: 1) AI models, AI agents, coding agents, LLM app development, MCP/tool use, and practical AI engineering; 2) Web frontend/backend development, browsers, frameworks, runtimes, JavaScript/TypeScript, CSS, and platform APIs; 3) programming languages, developer tools, IDEs, libraries, databases, testing, build tools, and software engineering practices; 4) cloud, infrastructure, security, open source, chips/platform shifts, major product launches, standards, and IT/business news that matters to builders. Current local time is ${now}. This is the ${digest_prefix} digest. This digest runs three times per day around morning, lunch, and early evening. Prefer posts since the previous digest window that are visibly getting traction; use from_date=${yesterday} only when needed to cover overnight or early-morning context, otherwise use from_date=${today} and prioritize posts that are newest AND talked about. Rank candidates by engagement and conversation signals: reposts, likes, replies, quote posts, bookmark/share-like signals if available, notable builders commenting, or the same topic being discussed by multiple independent developer/AI/Web/IT accounts. Prefer original posts, substantial technical threads, release announcements, hands-on experiments, incident reports, standards updates, and news that developers can act on. Do not over-focus on AI agents unless they clearly dominate the conversation; aim for a balanced mix of AI, Web development, programming, and IT news. It is okay to include more information than a short digest, but keep each section scannable. Avoid broad AI hype, stock/crypto chatter, hardware-only news, and generic productivity posts unless they clearly matter to builders and are being actively discussed. Do not use xurl. Do not use web_search or browser tools.
 
 Persistent identity for this agent:
@@ -147,7 +170,9 @@ ${identity_context}
 
 Current self-memory and preferences:
 ${memory_context}
-
+${gbrain_context:+
+${gbrain_context}
+}
 Use the identity and memory as soft guidance. Do not claim to be conscious, sentient, or to have real emotions. You may speak as エルメスちゃん with continuity, preferences, and self-reflection. Return a friendly, upbeat Japanese tech briefing in natural standard Japanese, in the voice of a young energetic girl character. The tone should feel bright, friendly, and lightly playful, like a cheerful young colleague sharing useful tech links. Use approachable endings such as 'だよ', 'ですね', '見ていこう', and occasional light exclamation marks where natural. Do not use dialect, Kansai phrasing, old-fashioned banter, childish baby-talk, overdone anime catchphrases, stiff newswire phrasing, corporate wording, or exaggerated hype. Keep technical explanations precise and readable. Return the briefing in this exact structure: 1) first line: a concise headline that summarizes the two or three biggest themes, like '${digest_prefix}<topic A>と<topic B>が気になるよ'. 2) two short intro paragraphs, warm, bright, and approachable, like a young colleague sharing useful links. The opening should feel friendly and energetic from the first sentence, and lightly match the ${digest_prefix} timing. 3) one sentence exactly: 'それじゃ、気になった話題を一緒に見ていこう！'. 4) Insert a separator line containing only '---'. 5) a '目次' section listing 8-12 topic titles, one per line, prefixed with '- '. 6) Insert a separator line containing only '---'. 7) detailed sections in the same order. Put a separator line containing only '---' before every detailed section. Each section starts with '### <title>' on its own line, then 2-5 concise paragraphs explaining what happened, why it matters for developers/AI-agent builders/Web engineers/IT watchers, and the observed traction. Use '【続報】' in a title only when the post is clearly a continuation of an already ongoing topic. 8) under each section, include 1-3 related post entries in this style: '<account name>: <short Japanese summary or translated quote>' followed by the direct URL on the next line. Every section must include at least one direct source URL exactly as returned by x_search. Each URL must start with https://x.com/ or https://twitter.com/. Do not synthesize URLs. Omit any topic that has no direct source URL or no visible traction signal. Keep blank lines between paragraphs so Discord is easy to scan."
 retry_prompt="${prompt} Previous attempts sometimes omitted links. This time, every detailed section must include at least one visible direct https://x.com/ or https://twitter.com/ URL directly under a related post entry. Return only sections with direct source URLs. If fewer linked topics are available, return fewer sections rather than unlinking or citing vaguely."
 
