@@ -30,6 +30,10 @@ systemd/hermes-gateway.service
 launchd/com.shiraoku.grok-signal-agent.hermes-gateway.plist
 scripts/install-macos-launchagent.sh
 scripts/uninstall-macos-launchagent.sh
+scripts/hermes-discord-heartbeat.sh
+scripts/hermes-weekly-self-reflection.sh
+scripts/hermes-gbrain-backfill.sh
+scripts/hermes-gbrain-retrieval.sh
 prompts/x-daily-summary.md
 prompts/hermes-chan-identity.md
 prompts/evaluate-digest.md
@@ -112,6 +116,68 @@ journalctl -u hermes-gateway -f
 
 The file [systemd/hermes-gateway.service](systemd/hermes-gateway.service) is a conservative fallback template if you want to manage the unit yourself.
 
+## gbrain Memory Backend (Optional)
+
+エルメスちゃん's self-growth loop can use [`garrytan/gbrain`](https://github.com/garrytan/gbrain)
+as a searchable memory backend: it stores each digest and self-evaluation as a
+page, lets the heartbeat recall what was recently covered, and runs an
+enrichment cycle during the weekly reflection. The full design and storage
+model are in [docs/self-growth.md](docs/self-growth.md).
+
+This is **off by default**. With none of the flags below set, the heartbeat and
+weekly jobs behave exactly as without gbrain. Each phase is enabled
+independently and is defensive — a missing brain or a failed gbrain call is
+logged and ignored, so curation and Discord delivery are never blocked.
+
+### Setup
+
+```bash
+# 1. Install gbrain (TypeScript / Bun) and create a local PGLite brain.
+bun install -g github:garrytan/gbrain
+
+# 2. Backfill existing self-growth state into the brain (heartbeat untouched).
+#    Inits the brain on first run with --no-embedding (no API key needed).
+./scripts/hermes-gbrain-backfill.sh
+gbrain list -n 20            # verify pages imported
+
+# 3. Reinstall the LaunchAgents so the helper script and flags take effect.
+./scripts/install-macos-launchagent.sh
+```
+
+### Feature flags
+
+Set these in the LaunchAgent `EnvironmentVariables` (see the heartbeat and
+weekly plists in `launchd/`), and make sure `~/.bun/bin` is on the agent `PATH`
+so the `gbrain` binary resolves.
+
+| Flag | Job | Effect |
+| --- | --- | --- |
+| `HERMES_GBRAIN_RETRIEVAL=1` | heartbeat | Inject recent digest headlines + the latest evaluation's improvement notes into the prompt as soft guidance. |
+| `HERMES_GBRAIN_WRITEBACK=1` | heartbeat | Upsert each digest and evaluation into the brain (`digest-<ts>` / `evaluation-<ts>`). |
+| `HERMES_GBRAIN_RECONCILE=1` | weekly | Upsert a `learnings-<ts>` page, export the brain to `~/.hermes/brain/pages`, `git commit` it, then run `gbrain dream`. |
+| `GBRAIN_SEARCH_MODE=query` | heartbeat | Switch retrieval from keyword search to hybrid (vector) search. Requires an embedding provider key configured in the brain (default is keyword `search`). |
+
+### Hybrid search (optional)
+
+Keyword search works with no API key. To enable vector/hybrid search:
+
+```bash
+export OPENAI_API_KEY=sk-…   # or VOYAGE_API_KEY / ZEROENTROPY_API_KEY
+( cd ~/.hermes/brain && gbrain config set embedding_model openai:text-embedding-3-large )
+( cd ~/.hermes/brain && gbrain embed --all )
+# then add GBRAIN_SEARCH_MODE=query to the heartbeat plist environment
+```
+
+### Check it is working
+
+```bash
+# After a heartbeat runs, these lines appear in the log:
+grep -E 'gbrain|retrieval|write-back' ~/.hermes/logs/hermes-discord-heartbeat.log
+
+# Pages accumulating in the brain:
+gbrain list -n 30
+```
+
 ## Security Rules
 
 - Allow only your Discord numeric user ID.
@@ -121,6 +187,31 @@ The file [systemd/hermes-gateway.service](systemd/hermes-gateway.service) is a c
 - Do not commit Discord, xAI, or any other messaging credentials.
 - Use SSH key authentication if you later move the setup to a VM.
 - Keep the Discord bot in a private server first; add public or shared servers later only after allowlists are confirmed.
+
+## Roadmap
+
+Planned next steps, roughly in priority order:
+
+- **Hybrid (vector) search.** The gbrain integration currently runs on keyword
+  search (`gbrain search`, no API key). Next is to configure an embedding
+  provider, run `gbrain embed --all`, and flip the heartbeat to
+  `GBRAIN_SEARCH_MODE=query` so retrieval ranks prior digests/evaluations by
+  semantic similarity instead of literal terms. See the "Hybrid search" steps
+  above and [docs/self-growth.md](docs/self-growth.md).
+- **Grow the knowledge graph.** Digests are currently isolated pages, so
+  `gbrain dream`'s back-link and consolidate steps are no-ops (every page is an
+  orphan). Add `[[wikilinks]]` / typed edges between related topics and
+  accounts so enrichment, dedup, and "what do we keep over-covering" analysis
+  start to pay off.
+- **Tune retrieval guidance.** Iterate on how much recalled context is injected
+  (counts, recency window, per-category balance) once there is enough live data
+  to judge whether it improves digest quality.
+- **Promote learnings into stable preferences.** Let the weekly reflection
+  consolidate recurring `learnings-<ts>` pages into a durable preferences page
+  in the brain, rather than only rewriting the flat memory file.
+- **Optional remote brain.** Keep the local PGLite + stdio MCP setup as the
+  default, but document a migration path to Postgres/Supabase + HTTP MCP for
+  multi-device or shared-agent use.
 
 ## References
 
