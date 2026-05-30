@@ -34,6 +34,7 @@ scripts/hermes-discord-heartbeat.sh
 scripts/hermes-weekly-self-reflection.sh
 scripts/hermes-gbrain-backfill.sh
 scripts/hermes-gbrain-retrieval.sh
+scripts/hermes-gbrain-remember.sh
 prompts/x-daily-summary.md
 prompts/hermes-chan-identity.md
 prompts/evaluate-digest.md
@@ -156,6 +157,38 @@ so the `gbrain` binary resolves.
 | `HERMES_GBRAIN_WRITEBACK=1` | heartbeat | Upsert each digest and evaluation into the brain (`digest-<ts>` / `evaluation-<ts>`). |
 | `HERMES_GBRAIN_RECONCILE=1` | weekly | Upsert a `learnings-<ts>` page, export the brain to `~/.hermes/brain/pages`, `git commit` it, then run `gbrain dream`. |
 | `GBRAIN_SEARCH_MODE=query` | heartbeat | Switch retrieval from keyword search to hybrid (vector) search. Requires an embedding provider key configured in the brain (default is keyword `search`). |
+
+### Remember things from Discord (optional)
+
+You can tell エルメスちゃん to remember something straight from Discord. A
+`pre_gateway_dispatch` shell hook (`scripts/hermes-gbrain-remember.sh`) watches
+incoming messages and, when one starts with a remember-prefix, saves the rest
+as a `note` page in the brain. The heartbeat's retrieval then surfaces recent
+notes first, as instructions to follow:
+
+```text
+覚えて: 今後はセキュリティ系の話題を毎回1つ入れて
+/remember security incidents should always be flagged
+```
+
+Recognized prefixes: `覚えて` / `おぼえて` / `記憶して` / `/remember` /
+`remember` (followed by an optional `:` or `：`). Normal conversation is never
+captured.
+
+Enable it:
+
+```bash
+# 1. config.yaml — register the hook (path must be absolute):
+#    hooks:
+#      pre_gateway_dispatch:
+#        - command: ~/.hermes/bin/hermes-gbrain-remember.sh
+#          timeout: 30
+# 2. Approve the hook once (Hermes gates new shell hooks):
+hermes gateway run --replace --accept-hooks   # Ctrl-C after it starts
+hermes hooks doctor                           # should now show ✓
+# 3. Restart the background gateway:
+launchctl kickstart -k gui/$(id -u)/com.shiraoku.grok-signal-agent.hermes-gateway
+```
 
 ### Hybrid search (optional)
 

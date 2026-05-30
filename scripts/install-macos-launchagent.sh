@@ -35,6 +35,9 @@ install -m 755 \
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-gbrain-retrieval.sh" \
   "${HOME}/.hermes/bin/hermes-gbrain-retrieval.sh"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-gbrain-remember.sh" \
+  "${HOME}/.hermes/bin/hermes-gbrain-remember.sh"
 install -m 644 \
   "${REPO_DIR}/prompts/hermes-chan-identity.md" \
   "${REPO_DIR}/prompts/evaluate-digest.md" \

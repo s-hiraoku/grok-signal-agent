@@ -87,13 +87,34 @@ fi
 
 topic_hits="$(hits_for "${HINT}" 'digest-')"
 
+# user_notes: the most recent `note` pages — things the user explicitly asked
+# エルメスちゃん to remember (via the Discord remember-hook). These are direct
+# instructions, so they rank above the auto-derived guidance below. The page
+# title is the note text, which `list` exposes in column 4.
+user_notes="$(
+  run_gbrain list --type note -n 100 \
+    | awk -F '\t' 'NF>=4 && $4 != "" { print $1 "\t" $4 }' \
+    | sort -r \
+    | head -n "${RECALL_N}" \
+    | cut -f2- \
+    | sed -E 's/^/- /' \
+    || true
+)"
+
 # Nothing useful -> print nothing (heartbeat falls back to flat memory only).
-if [[ -z "${topic_hits//[[:space:]]/}" && -z "${improvement_block//[[:space:]]/}" ]]; then
+if [[ -z "${topic_hits//[[:space:]]/}" \
+   && -z "${improvement_block//[[:space:]]/}" \
+   && -z "${user_notes//[[:space:]]/}" ]]; then
   exit 0
 fi
 
 printf '## 直近のブレインからのソフトガイダンス\n'
-printf '（過去のダイジェストと自己評価をブレインから引いたもの。参考程度に。）\n\n'
+printf '（過去のダイジェストと自己評価、ユーザーからの指示をブレインから引いたもの。）\n\n'
+
+if [[ -n "${user_notes//[[:space:]]/}" ]]; then
+  printf '### ユーザーから覚えておいてと言われたこと（優先的に守る）\n'
+  printf '%s\n\n' "${user_notes}"
+fi
 
 if [[ -n "${topic_hits//[[:space:]]/}" ]]; then
   printf '### 最近触れた話題に近い既出（重複・過剰反復を避ける）\n'
