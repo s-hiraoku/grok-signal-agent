@@ -159,6 +159,14 @@ journalctl -u hermes-gateway -f
 
 The file [systemd/hermes-gateway.service](systemd/hermes-gateway.service) is a conservative fallback template if you want to manage the unit yourself.
 
+## Tests
+
+Run the shell regression tests:
+
+```bash
+tests/run.sh
+```
+
 ## gbrain Memory Backend (Optional)
 
 エルメスちゃん's self-growth loop can use [`garrytan/gbrain`](https://github.com/garrytan/gbrain)
