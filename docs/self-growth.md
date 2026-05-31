@@ -29,7 +29,10 @@ That memory is then included in future heartbeat prompts.
 - `prompts/hermes-chan-identity.md`: stable identity, values, and voice.
 - `prompts/evaluate-digest.md`: per-digest self-evaluation rubric.
 - `prompts/weekly-self-reflection.md`: weekly memory update prompt.
-- `scripts/hermes-discord-heartbeat.sh`: digest generation, logging, evaluation.
+- `scripts/hermes-discord-jobs.sh`: JSON-driven digest generation, logging,
+  delivery, and evaluation.
+- `scripts/hermes-discord-heartbeat.sh`: compatibility wrapper for the
+  `tech-digest` job.
 - `scripts/hermes-weekly-self-reflection.sh`: weekly memory update.
 - `launchd/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist`:
   weekly schedule.
@@ -46,6 +49,7 @@ Check self-growth logs:
 
 ```bash
 tail -f ~/.hermes/logs/hermes-discord-heartbeat.log
+tail -f ~/.hermes/logs/hermes-discord-jobs.log
 tail -f ~/.hermes/logs/hermes-weekly-self-reflection.log
 ```
 

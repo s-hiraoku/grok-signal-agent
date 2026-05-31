@@ -30,6 +30,9 @@ install -m 755 \
   "${REPO_DIR}/scripts/hermes-discord-heartbeat.sh" \
   "${HOME}/.hermes/bin/hermes-discord-heartbeat.sh"
 install -m 755 \
+  "${REPO_DIR}/scripts/hermes-discord-jobs.sh" \
+  "${HOME}/.hermes/bin/hermes-discord-jobs.sh"
+install -m 755 \
   "${REPO_DIR}/scripts/hermes-weekly-self-reflection.sh" \
   "${HOME}/.hermes/bin/hermes-weekly-self-reflection.sh"
 install -m 755 \
@@ -41,8 +44,15 @@ install -m 755 \
 install -m 644 \
   "${REPO_DIR}/prompts/hermes-chan-identity.md" \
   "${REPO_DIR}/prompts/evaluate-digest.md" \
+  "${REPO_DIR}/prompts/tech-digest.md" \
   "${REPO_DIR}/prompts/weekly-self-reflection.md" \
   "${HOME}/.hermes/prompts/"
+
+if [[ ! -f "${HOME}/.hermes/discord-jobs.json" ]]; then
+  install -m 644 \
+    "${REPO_DIR}/config/discord-jobs.json" \
+    "${HOME}/.hermes/discord-jobs.json"
+fi
 
 render_plist() {
   local label="$1"
@@ -88,7 +98,7 @@ launchctl kickstart -k "${GUI_DOMAIN}/${HEALTHCHECK_LABEL}"
 
 echo "Installed and started ${GATEWAY_LABEL}"
 echo "Installed and started ${HEALTHCHECK_LABEL}"
-echo "Installed ${HEARTBEAT_LABEL}; it will run at its scheduled times"
+echo "Installed ${HEARTBEAT_LABEL}; it checks ~/.hermes/discord-jobs.json every 5 minutes"
 echo "Installed ${WEEKLY_REFLECTION_LABEL}; it will update self-memory weekly"
 echo "Status:"
 launchctl print "${GUI_DOMAIN}/${GATEWAY_LABEL}" | sed -n '1,80p'

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "channels": {
+    "hermes-info": "discord:1506545836157440150",
+    "tech-digest": "discord:1510425425971515503",
+    "morning-brief": "discord:1510425534436212817",
+    "weekly-review": "discord:1510425635745435648",
+    "ask-hermes": "discord:1510425922384167043"
+  },
+  "jobs": [
+    {
+      "id": "tech-digest",
+      "enabled": true,
+      "channel": "tech-digest",
+      "trigger": {
+        "type": "schedule",
+        "times": ["08:00", "12:30", "18:00"],
+        "window_minutes": 5
+      },
+      "prompt_file": "tech-digest.md",
+      "toolsets": ["x_search"],
+      "state_subdir": "digests",
+      "message_title_template": "{digest_prefix}気になる技術メモだよ",
+      "requires_x_links": true,
+      "evaluate": true,
+      "gbrain": {
+        "retrieval": true,
+        "writeback": true
+      }
+    }
+  ]
+}

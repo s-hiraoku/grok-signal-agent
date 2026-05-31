@@ -27,15 +27,18 @@ The first milestone is a private Discord bot that can answer:
 README.md
 docs/setup.md
 systemd/hermes-gateway.service
+config/discord-jobs.json
 launchd/com.shiraoku.grok-signal-agent.hermes-gateway.plist
 scripts/install-macos-launchagent.sh
 scripts/uninstall-macos-launchagent.sh
+scripts/hermes-discord-jobs.sh
 scripts/hermes-discord-heartbeat.sh
 scripts/hermes-weekly-self-reflection.sh
 scripts/hermes-gbrain-backfill.sh
 scripts/hermes-gbrain-retrieval.sh
 scripts/hermes-gbrain-remember.sh
 prompts/x-daily-summary.md
+prompts/tech-digest.md
 prompts/hermes-chan-identity.md
 prompts/evaluate-digest.md
 prompts/weekly-self-reflection.md
@@ -96,6 +99,41 @@ Full Mac-local details are in [docs/mac-local.md](docs/mac-local.md).
 The self-growth loop for エルメスちゃん is in
 [docs/self-growth.md](docs/self-growth.md).
 The older cloud VM notes are in [docs/setup.md](docs/setup.md).
+
+## Discord Job Routing
+
+Scheduled Discord posts are driven by a JSON job file. The installer copies the
+repo default to `~/.hermes/discord-jobs.json` only when that file does not
+already exist, so local channel and schedule edits are preserved across
+reinstalls.
+
+The default `tech-digest` job posts to `#tech-digest` three times per day:
+
+```json
+{
+  "id": "tech-digest",
+  "channel": "tech-digest",
+  "trigger": {
+    "type": "schedule",
+    "times": ["08:00", "12:30", "18:00"]
+  },
+  "prompt_file": "tech-digest.md"
+}
+```
+
+Useful commands:
+
+```bash
+~/.hermes/bin/hermes-discord-jobs.sh --validate
+~/.hermes/bin/hermes-discord-jobs.sh --list
+~/.hermes/bin/hermes-discord-jobs.sh --dry-run
+~/.hermes/bin/hermes-discord-jobs.sh --job tech-digest --dry-run --force
+```
+
+The LaunchAgent runs the generic job runner every 5 minutes. The runner checks
+`~/.hermes/discord-jobs.json`, skips jobs that are not due, and records
+per-job last-run state under `~/.hermes/state/discord-jobs/` to avoid duplicate
+posts.
 
 ## Running as a Service
 
@@ -206,6 +244,7 @@ export OPENAI_API_KEY=sk-…   # or VOYAGE_API_KEY / ZEROENTROPY_API_KEY
 ```bash
 # After a heartbeat runs, these lines appear in the log:
 grep -E 'gbrain|retrieval|write-back' ~/.hermes/logs/hermes-discord-heartbeat.log
+grep -E 'gbrain|retrieval|write-back' ~/.hermes/logs/hermes-discord-jobs.log
 
 # Pages accumulating in the brain:
 gbrain list -n 30

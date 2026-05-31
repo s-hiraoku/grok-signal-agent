@@ -153,15 +153,30 @@ The script renders
 ~/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway.plist
 ```
 
-It also installs the Discord curation heartbeat. The heartbeat posts three
-times per day in the local macOS user session:
+It also installs the Discord job runner. The LaunchAgent wakes every 5 minutes
+and checks `~/.hermes/discord-jobs.json`; the default `tech-digest` job posts
+three times per day in the local macOS user session:
 
 - 08:00
 - 12:30
 - 18:00
 
-The gateway and healthcheck services start immediately. The heartbeat waits for
-the next scheduled time after installation.
+By default, `tech-digest` posts to `#tech-digest`. Edit
+`~/.hermes/discord-jobs.json` to change channels, schedules, prompt files, or
+to add new scheduled jobs. The installer does not overwrite this file after it
+has been created.
+
+Validate and inspect jobs:
+
+```bash
+~/.hermes/bin/hermes-discord-jobs.sh --validate
+~/.hermes/bin/hermes-discord-jobs.sh --list
+~/.hermes/bin/hermes-discord-jobs.sh --dry-run
+~/.hermes/bin/hermes-discord-jobs.sh --job tech-digest --dry-run --force
+```
+
+The gateway and healthcheck services start immediately. Scheduled jobs wait for
+the next matching JSON trigger after installation.
 
 The installer also installs エルメスちゃん's self-growth loop:
 
@@ -184,6 +199,7 @@ Follow logs:
 
 ```bash
 tail -f ~/.hermes/logs/hermes-gateway.out.log ~/.hermes/logs/hermes-gateway.err.log
+tail -f ~/.hermes/logs/hermes-discord-jobs.log
 ```
 
 Restart:
