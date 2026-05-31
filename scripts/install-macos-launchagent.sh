@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GATEWAY_LABEL="com.shiraoku.grok-signal-agent.hermes-gateway"
-HEALTHCHECK_LABEL="com.shiraoku.grok-signal-agent.hermes-gateway-healthcheck"
+LEGACY_GATEWAY_LABEL="com.shiraoku.grok-signal-agent.hermes-gateway"
+LEGACY_HEALTHCHECK_LABEL="com.shiraoku.grok-signal-agent.hermes-gateway-healthcheck"
 HEARTBEAT_LABEL="com.shiraoku.grok-signal-agent.discord-heartbeat"
 WEEKLY_REFLECTION_LABEL="com.shiraoku.grok-signal-agent.weekly-self-reflection"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HERMES_BIN="${HOME}/.local/bin/hermes"
 GUI_DOMAIN="gui/$(id -u)"
+BUILTIN_GATEWAY_PLIST="${HOME}/Library/LaunchAgents/ai.hermes.gateway.plist"
 
 if [[ ! -x "${HERMES_BIN}" ]]; then
   echo "Hermes is not installed at ${HERMES_BIN}."
@@ -24,9 +25,6 @@ mkdir -p \
   "${HOME}/.hermes/state/evaluations" \
   "${HOME}/.hermes/state/weekly-reflections" \
   "${HOME}/Library/LaunchAgents"
-install -m 755 \
-  "${REPO_DIR}/scripts/hermes-gateway-healthcheck.sh" \
-  "${HOME}/.hermes/bin/hermes-gateway-healthcheck.sh"
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-weekly-self-reflection.sh" \
   "${HOME}/.hermes/bin/hermes-weekly-self-reflection.sh"
@@ -85,22 +83,27 @@ pmset -g log 2>/dev/null | awk '
   }
 ' > "${HOME}/.hermes/state/last-wake-event" || true
 
-render_plist "${GATEWAY_LABEL}"
-render_plist "${HEALTHCHECK_LABEL}"
 render_plist "${WEEKLY_REFLECTION_LABEL}"
 
 remove_legacy_agent "${HEARTBEAT_LABEL}"
+remove_legacy_agent "${LEGACY_GATEWAY_LABEL}"
+remove_legacy_agent "${LEGACY_HEALTHCHECK_LABEL}"
 "${REPO_DIR}/scripts/register-hermes-cronjobs.sh"
-install_agent "${GATEWAY_LABEL}"
-install_agent "${HEALTHCHECK_LABEL}"
 install_agent "${WEEKLY_REFLECTION_LABEL}"
 
-launchctl kickstart -k "${GUI_DOMAIN}/${GATEWAY_LABEL}"
-launchctl kickstart -k "${GUI_DOMAIN}/${HEALTHCHECK_LABEL}"
+if [[ ! -f "${BUILTIN_GATEWAY_PLIST}" ]]; then
+  "${HERMES_BIN}" gateway install
+fi
+"${HERMES_BIN}" gateway restart
+for _ in {1..20}; do
+  if [[ -f "${HOME}/.hermes/gateway_state.json" ]] && grep -q '"gateway_state":"running"' "${HOME}/.hermes/gateway_state.json"; then
+    break
+  fi
+  sleep 1
+done
 
-echo "Installed and started ${GATEWAY_LABEL}"
-echo "Installed and started ${HEALTHCHECK_LABEL}"
-echo "Removed legacy ${HEARTBEAT_LABEL}; scheduled Discord posts should use Hermes cron"
+echo "Installed and restarted Hermes built-in gateway service"
+echo "Removed legacy ${HEARTBEAT_LABEL}, ${LEGACY_GATEWAY_LABEL}, and ${LEGACY_HEALTHCHECK_LABEL}"
 echo "Installed ${WEEKLY_REFLECTION_LABEL}; it will update self-memory weekly"
 echo "Status:"
-launchctl print "${GUI_DOMAIN}/${GATEWAY_LABEL}" | sed -n '1,80p'
+launchctl print "${GUI_DOMAIN}/ai.hermes.gateway" | sed -n '1,80p'

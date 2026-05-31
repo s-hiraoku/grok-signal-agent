@@ -2,15 +2,15 @@
 
 Scheduled Discord work has one scheduler: Hermes cron.
 
-LaunchAgent is only process supervision. It starts and restarts Hermes Gateway
-and healthcheck services. It must not contain business schedules, channel
+Hermes' built-in LaunchAgent is only process supervision. It starts and
+restarts Hermes Gateway. It must not contain business schedules, channel
 routing, prompt text, or job-specific behavior.
 
 ## Responsibilities
 
 | Layer | Owns | Must not own |
 | --- | --- | --- |
-| LaunchAgent | process lifecycle | schedules, channels, prompts |
+| Hermes built-in LaunchAgent | Gateway process lifecycle | schedules, channels, prompts |
 | Hermes Gateway | runtime host for cron and hooks | job-specific business logic |
 | Hermes cron | time-based scheduling and delivery target | digest/evaluation implementation |
 | `config/hermes-cronjobs.json` | job declarations: name, schedule, channel, mode | shell control flow |

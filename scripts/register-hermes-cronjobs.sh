@@ -48,6 +48,9 @@ expand_home() {
   esac
 }
 
+created_count=0
+existing_count=0
+
 while IFS= read -r job; do
   name="$(jq -r '.name' <<< "${job}")"
   schedule="$(jq -r '.schedule' <<< "${job}")"
@@ -63,6 +66,7 @@ while IFS= read -r job; do
 
   if has_job "${name}"; then
     echo "Already exists: ${name}"
+    existing_count=$((existing_count + 1))
     continue
   fi
 
@@ -82,6 +86,7 @@ while IFS= read -r job; do
   fi
 
   "${HERMES_BIN}" "${args[@]}" "${schedule}" "${prompt}"
+  created_count=$((created_count + 1))
 done < <(jq -c '.jobs[]' "${CONFIG_FILE}")
 
-"${HERMES_BIN}" cron list
+echo "Cron registration complete: ${created_count} created, ${existing_count} already existed."

@@ -52,7 +52,7 @@ Install or refresh the LaunchAgents after pulling these files:
 Check self-growth logs:
 
 ```bash
-tail -f ~/.hermes/logs/hermes-gateway.out.log ~/.hermes/logs/hermes-gateway.err.log
+tail -f ~/.hermes/logs/gateway.log ~/.hermes/logs/gateway.error.log
 tail -f ~/.hermes/logs/hermes-weekly-self-reflection.log
 ```
 

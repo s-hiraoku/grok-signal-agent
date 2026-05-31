@@ -28,7 +28,7 @@ README.md
 docs/setup.md
 systemd/hermes-gateway.service
 config/hermes-cronjobs.json
-launchd/com.shiraoku.grok-signal-agent.hermes-gateway.plist
+launchd/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist
 scripts/install-macos-launchagent.sh
 scripts/uninstall-macos-launchagent.sh
 scripts/register-hermes-cronjobs.sh
@@ -109,7 +109,7 @@ one place to inspect jobs:
 
 ```bash
 hermes cron list
-hermes cron status
+launchctl print gui/$(id -u)/ai.hermes.gateway
 scripts/register-hermes-cronjobs.sh
 ```
 
@@ -127,7 +127,7 @@ the macOS installer.
 Event-driven Discord triggers should be added through Hermes Gateway hooks, not
 through another scheduler. The intended split is:
 
-- LaunchAgent: keep Hermes Gateway running.
+- Hermes built-in service: keep Hermes Gateway running.
 - Hermes cron: time-based jobs and delivery targets.
 - Cron scripts: job implementation details such as tech digest generation,
   digest/evaluation persistence, and gbrain write-back.
@@ -140,11 +140,12 @@ or trigger-driven behavior.
 
 ## Running as a Service
 
-On macOS, use the LaunchAgent template in this repository:
+On macOS, use Hermes' built-in LaunchAgent. The repository installer registers
+cron jobs, removes older repo-managed Gateway agents, and restarts this service:
 
 ```bash
-launchctl print gui/$(id -u)/com.shiraoku.grok-signal-agent.hermes-gateway
-tail -f ~/.hermes/logs/hermes-gateway.out.log ~/.hermes/logs/hermes-gateway.err.log
+launchctl print gui/$(id -u)/ai.hermes.gateway
+tail -f ~/.hermes/logs/gateway.log ~/.hermes/logs/gateway.error.log
 ```
 
 On a Linux VM, prefer Hermes' built-in service installer:
@@ -227,7 +228,7 @@ Enable it:
 hermes gateway run --replace --accept-hooks   # Ctrl-C after it starts
 hermes hooks doctor                           # should now show ✓
 # 3. Restart the background gateway:
-launchctl kickstart -k gui/$(id -u)/com.shiraoku.grok-signal-agent.hermes-gateway
+hermes gateway restart
 ```
 
 ### Hybrid search (optional)

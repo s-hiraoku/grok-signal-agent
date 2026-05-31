@@ -146,16 +146,16 @@ chmod +x scripts/install-macos-launchagent.sh scripts/uninstall-macos-launchagen
 ./scripts/install-macos-launchagent.sh
 ```
 
-The script renders
-`launchd/com.shiraoku.grok-signal-agent.hermes-gateway.plist` into:
+The script installs or refreshes Hermes' built-in Gateway LaunchAgent:
 
 ```text
-~/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway.plist
+~/Library/LaunchAgents/ai.hermes.gateway.plist
 ```
 
 It also registers Discord scheduled posts in Hermes cron. The Hermes Gateway is
-the single scheduler for Discord posts; LaunchAgent is only used to keep the
-Gateway and healthcheck services running.
+the single scheduler for Discord posts; the LaunchAgent is only used to keep the
+Gateway process running. Older repo-managed Gateway and heartbeat LaunchAgents
+are removed by the installer.
 
 The default `tech-digest` posts three times per day in the local macOS user
 session:
@@ -175,11 +175,11 @@ Validate and inspect jobs:
 ```bash
 scripts/register-hermes-cronjobs.sh
 hermes cron list
-hermes cron status
+launchctl print gui/$(id -u)/ai.hermes.gateway
 ```
 
-The gateway and healthcheck services start immediately. Scheduled jobs wait for
-the next matching Hermes cron trigger after installation.
+The Gateway service starts immediately. Scheduled jobs wait for the next
+matching Hermes cron trigger after installation.
 
 The installer also installs エルメスちゃん's self-growth loop:
 
@@ -195,19 +195,19 @@ Details are in [self-growth.md](self-growth.md).
 Check status:
 
 ```bash
-launchctl print gui/$(id -u)/com.shiraoku.grok-signal-agent.hermes-gateway
+launchctl print gui/$(id -u)/ai.hermes.gateway
 ```
 
 Follow logs:
 
 ```bash
-tail -f ~/.hermes/logs/hermes-gateway.out.log ~/.hermes/logs/hermes-gateway.err.log
+tail -f ~/.hermes/logs/gateway.log ~/.hermes/logs/gateway.error.log
 ```
 
 Restart:
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.shiraoku.grok-signal-agent.hermes-gateway
+hermes gateway restart
 ```
 
 Stop and remove the LaunchAgent:
