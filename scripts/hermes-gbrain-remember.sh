@@ -7,7 +7,7 @@ set -euo pipefail
 # incoming gateway message with the event payload on stdin as JSON. When the
 # message text starts with a remember-prefix (覚えて / おぼえて / 記憶して /
 # /remember), the remainder is saved into the gbrain brain as a `note` page so
-# the heartbeat's retrieval can later surface it as soft guidance.
+# digest retrieval can later surface it as soft guidance.
 #
 # Anything that does not match a prefix is ignored (the hook is a no-op), so a
 # normal conversation is never captured. Any failure is logged and the hook

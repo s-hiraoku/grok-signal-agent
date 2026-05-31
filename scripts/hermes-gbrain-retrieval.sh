@@ -6,9 +6,9 @@ set -euo pipefail
 #
 # Queries the gbrain brain for what recent digests already covered and what the
 # evaluations flagged, and prints a short Japanese guidance block to stdout for
-# the heartbeat prompt to inject as SOFT guidance. It is deliberately
+# the digest prompt to inject as SOFT guidance. It is deliberately
 # defensive: any missing brain, missing binary, or query failure prints nothing
-# and exits 0, so the heartbeat is never broken by this step.
+# and exits 0, so scheduled digests are never broken by this step.
 #
 # Usage:
 #   scripts/hermes-gbrain-retrieval.sh ["topic hint word"]
@@ -26,7 +26,7 @@ SEARCH_MODE="${GBRAIN_SEARCH_MODE:-search}"
 RECALL_N="${GBRAIN_RECALL_N:-5}"
 HINT="${1:-エージェント}"
 
-# Resolve gbrain; bail quietly if unavailable (heartbeat must not break).
+# Resolve gbrain; bail quietly if unavailable (digest must not break).
 if [[ -z "${GBRAIN_BIN}" ]]; then
   if command -v gbrain >/dev/null 2>&1; then
     GBRAIN_BIN="$(command -v gbrain)"
@@ -40,7 +40,7 @@ fi
 [[ -d "${BRAIN_DIR}" ]] || exit 0
 
 # gbrain resolves the brain from the working directory. Never let a failure
-# here abort the script (heartbeat must keep running).
+# here abort the script (digest must keep running).
 run_gbrain() { ( cd "${BRAIN_DIR}" && "${GBRAIN_BIN}" "$@" 2>/dev/null ) || true; }
 
 # search/query output lines look like: "[score] slug -- <first content line>".
@@ -101,7 +101,7 @@ user_notes="$(
     || true
 )"
 
-# Nothing useful -> print nothing (heartbeat falls back to flat memory only).
+# Nothing useful -> print nothing (digest falls back to flat memory only).
 if [[ -z "${topic_hits//[[:space:]]/}" \
    && -z "${improvement_block//[[:space:]]/}" \
    && -z "${user_notes//[[:space:]]/}" ]]; then

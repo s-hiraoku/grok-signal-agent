@@ -7,7 +7,7 @@ for later digests.
 
 ## What Runs
 
-The heartbeat now does four things:
+The scheduled digest cron jobs do four things:
 
 1. Reads identity from `~/.hermes/prompts/hermes-chan-identity.md`.
 2. Reads self-memory from `~/.hermes/state/hermes-chan-memory.md`.
@@ -22,17 +22,21 @@ evaluations and rewrites:
 ~/.hermes/state/hermes-chan-memory.md
 ```
 
-That memory is then included in future heartbeat prompts.
+That memory is then included in future digest prompts.
 
 ## Files
 
 - `prompts/hermes-chan-identity.md`: stable identity, values, and voice.
 - `prompts/evaluate-digest.md`: per-digest self-evaluation rubric.
 - `prompts/weekly-self-reflection.md`: weekly memory update prompt.
-- `scripts/hermes-discord-jobs.sh`: JSON-driven digest generation, logging,
-  delivery, and evaluation.
-- `scripts/hermes-discord-heartbeat.sh`: compatibility wrapper for the
-  `tech-digest` job.
+- `prompts/tech-digest.md`: prompt used by the `tech-digest` Hermes cron jobs.
+- `config/hermes-cronjobs.json`: declarative schedule/channel/job registry for
+  Hermes cron jobs.
+- `scripts/register-hermes-cronjobs.sh`: creates missing Hermes cron jobs from
+  the JSON registry.
+- `scripts/hermes-tech-digest-cron.sh`: implementation script run by the
+  `tech-digest` cron jobs; it generates, saves, evaluates, and prints the
+  digest for Hermes cron delivery.
 - `scripts/hermes-weekly-self-reflection.sh`: weekly memory update.
 - `launchd/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist`:
   weekly schedule.
@@ -48,8 +52,7 @@ Install or refresh the LaunchAgents after pulling these files:
 Check self-growth logs:
 
 ```bash
-tail -f ~/.hermes/logs/hermes-discord-heartbeat.log
-tail -f ~/.hermes/logs/hermes-discord-jobs.log
+tail -f ~/.hermes/logs/hermes-gateway.out.log ~/.hermes/logs/hermes-gateway.err.log
 tail -f ~/.hermes/logs/hermes-weekly-self-reflection.log
 ```
 
@@ -84,8 +87,8 @@ rewrites. This section specifies how those flow into gbrain.
 
 ### Deployment Target
 
-- Runtime: TypeScript / Bun. gbrain runs as a separate process from the
-  `hermes` heartbeat scripts.
+- Runtime: TypeScript / Bun. gbrain runs as a separate process from Hermes
+  cron and weekly reflection jobs.
 - Storage: embedded Postgres via PGLite, initialized once with
   `gbrain init --pglite`. No external database to operate.
 - Access: stdio MCP, single machine. Register it with Claude Code via
@@ -120,13 +123,13 @@ Ordered so each phase is useful on its own and reversible.
 1. **Bootstrap, read-only.** Stand up gbrain with PGLite and the stdio MCP
    server. Backfill existing `~/.hermes/state/digests` and `evaluations` as
    `digest` / `evaluation` pages via `scripts/hermes-gbrain-backfill.sh`. No
-   change to the heartbeat scripts yet. Validate keyword search by hand.
+   change to scheduled jobs yet. Validate keyword search by hand.
    Hybrid (vector) search needs an embedding provider key (OpenAI / Voyage /
    ZeroEntropy); the bootstrap defaults to `--no-embedding` so it runs with no
    key, and embeddings are enabled in Phase 2 once a key is available
    (`gbrain config set embedding_model …`, then `gbrain embed --all`).
 
-2. **Retrieval injection.** Before building the heartbeat prompt, query gbrain
+2. **Retrieval injection.** Before building the digest prompt, query gbrain
    for the most relevant prior digests/evaluations for the upcoming window and
    inject a short "what we already covered / what scored poorly" block as soft
    guidance — augmenting the flat `memory_context` read. This is read-only
@@ -135,7 +138,7 @@ Ordered so each phase is useful on its own and reversible.
    Implemented by `scripts/hermes-gbrain-retrieval.sh`, which prints a Japanese
    guidance block (recent digest headlines to avoid repeating + the latest
    self-evaluation's "次回の改善指示" bullets) and stays silent on any failure.
-   The heartbeat injects it only when `HERMES_GBRAIN_RETRIEVAL=1`; unset, the
+   The digest job injects it only when `HERMES_GBRAIN_RETRIEVAL=1`; unset, the
    prompt is unchanged. The helper defaults to keyword search (`gbrain search`,
    no embedding key needed) and switches to hybrid search with
    `GBRAIN_SEARCH_MODE=query` once embeddings are configured:
@@ -144,19 +147,19 @@ Ordered so each phase is useful on its own and reversible.
    export OPENAI_API_KEY=sk-…           # or VOYAGE_API_KEY / ZEROENTROPY_API_KEY
    ( cd ~/.hermes/brain && gbrain config set embedding_model openai:text-embedding-3-large )
    ( cd ~/.hermes/brain && gbrain embed --all )
-   # then run the heartbeat with:
+   # then run the digest job with:
    #   HERMES_GBRAIN_RETRIEVAL=1 GBRAIN_SEARCH_MODE=query
    ```
 
 3. **Automatic write-back (append).** After a digest is sent and evaluated,
-   the heartbeat writes the digest and its evaluation into the brain via
+   the digest job writes the digest and its evaluation into the brain via
    `gbrain put <slug>` (content piped on stdin with `type`/`slug`/`created_at`
    frontmatter). Slugs reuse the backfill convention — `digest-<timestamp>` /
    `evaluation-<timestamp>` — so a write-back and a later backfill of the same
    `state/` file upsert the same page rather than duplicating it. This step is
    append/upsert only; it never deletes pages.
 
-   Gated behind `HERMES_GBRAIN_WRITEBACK=1`; unset, the heartbeat does not
+   Gated behind `HERMES_GBRAIN_WRITEBACK=1`; unset, the digest job does not
    touch the brain. The write-back is defensive: a missing gbrain binary,
    missing brain, or a failed `put` is logged and ignored so curation and
    delivery are never blocked. (Note: `gbrain put` only creates a page when the

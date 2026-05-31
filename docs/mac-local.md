@@ -153,30 +153,33 @@ The script renders
 ~/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway.plist
 ```
 
-It also installs the Discord job runner. The LaunchAgent wakes every 5 minutes
-and checks `~/.hermes/discord-jobs.json`; the default `tech-digest` job posts
-three times per day in the local macOS user session:
+It also registers Discord scheduled posts in Hermes cron. The Hermes Gateway is
+the single scheduler for Discord posts; LaunchAgent is only used to keep the
+Gateway and healthcheck services running.
+
+The default `tech-digest` posts three times per day in the local macOS user
+session:
 
 - 08:00
 - 12:30
 - 18:00
 
-By default, `tech-digest` posts to `#tech-digest`. Edit
-`~/.hermes/discord-jobs.json` to change channels, schedules, prompt files, or
-to add new scheduled jobs. The installer does not overwrite this file after it
-has been created.
+By default, `tech-digest` posts to `#tech-digest`. Scheduled post definitions
+live in `config/hermes-cronjobs.json`; the registration script reads that file
+and creates missing Hermes cron jobs. Add new scheduled posts by adding JSON
+entries, not by changing shell control flow.
+See `docs/scheduled-jobs.md` for the extension model.
 
 Validate and inspect jobs:
 
 ```bash
-~/.hermes/bin/hermes-discord-jobs.sh --validate
-~/.hermes/bin/hermes-discord-jobs.sh --list
-~/.hermes/bin/hermes-discord-jobs.sh --dry-run
-~/.hermes/bin/hermes-discord-jobs.sh --job tech-digest --dry-run --force
+scripts/register-hermes-cronjobs.sh
+hermes cron list
+hermes cron status
 ```
 
 The gateway and healthcheck services start immediately. Scheduled jobs wait for
-the next matching JSON trigger after installation.
+the next matching Hermes cron trigger after installation.
 
 The installer also installs エルメスちゃん's self-growth loop:
 
@@ -199,7 +202,6 @@ Follow logs:
 
 ```bash
 tail -f ~/.hermes/logs/hermes-gateway.out.log ~/.hermes/logs/hermes-gateway.err.log
-tail -f ~/.hermes/logs/hermes-discord-jobs.log
 ```
 
 Restart:

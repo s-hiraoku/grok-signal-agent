@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HERMES_BIN="${HERMES_BIN:-${HOME}/.local/bin/hermes}"
+PROMPT_DIR="${HERMES_PROMPT_DIR:-${HOME}/.hermes/prompts}"
+STATE_DIR="${HERMES_STATE_DIR:-${HOME}/.hermes/state}"
+LOG_DIR="${HERMES_LOG_DIR:-${HOME}/.hermes/logs}"
+LOG_FILE="${LOG_DIR}/hermes-tech-digest-cron.log"
+PROMPT_FILE="${HERMES_TECH_DIGEST_PROMPT_FILE:-${PROMPT_DIR}/tech-digest.md}"
+IDENTITY_FILE="${HERMES_IDENTITY_FILE:-${PROMPT_DIR}/hermes-chan-identity.md}"
+MEMORY_FILE="${HERMES_CHAN_MEMORY_FILE:-${STATE_DIR}/hermes-chan-memory.md}"
+EVALUATION_PROMPT_FILE="${HERMES_EVALUATION_PROMPT_FILE:-${PROMPT_DIR}/evaluate-digest.md}"
+DIGEST_DIR="${STATE_DIR}/digests"
+EVAL_DIR="${STATE_DIR}/evaluations"
+GBRAIN_BRAIN="${GBRAIN_BRAIN:-${HOME}/.hermes/brain}"
+
+mkdir -p "${LOG_DIR}" "${DIGEST_DIR}" "${EVAL_DIR}"
+
+log() {
+  printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$*" >> "${LOG_FILE}"
+}
+
+read_optional_file() {
+  local file="$1" limit="${2:-260}"
+  [[ -f "${file}" ]] && sed -n "1,${limit}p" "${file}"
+}
+
+digest_prefix_for_hour() {
+  local hour="$1"
+  if (( 10#${hour} < 11 )); then
+    printf '朝の'
+  elif (( 10#${hour} < 16 )); then
+    printf '昼の'
+  else
+    printf '夕方の'
+  fi
+}
+
+has_source_links() {
+  grep -Eqi 'https?://(x\.com|twitter\.com)/[^[:space:])>]+' <<< "$1"
+}
+
+resolve_gbrain_bin() {
+  if [[ -n "${GBRAIN_BIN:-}" ]]; then
+    printf '%s' "${GBRAIN_BIN}"
+  elif command -v gbrain >/dev/null 2>&1; then
+    command -v gbrain
+  elif [[ -x "${HOME}/.bun/bin/gbrain" ]]; then
+    printf '%s' "${HOME}/.bun/bin/gbrain"
+  fi
+}
+
+gbrain_writeback() {
+  local slug="$1" type="$2" body_file="$3" created_at="$4"
+  [[ "${HERMES_GBRAIN_WRITEBACK:-}" == "1" ]] || return 0
+
+  local bin
+  bin="$(resolve_gbrain_bin)"
+  if [[ -z "${bin}" || ! -d "${GBRAIN_BRAIN}" ]]; then
+    log "gbrain write-back skipped for ${slug}"
+    return 0
+  fi
+
+  if {
+        printf -- '---\n'
+        printf 'type: "%s"\n' "${type}"
+        printf 'slug: "%s"\n' "${slug}"
+        printf 'created_at: "%s"\n' "${created_at}"
+        printf -- '---\n\n'
+        cat "${body_file}"
+      } | ( cd "${GBRAIN_BRAIN}" && "${bin}" put "${slug}" >>"${LOG_FILE}" 2>&1 ); then
+    log "gbrain write-back ok: ${slug}"
+  else
+    log "gbrain write-back failed for ${slug}; continuing"
+  fi
+}
+
+gbrain_retrieval_context() {
+  [[ "${HERMES_GBRAIN_RETRIEVAL:-}" == "1" ]] || return 0
+  local retrieval_script="${HERMES_GBRAIN_RETRIEVAL_SCRIPT:-${HOME}/.hermes/bin/hermes-gbrain-retrieval.sh}"
+  [[ -x "${retrieval_script}" ]] && "${retrieval_script}" 2>>"${LOG_FILE}" || true
+}
+
+[[ -x "${HERMES_BIN}" ]] || { echo "missing Hermes binary: ${HERMES_BIN}" >&2; exit 1; }
+[[ -f "${PROMPT_FILE}" ]] || { echo "missing tech digest prompt: ${PROMPT_FILE}" >&2; exit 1; }
+
+now="$(date '+%Y-%m-%d %H:%M:%S %z')"
+timestamp="$(date '+%Y%m%d-%H%M%S')"
+today="$(date '+%Y-%m-%d')"
+yesterday="$(date -v-1d '+%Y-%m-%d' 2>/dev/null || date -d 'yesterday' '+%Y-%m-%d')"
+digest_prefix="$(digest_prefix_for_hour "$(date '+%H')")"
+gbrain_context="$(gbrain_retrieval_context)"
+
+prompt="$(cat <<PROMPT
+$(read_optional_file "${PROMPT_FILE}" 420)
+
+# Runtime context
+
+Current local time is ${now}.
+This is the ${digest_prefix} digest.
+Prefer from_date=${today}; use from_date=${yesterday} only when needed to cover overnight or early-morning context.
+When an example includes <digest_prefix>, replace it with "${digest_prefix}".
+
+# Persistent identity
+
+$(read_optional_file "${IDENTITY_FILE}" 220)
+
+# Current self-memory and preferences
+
+$(read_optional_file "${MEMORY_FILE}" 220)
+${gbrain_context:+
+# Retrieved gbrain guidance
+
+${gbrain_context}
+}
+PROMPT
+)"
+
+retry_prompt="${prompt}
+
+Previous attempts sometimes omitted links. This time, every detailed section must include at least one visible direct https://x.com/ or https://twitter.com/ URL directly under a related post entry. Return only sections with direct source URLs."
+
+log "starting tech digest cron"
+if ! curation="$("${HERMES_BIN}" -t x_search -z "${prompt}" 2>>"${LOG_FILE}")"; then
+  code=$?
+  log "x_search curation failed exit=${code}"
+  exit "${code}"
+fi
+
+if ! has_source_links "${curation}"; then
+  log "curation had no direct X links; retrying"
+  curation="$("${HERMES_BIN}" -t x_search -z "${retry_prompt}" 2>>"${LOG_FILE}")"
+fi
+
+[[ -n "${curation//[[:space:]]/}" ]] || { log "curation returned empty output"; exit 1; }
+
+digest_file="${DIGEST_DIR}/${timestamp}.md"
+{
+  printf -- '---\n'
+  printf 'created_at: "%s"\n' "${now}"
+  printf 'digest_prefix: "%s"\n' "${digest_prefix}"
+  printf -- '---\n\n'
+  printf '%s\n' "${curation}"
+} > "${digest_file}"
+log "saved digest ${digest_file}"
+
+digest_tmp="${DIGEST_DIR}/.${timestamp}.writeback.md"
+printf '%s\n' "${curation}" > "${digest_tmp}"
+gbrain_writeback "digest-${timestamp}" "digest" "${digest_tmp}" "${now}"
+rm -f "${digest_tmp}"
+
+if [[ -f "${EVALUATION_PROMPT_FILE}" ]]; then
+  eval_file="${EVAL_DIR}/${timestamp}.md"
+  eval_prompt="$(printf '%s\n\n# Current self-memory\n%s\n\n# Digest to evaluate\n%s\n' "$(read_optional_file "${EVALUATION_PROMPT_FILE}" 260)" "$(read_optional_file "${MEMORY_FILE}" 220)" "${curation}")"
+  if evaluation="$("${HERMES_BIN}" -z "${eval_prompt}" 2>>"${LOG_FILE}")"; then
+    {
+      printf -- '---\n'
+      printf 'created_at: "%s"\n' "${now}"
+      printf 'digest_file: "%s"\n' "${digest_file}"
+      printf -- '---\n\n'
+      printf '%s\n' "${evaluation}"
+    } > "${eval_file}"
+    log "saved self-evaluation ${eval_file}"
+
+    eval_tmp="${EVAL_DIR}/.${timestamp}.writeback.md"
+    printf '%s\n' "${evaluation}" > "${eval_tmp}"
+    gbrain_writeback "evaluation-${timestamp}" "evaluation" "${eval_tmp}" "${now}"
+    rm -f "${eval_tmp}"
+  else
+    log "self-evaluation failed; continuing"
+  fi
+fi
+
+printf '%s\n\n更新: %s\n' "${curation}" "${now}"

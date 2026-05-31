@@ -27,12 +27,12 @@ The first milestone is a private Discord bot that can answer:
 README.md
 docs/setup.md
 systemd/hermes-gateway.service
-config/discord-jobs.json
+config/hermes-cronjobs.json
 launchd/com.shiraoku.grok-signal-agent.hermes-gateway.plist
 scripts/install-macos-launchagent.sh
 scripts/uninstall-macos-launchagent.sh
-scripts/hermes-discord-jobs.sh
-scripts/hermes-discord-heartbeat.sh
+scripts/register-hermes-cronjobs.sh
+scripts/hermes-tech-digest-cron.sh
 scripts/hermes-weekly-self-reflection.sh
 scripts/hermes-gbrain-backfill.sh
 scripts/hermes-gbrain-retrieval.sh
@@ -98,42 +98,45 @@ chmod +x scripts/install-macos-launchagent.sh scripts/uninstall-macos-launchagen
 Full Mac-local details are in [docs/mac-local.md](docs/mac-local.md).
 The self-growth loop for エルメスちゃん is in
 [docs/self-growth.md](docs/self-growth.md).
+The scheduled job architecture is in
+[docs/scheduled-jobs.md](docs/scheduled-jobs.md).
 The older cloud VM notes are in [docs/setup.md](docs/setup.md).
 
-## Discord Job Routing
+## Discord Scheduled Posts
 
-Scheduled Discord posts are driven by a JSON job file. The installer copies the
-repo default to `~/.hermes/discord-jobs.json` only when that file does not
-already exist, so local channel and schedule edits are preserved across
-reinstalls.
-
-The default `tech-digest` job posts to `#tech-digest` three times per day:
-
-```json
-{
-  "id": "tech-digest",
-  "channel": "tech-digest",
-  "trigger": {
-    "type": "schedule",
-    "times": ["08:00", "12:30", "18:00"]
-  },
-  "prompt_file": "tech-digest.md"
-}
-```
-
-Useful commands:
+Scheduled Discord posts are managed by Hermes cron. There is one scheduler and
+one place to inspect jobs:
 
 ```bash
-~/.hermes/bin/hermes-discord-jobs.sh --validate
-~/.hermes/bin/hermes-discord-jobs.sh --list
-~/.hermes/bin/hermes-discord-jobs.sh --dry-run
-~/.hermes/bin/hermes-discord-jobs.sh --job tech-digest --dry-run --force
+hermes cron list
+hermes cron status
+scripts/register-hermes-cronjobs.sh
 ```
 
-The LaunchAgent runs the generic job runner every 5 minutes. The runner checks
-`~/.hermes/discord-jobs.json`, skips jobs that are not due, and records
-per-job last-run state under `~/.hermes/state/discord-jobs/` to avoid duplicate
-posts.
+The registration script reads [config/hermes-cronjobs.json](config/hermes-cronjobs.json)
+and creates recurring jobs if they are missing:
+
+- `tech-digest 08:00`, `tech-digest 12:30`, `tech-digest 18:00` to
+  `#tech-digest`
+- `平日9:50リマインダー` to `#morning-brief`
+- `金曜17時gbrainサマリー` to `#weekly-review`
+
+The older `discord-heartbeat` LaunchAgent is treated as legacy and removed by
+the macOS installer.
+
+Event-driven Discord triggers should be added through Hermes Gateway hooks, not
+through another scheduler. The intended split is:
+
+- LaunchAgent: keep Hermes Gateway running.
+- Hermes cron: time-based jobs and delivery targets.
+- Cron scripts: job implementation details such as tech digest generation,
+  digest/evaluation persistence, and gbrain write-back.
+- Gateway hooks: Discord message/event-triggered actions.
+- Job prompts and channel targets: versioned in this repository, registered
+  into Hermes runtime state by scripts.
+
+See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) before adding new scheduled
+or trigger-driven behavior.
 
 ## Running as a Service
 
@@ -159,11 +162,11 @@ The file [systemd/hermes-gateway.service](systemd/hermes-gateway.service) is a c
 
 エルメスちゃん's self-growth loop can use [`garrytan/gbrain`](https://github.com/garrytan/gbrain)
 as a searchable memory backend: it stores each digest and self-evaluation as a
-page, lets the heartbeat recall what was recently covered, and runs an
+page, lets digest cron jobs recall what was recently covered, and runs an
 enrichment cycle during the weekly reflection. The full design and storage
 model are in [docs/self-growth.md](docs/self-growth.md).
 
-This is **off by default**. With none of the flags below set, the heartbeat and
+This is **off by default**. With none of the flags below set, the digest and
 weekly jobs behave exactly as without gbrain. Each phase is enabled
 independently and is defensive — a missing brain or a failed gbrain call is
 logged and ignored, so curation and Discord delivery are never blocked.
@@ -174,7 +177,7 @@ logged and ignored, so curation and Discord delivery are never blocked.
 # 1. Install gbrain (TypeScript / Bun) and create a local PGLite brain.
 bun install -g github:garrytan/gbrain
 
-# 2. Backfill existing self-growth state into the brain (heartbeat untouched).
+# 2. Backfill existing self-growth state into the brain.
 #    Inits the brain on first run with --no-embedding (no API key needed).
 ./scripts/hermes-gbrain-backfill.sh
 gbrain list -n 20            # verify pages imported
@@ -185,23 +188,22 @@ gbrain list -n 20            # verify pages imported
 
 ### Feature flags
 
-Set these in the LaunchAgent `EnvironmentVariables` (see the heartbeat and
-weekly plists in `launchd/`), and make sure `~/.bun/bin` is on the agent `PATH`
-so the `gbrain` binary resolves.
+Set these in the Hermes Gateway environment before scheduled jobs run, and make
+sure `~/.bun/bin` is on the agent `PATH` so the `gbrain` binary resolves.
 
 | Flag | Job | Effect |
 | --- | --- | --- |
-| `HERMES_GBRAIN_RETRIEVAL=1` | heartbeat | Inject recent digest headlines + the latest evaluation's improvement notes into the prompt as soft guidance. |
-| `HERMES_GBRAIN_WRITEBACK=1` | heartbeat | Upsert each digest and evaluation into the brain (`digest-<ts>` / `evaluation-<ts>`). |
+| `HERMES_GBRAIN_RETRIEVAL=1` | digest cron | Inject recent digest headlines + the latest evaluation's improvement notes into the prompt as soft guidance. |
+| `HERMES_GBRAIN_WRITEBACK=1` | digest cron | Upsert each digest and evaluation into the brain (`digest-<ts>` / `evaluation-<ts>`). |
 | `HERMES_GBRAIN_RECONCILE=1` | weekly | Upsert a `learnings-<ts>` page, export the brain to `~/.hermes/brain/pages`, `git commit` it, then run `gbrain dream`. |
-| `GBRAIN_SEARCH_MODE=query` | heartbeat | Switch retrieval from keyword search to hybrid (vector) search. Requires an embedding provider key configured in the brain (default is keyword `search`). |
+| `GBRAIN_SEARCH_MODE=query` | digest cron | Switch retrieval from keyword search to hybrid (vector) search. Requires an embedding provider key configured in the brain (default is keyword `search`). |
 
 ### Remember things from Discord (optional)
 
 You can tell エルメスちゃん to remember something straight from Discord. A
 `pre_gateway_dispatch` shell hook (`scripts/hermes-gbrain-remember.sh`) watches
 incoming messages and, when one starts with a remember-prefix, saves the rest
-as a `note` page in the brain. The heartbeat's retrieval then surfaces recent
+as a `note` page in the brain. Digest retrieval then surfaces recent
 notes first, as instructions to follow:
 
 ```text
@@ -236,15 +238,14 @@ Keyword search works with no API key. To enable vector/hybrid search:
 export OPENAI_API_KEY=sk-…   # or VOYAGE_API_KEY / ZEROENTROPY_API_KEY
 ( cd ~/.hermes/brain && gbrain config set embedding_model openai:text-embedding-3-large )
 ( cd ~/.hermes/brain && gbrain embed --all )
-# then add GBRAIN_SEARCH_MODE=query to the heartbeat plist environment
+# then add GBRAIN_SEARCH_MODE=query to the Gateway environment
 ```
 
 ### Check it is working
 
 ```bash
-# After a heartbeat runs, these lines appear in the log:
-grep -E 'gbrain|retrieval|write-back' ~/.hermes/logs/hermes-discord-heartbeat.log
-grep -E 'gbrain|retrieval|write-back' ~/.hermes/logs/hermes-discord-jobs.log
+# After digest cron jobs run, inspect Hermes cron and gateway logs:
+hermes cron list
 
 # Pages accumulating in the brain:
 gbrain list -n 30
@@ -266,7 +267,7 @@ Planned next steps, roughly in priority order:
 
 - **Hybrid (vector) search.** The gbrain integration currently runs on keyword
   search (`gbrain search`, no API key). Next is to configure an embedding
-  provider, run `gbrain embed --all`, and flip the heartbeat to
+  provider, run `gbrain embed --all`, and flip digest retrieval to
   `GBRAIN_SEARCH_MODE=query` so retrieval ranks prior digests/evaluations by
   semantic similarity instead of literal terms. See the "Hybrid search" steps
   above and [docs/self-growth.md](docs/self-growth.md).

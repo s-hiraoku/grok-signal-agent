@@ -4,7 +4,7 @@ set -euo pipefail
 # Phase 1 of the gbrain integration (see docs/self-growth.md).
 #
 # Backfills the existing self-growth state under ~/.hermes/state into a gbrain
-# brain. The heartbeat scripts are NOT modified by this step.
+# brain. Scheduled jobs are NOT modified by this step.
 #
 # gbrain's `import <dir>` has no --type flag: a page's type lives in its YAML
 # frontmatter. Our digests/evaluations carry `created_at` but no `type`/`slug`,

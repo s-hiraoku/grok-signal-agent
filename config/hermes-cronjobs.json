@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "channels": {
+    "tech-digest": "discord:1510425425971515503",
+    "morning-brief": "discord:1510425534436212817",
+    "weekly-review": "discord:1510425635745435648",
+    "ask-hermes": "discord:1510425922384167043"
+  },
+  "jobs": [
+    {
+      "id": "tech-digest-0800",
+      "name": "tech-digest 08:00",
+      "schedule": "0 8 * * *",
+      "channel": "tech-digest",
+      "mode": "script",
+      "script": "hermes-tech-digest-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the tech digest script."
+    },
+    {
+      "id": "tech-digest-1230",
+      "name": "tech-digest 12:30",
+      "schedule": "30 12 * * *",
+      "channel": "tech-digest",
+      "mode": "script",
+      "script": "hermes-tech-digest-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the tech digest script."
+    },
+    {
+      "id": "tech-digest-1800",
+      "name": "tech-digest 18:00",
+      "schedule": "0 18 * * *",
+      "channel": "tech-digest",
+      "mode": "script",
+      "script": "hermes-tech-digest-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the tech digest script."
+    },
+    {
+      "id": "weekday-0950-reminder",
+      "name": "平日9:50リマインダー",
+      "schedule": "50 9 * * 1-5",
+      "channel": "morning-brief",
+      "mode": "prompt",
+      "prompt": "平日朝の作業開始前リマインダーをDiscordに投稿してください。日本語で、エルメスちゃんらしく元気でかわいく、毎日少し表現を変えてください。長文にせず、今日やることの優先順位確認、カレンダー/未読/重要タスク確認、無理しすぎない一言を含めてください。絵文字は控えめに1-3個まで。ユーザーは毎日違う表現の朝リマインダーを好みます。"
+    },
+    {
+      "id": "friday-1700-gbrain-summary",
+      "name": "金曜17時gbrainサマリー",
+      "schedule": "0 17 * * 5",
+      "channel": "weekly-review",
+      "mode": "prompt",
+      "workdir": "~/.hermes/brain",
+      "prompt": "毎週金曜17:00のgbrain週次サマリーをDiscordに投稿してください。~/.hermes/brain と ~/.hermes/brain/pages、必要なら gbrain CLI を確認し、この1週間に蓄積された digest、evaluation、note、reflection、learnings から重要な学びを日本語で要約してください。構成は、1) 今週の大きなテーマ、2) 開発/AI/運用で使える知見、3) gbrainに残った重要メモ、4) 来週見直すとよいTODO、の順にしてください。エルメスちゃんらしい明るい口調で、ただし内容は実務的に簡潔にしてください。"
+    }
+  ]
+}

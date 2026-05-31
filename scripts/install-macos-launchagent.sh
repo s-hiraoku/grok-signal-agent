@@ -19,6 +19,7 @@ mkdir -p \
   "${HOME}/.hermes/bin" \
   "${HOME}/.hermes/logs" \
   "${HOME}/.hermes/prompts" \
+  "${HOME}/.hermes/scripts" \
   "${HOME}/.hermes/state/digests" \
   "${HOME}/.hermes/state/evaluations" \
   "${HOME}/.hermes/state/weekly-reflections" \
@@ -26,12 +27,6 @@ mkdir -p \
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-gateway-healthcheck.sh" \
   "${HOME}/.hermes/bin/hermes-gateway-healthcheck.sh"
-install -m 755 \
-  "${REPO_DIR}/scripts/hermes-discord-heartbeat.sh" \
-  "${HOME}/.hermes/bin/hermes-discord-heartbeat.sh"
-install -m 755 \
-  "${REPO_DIR}/scripts/hermes-discord-jobs.sh" \
-  "${HOME}/.hermes/bin/hermes-discord-jobs.sh"
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-weekly-self-reflection.sh" \
   "${HOME}/.hermes/bin/hermes-weekly-self-reflection.sh"
@@ -41,18 +36,16 @@ install -m 755 \
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-gbrain-remember.sh" \
   "${HOME}/.hermes/bin/hermes-gbrain-remember.sh"
+for cron_script in "${REPO_DIR}"/scripts/*-cron.sh; do
+  [[ -e "${cron_script}" ]] || continue
+  install -m 755 "${cron_script}" "${HOME}/.hermes/scripts/"
+done
 install -m 644 \
   "${REPO_DIR}/prompts/hermes-chan-identity.md" \
   "${REPO_DIR}/prompts/evaluate-digest.md" \
   "${REPO_DIR}/prompts/tech-digest.md" \
   "${REPO_DIR}/prompts/weekly-self-reflection.md" \
   "${HOME}/.hermes/prompts/"
-
-if [[ ! -f "${HOME}/.hermes/discord-jobs.json" ]]; then
-  install -m 644 \
-    "${REPO_DIR}/config/discord-jobs.json" \
-    "${HOME}/.hermes/discord-jobs.json"
-fi
 
 render_plist() {
   local label="$1"
@@ -74,6 +67,15 @@ install_agent() {
   launchctl enable "${GUI_DOMAIN}/${label}"
 }
 
+remove_legacy_agent() {
+  local label="$1"
+  local target="${HOME}/Library/LaunchAgents/${label}.plist"
+
+  launchctl bootout "${GUI_DOMAIN}/${label}" >/dev/null 2>&1 || true
+  launchctl bootout "${GUI_DOMAIN}" "${target}" >/dev/null 2>&1 || true
+  rm -f "${target}"
+}
+
 pmset -g log 2>/dev/null | awk '
   $4 == "Wake" || $4 == "DarkWake" || $4 == "FullWake" {
     event = $1 " " $2 " " $3 " " $4
@@ -85,12 +87,12 @@ pmset -g log 2>/dev/null | awk '
 
 render_plist "${GATEWAY_LABEL}"
 render_plist "${HEALTHCHECK_LABEL}"
-render_plist "${HEARTBEAT_LABEL}"
 render_plist "${WEEKLY_REFLECTION_LABEL}"
 
+remove_legacy_agent "${HEARTBEAT_LABEL}"
+"${REPO_DIR}/scripts/register-hermes-cronjobs.sh"
 install_agent "${GATEWAY_LABEL}"
 install_agent "${HEALTHCHECK_LABEL}"
-install_agent "${HEARTBEAT_LABEL}"
 install_agent "${WEEKLY_REFLECTION_LABEL}"
 
 launchctl kickstart -k "${GUI_DOMAIN}/${GATEWAY_LABEL}"
@@ -98,7 +100,7 @@ launchctl kickstart -k "${GUI_DOMAIN}/${HEALTHCHECK_LABEL}"
 
 echo "Installed and started ${GATEWAY_LABEL}"
 echo "Installed and started ${HEALTHCHECK_LABEL}"
-echo "Installed ${HEARTBEAT_LABEL}; it checks ~/.hermes/discord-jobs.json every 5 minutes"
+echo "Removed legacy ${HEARTBEAT_LABEL}; scheduled Discord posts should use Hermes cron"
 echo "Installed ${WEEKLY_REFLECTION_LABEL}; it will update self-memory weekly"
 echo "Status:"
 launchctl print "${GUI_DOMAIN}/${GATEWAY_LABEL}" | sed -n '1,80p'
