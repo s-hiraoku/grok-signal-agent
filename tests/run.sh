@@ -46,7 +46,12 @@ printf '%q ' "$@" >> "${HERMES_STUB_LOG}"
 printf '\n' >> "${HERMES_STUB_LOG}"
 
 if [[ "$1" == "cron" && "$2" == "list" ]]; then
-  if [[ -n "${HERMES_EXISTING_JOB:-}" ]]; then
+  if [[ "${HERMES_EXISTING_JOB:-}" == "*" ]]; then
+    for name in "tech-digest 08:00" "tech-digest 12:30" "tech-digest 18:00" "平日9:50リマインダー" "金曜17時gbrainサマリー"; do
+      printf '  stub-%s [active]\n' "${name// /-}"
+      printf '    Name:      %s\n' "${name}"
+    done
+  elif [[ -n "${HERMES_EXISTING_JOB:-}" ]]; then
     printf '  stub-id [active]\n'
     printf '    Name:      %s\n' "${HERMES_EXISTING_JOB}"
   fi
@@ -54,6 +59,10 @@ if [[ "$1" == "cron" && "$2" == "list" ]]; then
 fi
 
 if [[ "$1" == "cron" && "$2" == "create" ]]; then
+  exit 0
+fi
+
+if [[ "$1" == "cron" && "$2" == "edit" ]]; then
   exit 0
 fi
 
@@ -93,7 +102,8 @@ test_register_cronjobs_creates_missing_jobs() {
   )"
 
   assert_contains "${output}" "Already exists: tech-digest 08:00"
-  assert_contains "${output}" "Cron registration complete: 4 created, 1 already existed."
+  assert_contains "${output}" "Cron registration complete: 4 created, 1 updated, 1 already existed."
+  assert_file_contains "${log_file}" "cron edit --name tech-digest\\ 08:00 --schedule 0\\ 8\\ \\*\\ \\*\\ \\* --deliver discord:1510425425971515503 --prompt Run\\ the\\ tech\\ digest\\ script. --workdir '' --script hermes-tech-digest-cron.sh --no-agent stub-id"
   assert_file_contains "${log_file}" "cron create --name tech-digest\\ 12:30 --deliver discord:1510425425971515503 --script hermes-tech-digest-cron.sh --no-agent 30\\ 12\\ \\*\\ \\*\\ \\* Run\\ the\\ tech\\ digest\\ script."
   assert_file_contains "${log_file}" "--deliver discord:1510425534436212817 50\\ 9\\ \\*\\ \\*\\ 1-5"
   assert_file_contains "${log_file}" "--deliver discord:1510425635745435648 --workdir ${tmp_home}/.hermes/brain 0\\ 17\\ \\*\\ \\*\\ 5"
@@ -139,7 +149,7 @@ JSON
 test_installer_uses_builtin_gateway_only() {
   local tmp_home stub_bin launchctl_log output
   tmp_home="$(make_tmp_home)"
-  write_hermes_stub "${tmp_home}" "all jobs already exist"
+  write_hermes_stub "${tmp_home}" "*"
   stub_bin="${tmp_home}/stub-bin"
   launchctl_log="${tmp_home}/launchctl-calls.log"
   mkdir -p "${stub_bin}" "${tmp_home}/Library/LaunchAgents"
@@ -172,7 +182,7 @@ STUB
     HOME="${tmp_home}" \
     PATH="${stub_bin}:${PATH}" \
     HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
-    HERMES_EXISTING_JOB="all jobs already exist" \
+    HERMES_EXISTING_JOB="*" \
     LAUNCHCTL_STUB_LOG="${launchctl_log}" \
     "${REPO_DIR}/scripts/install-macos-launchagent.sh"
   )"

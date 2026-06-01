@@ -35,9 +35,21 @@ jq -e '
   )
 ' "${CONFIG_FILE}" >/dev/null
 
-has_job() {
+existing_job_id() {
   local name="$1"
-  "${HERMES_BIN}" cron list 2>/dev/null | grep -Fq "Name:      ${name}"
+  local line current_id=""
+
+  while IFS= read -r line; do
+    if [[ "${line}" =~ ^[[:space:]]*([^[:space:]]+)[[:space:]]+\[ ]]; then
+      current_id="${BASH_REMATCH[1]}"
+    elif [[ "${line}" == "    Name:      ${name}" ]]; then
+      [[ -n "${current_id}" ]] || return 1
+      printf '%s\n' "${current_id}"
+      return 0
+    fi
+  done < <("${HERMES_BIN}" cron list 2>/dev/null)
+
+  return 1
 }
 
 expand_home() {
@@ -48,8 +60,23 @@ expand_home() {
   esac
 }
 
+run_hermes() {
+  local output status
+
+  set +e
+  output="$("${HERMES_BIN}" "$@" 2>&1)"
+  status=$?
+  set -e
+
+  [[ -z "${output}" ]] || printf '%s\n' "${output}"
+  if [[ "${status}" -ne 0 || "${output}" == *"Failed to "* ]]; then
+    return 1
+  fi
+}
+
 created_count=0
 existing_count=0
+updated_count=0
 
 while IFS= read -r job; do
   name="$(jq -r '.name' <<< "${job}")"
@@ -64,9 +91,40 @@ while IFS= read -r job; do
     exit 1
   fi
 
-  if has_job "${name}"; then
+  if existing_id="$(existing_job_id "${name}")"; then
     echo "Already exists: ${name}"
     existing_count=$((existing_count + 1))
+    if [[ "${HERMES_CRONJOBS_SYNC_EXISTING:-1}" == "1" ]]; then
+      args=(cron edit
+        --name "${name}"
+        --schedule "${schedule}"
+        --deliver "${deliver}"
+        --prompt "${prompt}"
+      )
+
+      workdir="$(jq -r '.workdir // empty' <<< "${job}")"
+      if [[ -n "${workdir}" ]]; then
+        args+=(--workdir "$(expand_home "${workdir}")")
+      else
+        args+=(--workdir "")
+      fi
+
+      if [[ "${mode}" == "script" ]]; then
+        script="$(jq -r '.script' <<< "${job}")"
+        args+=(--script "${script}")
+        if [[ "$(jq -r '.no_agent // false' <<< "${job}")" == "true" ]]; then
+          args+=(--no-agent)
+        else
+          args+=(--agent)
+        fi
+      else
+        args+=(--script "" --agent)
+      fi
+
+      run_hermes "${args[@]}" "${existing_id}"
+      updated_count=$((updated_count + 1))
+      echo "Synced existing: ${name}"
+    fi
     continue
   fi
 
@@ -85,8 +143,8 @@ while IFS= read -r job; do
     fi
   fi
 
-  "${HERMES_BIN}" "${args[@]}" "${schedule}" "${prompt}"
+  run_hermes "${args[@]}" "${schedule}" "${prompt}"
   created_count=$((created_count + 1))
 done < <(jq -c '.jobs[]' "${CONFIG_FILE}")
 
-echo "Cron registration complete: ${created_count} created, ${existing_count} already existed."
+echo "Cron registration complete: ${created_count} created, ${updated_count} updated, ${existing_count} already existed."
