@@ -35,6 +35,19 @@ delivery target.
 Reminder and weekly summary jobs use `mode: "prompt"` because they do not need a
 custom implementation handler.
 
+## Source Links
+
+Scheduled posts must preserve direct reference links so readers can inspect the
+source later.
+
+- X/Twitter-derived items must include the direct post URL from `x.com` or
+  `twitter.com`.
+- Google/Web-derived items must include the original page URL, such as the
+  article, official announcement, repository, release note, or documentation
+  page. Do not use Google search result or redirect URLs as references.
+- Items without a verifiable source URL should be omitted from scheduled news
+  and digest posts.
+
 ## Adding A Scheduled Job
 
 Add a new entry to `config/hermes-cronjobs.json`.
