@@ -206,11 +206,21 @@ STUB
   assert_file_contains "${launchctl_log}" "print gui/$(id -u)/ai.hermes.gateway"
 }
 
+test_scheduled_prompts_require_direct_source_links() {
+  assert_file_contains "${REPO_DIR}/prompts/x-daily-summary.md" "handle だけの出典は不可"
+  assert_file_contains "${REPO_DIR}/prompts/x-daily-summary.md" "Google の検索結果 URL ではなく"
+  assert_file_contains "${REPO_DIR}/prompts/tech-digest.md" "参照ページ: <direct URL>"
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '各ニュース項目には必ず `出典: <直接URL>`'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" "Google検索結果URLではなく"
+  assert_file_contains "${REPO_DIR}/docs/scheduled-jobs.md" "Google/Web-derived items must include the original page URL"
+}
+
 main() {
   local tests=(
     test_register_cronjobs_creates_missing_jobs
     test_register_cronjobs_rejects_unknown_channel
     test_installer_uses_builtin_gateway_only
+    test_scheduled_prompts_require_direct_source_links
   )
   local test_name
 
