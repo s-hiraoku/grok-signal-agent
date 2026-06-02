@@ -66,6 +66,10 @@ if [[ "$1" == "cron" && "$2" == "edit" ]]; then
   exit 0
 fi
 
+if [[ "$1" == "config" && "$2" == "set" ]]; then
+  exit 0
+fi
+
 if [[ "$1" == "gateway" && "$2" == "install" ]]; then
   mkdir -p "${HOME}/Library/LaunchAgents"
   printf '<plist/>\n' > "${HOME}/Library/LaunchAgents/ai.hermes.gateway.plist"
@@ -193,6 +197,7 @@ STUB
   [[ ! -e "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway-healthcheck.plist" ]] || fail "legacy healthcheck plist should be removed"
   [[ ! -e "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.discord-heartbeat.plist" ]] || fail "legacy heartbeat plist should be removed"
   [[ -e "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist" ]] || fail "weekly reflection plist should be rendered"
+  assert_file_contains "${tmp_home}/hermes-calls.log" "config set cron.script_timeout_seconds 300"
   assert_file_contains "${tmp_home}/hermes-calls.log" "gateway restart"
   assert_file_not_contains "${tmp_home}/hermes-calls.log" "gateway install"
   assert_file_not_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway.plist"

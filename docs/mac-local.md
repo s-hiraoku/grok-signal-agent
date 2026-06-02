@@ -187,6 +187,8 @@ The installer also installs エルメスちゃん's self-growth loop:
 - Each digest is evaluated under `~/.hermes/state/evaluations/`.
 - A weekly reflection job updates `~/.hermes/state/hermes-chan-memory.md` on
   Sunday at 21:10 local time.
+- Hermes cron script timeout is set to 300 seconds so the tech digest script can
+  finish X curation plus self-evaluation without being marked as failed.
 
 Details are in [self-growth.md](self-growth.md).
 

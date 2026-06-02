@@ -45,6 +45,8 @@ install -m 644 \
   "${REPO_DIR}/prompts/weekly-self-reflection.md" \
   "${HOME}/.hermes/prompts/"
 
+"${HERMES_BIN}" config set cron.script_timeout_seconds 300 >/dev/null
+
 render_plist() {
   local label="$1"
   local template="${REPO_DIR}/launchd/${label}.plist"
