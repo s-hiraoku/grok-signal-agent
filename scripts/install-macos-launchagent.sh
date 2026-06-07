@@ -23,6 +23,9 @@ mkdir -p \
   "${HOME}/.hermes/scripts" \
   "${HOME}/.hermes/state/digests" \
   "${HOME}/.hermes/state/evaluations" \
+  "${HOME}/.hermes/state/digest-metadata" \
+  "${HOME}/.hermes/state/digest-quality" \
+  "${HOME}/.hermes/state/user-feedback" \
   "${HOME}/.hermes/state/weekly-reflections" \
   "${HOME}/Library/LaunchAgents"
 install -m 755 \
@@ -34,6 +37,15 @@ install -m 755 \
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-gbrain-remember.sh" \
   "${HOME}/.hermes/bin/hermes-gbrain-remember.sh"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-discord-feedback.sh" \
+  "${HOME}/.hermes/bin/hermes-discord-feedback.sh"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-digest-lint.sh" \
+  "${HOME}/.hermes/bin/hermes-digest-lint.sh"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-alert.sh" \
+  "${HOME}/.hermes/bin/hermes-alert.sh"
 for cron_script in "${REPO_DIR}"/scripts/*-cron.sh; do
   [[ -e "${cron_script}" ]] || continue
   install -m 755 "${cron_script}" "${HOME}/.hermes/scripts/"

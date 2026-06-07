@@ -37,6 +37,9 @@ scripts/hermes-weekly-self-reflection.sh
 scripts/hermes-gbrain-backfill.sh
 scripts/hermes-gbrain-retrieval.sh
 scripts/hermes-gbrain-remember.sh
+scripts/hermes-discord-feedback.sh
+scripts/hermes-digest-lint.sh
+scripts/hermes-alert.sh
 prompts/x-daily-summary.md
 prompts/tech-digest.md
 prompts/hermes-chan-identity.md
@@ -130,13 +133,55 @@ through another scheduler. The intended split is:
 - Hermes built-in service: keep Hermes Gateway running.
 - Hermes cron: time-based jobs and delivery targets.
 - Cron scripts: job implementation details such as tech digest generation,
-  digest/evaluation persistence, and gbrain write-back.
+  digest/evaluation persistence, digest quality linting/metadata, alerts, and
+  gbrain write-back.
 - Gateway hooks: Discord message/event-triggered actions.
 - Job prompts and channel targets: versioned in this repository, registered
   into Hermes runtime state by scripts.
 
 See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) before adding new scheduled
 or trigger-driven behavior.
+
+## Digest Quality And Feedback
+
+Every `tech-digest` run now writes three runtime artifact types under
+`~/.hermes/state/`:
+
+- `digests/<ts>.md`: the delivered briefing.
+- `digest-metadata/<ts>.json`: section titles, inferred categories, source
+  URLs, accounts, duplicate counts, and lint status.
+- `digest-quality/<ts>.md`: human-readable lint errors and warnings.
+
+The linter checks that each detailed section has a direct X/Twitter source URL,
+that section counts stay in the expected 8-12 range, that search-result URLs do
+not leak into references, and that recent source duplicates/topic imbalance are
+visible as warnings. Lint failures log and alert by default but do not block
+Discord delivery unless `HERMES_DIGEST_LINT_STRICT=1` is set.
+
+Operational alerts always append to `~/.hermes/logs/hermes-alerts.log`. To send
+alerts somewhere else, set one of:
+
+```bash
+HERMES_ALERT_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+HERMES_ALERT_COMMAND='your-command-that-reads-stdin'
+```
+
+Explicit Discord feedback and follow-up requests can be captured with the
+Gateway hook `~/.hermes/bin/hermes-discord-feedback.sh`. Supported message
+prefixes include:
+
+```text
+評価: 今日のセキュリティ項目は良かった
+/feedback too much AI hype today
+追跡: このMCP脆弱性の続報を見て
+/track browser API rollout next week
+深掘り: gbrain integration patterns
+```
+
+Captured items are saved under `~/.hermes/state/user-feedback/` and, when
+gbrain is available, upserted as `feedback` or `followup` pages. Digest
+retrieval surfaces `note`, `feedback`, and `followup` pages as high-priority
+guidance.
 
 ## Running as a Service
 
@@ -231,6 +276,8 @@ Enable it:
 #    hooks:
 #      pre_gateway_dispatch:
 #        - command: ~/.hermes/bin/hermes-gbrain-remember.sh
+#          timeout: 30
+#        - command: ~/.hermes/bin/hermes-discord-feedback.sh
 #          timeout: 30
 # 2. Approve the hook once (Hermes gates new shell hooks):
 hermes gateway run --replace --accept-hooks   # Ctrl-C after it starts

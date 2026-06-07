@@ -12,9 +12,13 @@ MEMORY_FILE="${HERMES_CHAN_MEMORY_FILE:-${STATE_DIR}/hermes-chan-memory.md}"
 EVALUATION_PROMPT_FILE="${HERMES_EVALUATION_PROMPT_FILE:-${PROMPT_DIR}/evaluate-digest.md}"
 DIGEST_DIR="${STATE_DIR}/digests"
 EVAL_DIR="${STATE_DIR}/evaluations"
+METADATA_DIR="${STATE_DIR}/digest-metadata"
+QUALITY_DIR="${STATE_DIR}/digest-quality"
 GBRAIN_BRAIN="${GBRAIN_BRAIN:-${HOME}/.hermes/brain}"
+LINT_SCRIPT="${HERMES_DIGEST_LINT_SCRIPT:-${HOME}/.hermes/bin/hermes-digest-lint.sh}"
+ALERT_SCRIPT="${HERMES_ALERT_SCRIPT:-${HOME}/.hermes/bin/hermes-alert.sh}"
 
-mkdir -p "${LOG_DIR}" "${DIGEST_DIR}" "${EVAL_DIR}"
+mkdir -p "${LOG_DIR}" "${DIGEST_DIR}" "${EVAL_DIR}" "${METADATA_DIR}" "${QUALITY_DIR}"
 
 log() {
   printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "$*" >> "${LOG_FILE}"
@@ -81,6 +85,25 @@ gbrain_retrieval_context() {
   [[ -x "${retrieval_script}" ]] && "${retrieval_script}" 2>>"${LOG_FILE}" || true
 }
 
+send_alert() {
+  local title="$1" body="$2"
+  if [[ -x "${ALERT_SCRIPT}" ]]; then
+    printf '%s\n' "${body}" | "${ALERT_SCRIPT}" "${title}" || true
+  else
+    log "alert skipped (${title}): ${body}"
+  fi
+}
+
+extract_total_score() {
+  awk -F ':' '
+    /^[[:space:]]*-[[:space:]]*総合:/ {
+      gsub(/[^0-9.]/, "", $2)
+      print $2
+      exit
+    }
+  ' "$1" 2>/dev/null || true
+}
+
 [[ -x "${HERMES_BIN}" ]] || { echo "missing Hermes binary: ${HERMES_BIN}" >&2; exit 1; }
 [[ -f "${PROMPT_FILE}" ]] || { echo "missing tech digest prompt: ${PROMPT_FILE}" >&2; exit 1; }
 
@@ -144,6 +167,25 @@ digest_file="${DIGEST_DIR}/${timestamp}.md"
 } > "${digest_file}"
 log "saved digest ${digest_file}"
 
+metadata_file="${METADATA_DIR}/${timestamp}.json"
+quality_report="${QUALITY_DIR}/${timestamp}.md"
+if [[ -x "${LINT_SCRIPT}" ]]; then
+  if HERMES_DIGEST_METADATA_DIR="${METADATA_DIR}" \
+       "${LINT_SCRIPT}" "${digest_file}" "${metadata_file}" "${quality_report}" \
+       >>"${LOG_FILE}" 2>&1; then
+    log "digest quality lint passed: ${quality_report}"
+  else
+    log "digest quality lint failed: ${quality_report}"
+    send_alert "Hermes digest quality lint failed" "Digest: ${digest_file}
+Report: ${quality_report}"
+    if [[ "${HERMES_DIGEST_LINT_STRICT:-}" == "1" ]]; then
+      exit 1
+    fi
+  fi
+else
+  log "digest lint skipped; missing executable ${LINT_SCRIPT}"
+fi
+
 digest_tmp="${DIGEST_DIR}/.${timestamp}.writeback.md"
 printf '%s\n' "${curation}" > "${digest_tmp}"
 gbrain_writeback "digest-${timestamp}" "digest" "${digest_tmp}" "${now}"
@@ -161,6 +203,13 @@ if [[ -f "${EVALUATION_PROMPT_FILE}" ]]; then
       printf '%s\n' "${evaluation}"
     } > "${eval_file}"
     log "saved self-evaluation ${eval_file}"
+
+    total_score="$(extract_total_score "${eval_file}")"
+    if [[ -n "${total_score}" ]] && awk "BEGIN { exit !(${total_score} < 3) }"; then
+      send_alert "Hermes digest self-evaluation is low" "Evaluation: ${eval_file}
+Total score: ${total_score}
+Digest: ${digest_file}"
+    fi
 
     eval_tmp="${EVAL_DIR}/.${timestamp}.writeback.md"
     printf '%s\n' "${evaluation}" > "${eval_tmp}"
