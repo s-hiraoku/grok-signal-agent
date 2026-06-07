@@ -87,12 +87,16 @@ fi
 
 topic_hits="$(hits_for "${HINT}" 'digest-')"
 
-# user_notes: the most recent `note` pages — things the user explicitly asked
-# エルメスちゃん to remember (via the Discord remember-hook). These are direct
-# instructions, so they rank above the auto-derived guidance below. The page
+# user_notes: the most recent direct user guidance pages — things the user
+# explicitly asked エルメスちゃん to remember, feedback on past posts, or topics
+# to track/deep-dive. These rank above the auto-derived guidance below. The page
 # title is the note text, which `list` exposes in column 4.
 user_notes="$(
-  run_gbrain list --type note -n 100 \
+  {
+    run_gbrain list --type note -n 100
+    run_gbrain list --type feedback -n 100
+    run_gbrain list --type followup -n 100
+  } \
     | awk -F '\t' 'NF>=4 && $4 != "" { print $1 "\t" $4 }' \
     | sort -r \
     | head -n "${RECALL_N}" \
@@ -112,7 +116,7 @@ printf '## 直近のブレインからのソフトガイダンス\n'
 printf '（過去のダイジェストと自己評価、ユーザーからの指示をブレインから引いたもの。）\n\n'
 
 if [[ -n "${user_notes//[[:space:]]/}" ]]; then
-  printf '### ユーザーから覚えておいてと言われたこと（優先的に守る）\n'
+  printf '### ユーザーからの記憶・評価・追跡依頼（優先的に守る）\n'
   printf '%s\n\n' "${user_notes}"
 fi
 

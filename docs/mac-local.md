@@ -184,13 +184,38 @@ matching Hermes cron trigger after installation.
 The installer also installs エルメスちゃん's self-growth loop:
 
 - Each digest is saved under `~/.hermes/state/digests/`.
+- Each digest quality report is saved under
+  `~/.hermes/state/digest-quality/`.
+- Each digest metadata file is saved under
+  `~/.hermes/state/digest-metadata/`.
 - Each digest is evaluated under `~/.hermes/state/evaluations/`.
+- Explicit Discord feedback/follow-up captures are saved under
+  `~/.hermes/state/user-feedback/`.
 - A weekly reflection job updates `~/.hermes/state/hermes-chan-memory.md` on
   Sunday at 21:10 local time.
 - Hermes cron script timeout is set to 300 seconds so the tech digest script can
   finish X curation plus self-evaluation without being marked as failed.
 
 Details are in [self-growth.md](self-growth.md).
+
+Optional Gateway hooks for memory and feedback:
+
+```yaml
+hooks:
+  pre_gateway_dispatch:
+    - command: ~/.hermes/bin/hermes-gbrain-remember.sh
+      timeout: 30
+    - command: ~/.hermes/bin/hermes-discord-feedback.sh
+      timeout: 30
+```
+
+After adding hooks, approve them once:
+
+```bash
+hermes gateway run --replace --accept-hooks
+hermes hooks doctor
+hermes gateway restart
+```
 
 ## 7. Operate the Service
 

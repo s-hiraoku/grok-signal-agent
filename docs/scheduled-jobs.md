@@ -28,9 +28,26 @@ routing, prompt text, or job-specific behavior.
 
 The `tech-digest` jobs use `mode: "script"` and call
 `hermes-tech-digest-cron.sh`. That script is a handler: it generates the digest,
-saves the digest/evaluation artifacts, optionally writes back to gbrain, and
-prints the final Discord message to stdout. Hermes cron owns the schedule and
-delivery target.
+saves digest/evaluation artifacts, lints the digest, emits structured metadata,
+optionally writes back to gbrain, and prints the final Discord message to
+stdout. Hermes cron owns the schedule and delivery target.
+
+## Quality Gate
+
+`hermes-tech-digest-cron.sh` runs `hermes-digest-lint.sh` after saving each
+digest. The linter writes:
+
+- `~/.hermes/state/digest-metadata/<ts>.json`
+- `~/.hermes/state/digest-quality/<ts>.md`
+
+Hard failures include missing direct X/Twitter URLs, per-section source gaps,
+wrong section counts, and Google/search-result URLs. Warnings include repeated
+recent source URLs and inferred category imbalance. By default, failures are
+reported through `hermes-alert.sh` and logged, but the digest still delivers.
+Set `HERMES_DIGEST_LINT_STRICT=1` if you prefer failed lint to block delivery.
+
+Alerts are log-only unless an operator configures
+`HERMES_ALERT_DISCORD_WEBHOOK_URL` or `HERMES_ALERT_COMMAND`.
 
 Reminder and weekly summary jobs use `mode: "prompt"` because they do not need a
 custom implementation handler.
@@ -95,3 +112,11 @@ through Hermes Gateway hooks, using the same separation:
 - handler scripts implement concrete behavior.
 
 That keeps event triggers extensible without adding a second scheduler.
+
+Current event-trigger helpers:
+
+- `hermes-gbrain-remember.sh`: captures explicit "remember this" messages as
+  `note` pages.
+- `hermes-discord-feedback.sh`: captures explicit feedback and follow-up/deep
+  dive requests as `feedback` or `followup` pages, with a local fallback under
+  `~/.hermes/state/user-feedback/`.

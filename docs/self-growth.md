@@ -12,7 +12,10 @@ The scheduled digest cron jobs do four things:
 1. Reads identity from `~/.hermes/prompts/hermes-chan-identity.md`.
 2. Reads self-memory from `~/.hermes/state/hermes-chan-memory.md`.
 3. Saves each digest under `~/.hermes/state/digests/`.
-4. Evaluates each digest and saves the result under
+4. Lints each digest and saves metadata/quality reports under
+   `~/.hermes/state/digest-metadata/` and
+   `~/.hermes/state/digest-quality/`.
+5. Evaluates each digest and saves the result under
    `~/.hermes/state/evaluations/`.
 
 A weekly LaunchAgent runs on Sunday at 21:10 local time. It reads recent
@@ -35,9 +38,16 @@ That memory is then included in future digest prompts.
 - `scripts/register-hermes-cronjobs.sh`: creates missing Hermes cron jobs from
   the JSON registry.
 - `scripts/hermes-tech-digest-cron.sh`: implementation script run by the
-  `tech-digest` cron jobs; it generates, saves, evaluates, and prints the
-  digest for Hermes cron delivery.
+  `tech-digest` cron jobs; it generates, saves, lints, evaluates, and prints
+  the digest for Hermes cron delivery.
 - `scripts/hermes-weekly-self-reflection.sh`: weekly memory update.
+- `scripts/hermes-gbrain-retrieval.sh`: prints high-priority guidance from
+  prior digests/evaluations plus user notes, feedback, and follow-up requests.
+- `scripts/hermes-digest-lint.sh`: validates generated digest structure and
+  writes machine-readable metadata for duplicate/topic-balance analysis.
+- `scripts/hermes-discord-feedback.sh`: captures explicit Discord feedback or
+  follow-up requests as local artifacts and optional gbrain pages.
+- `scripts/hermes-alert.sh`: logs and optionally forwards operational alerts.
 - `launchd/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist`:
   weekly schedule.
 
@@ -108,6 +118,7 @@ already carries `---` frontmatter, so the mapping is mechanical.
 | `state/digests/<ts>.md`                 | `digest`         | `created_at`, `digest_prefix`, source X URLs      |
 | `state/evaluations/<ts>.md`             | `evaluation`     | `created_at`, `digest_file`, scores, improvements |
 | `state/weekly-reflections/<ts>.md`      | `reflection`     | `created_at`, the rewritten memory snapshot       |
+| `state/user-feedback/<ts>.md`           | `feedback` / `followup` | `created_at`, user/channel IDs, explicit request |
 | `prompts/hermes-chan-identity.md`       | `identity`       | stable identity (written once, rarely updated)    |
 
 Entities to extract into graph edges (gbrain does this with zero LLM calls):
