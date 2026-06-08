@@ -54,12 +54,12 @@ That memory is then included in future digest prompts.
 - `prompts/weekly-self-reflection.md`: weekly memory update prompt.
 - `prompts/tech-digest.md`: prompt used by the `tech-digest` handler.
 - `config/hermes-webhooks.json`: declarative webhook trigger/channel registry.
-- `config/hermes-cronjobs.json`: disabled legacy cron registry used to remove
-  old posting cron jobs by name.
+- `config/hermes-cronjobs.json`: active time-based review jobs plus disabled
+  legacy cron registry used to remove old posting cron jobs by name.
 - `scripts/register-hermes-webhooks.sh`: creates or updates Hermes webhook
   subscriptions from the JSON registry.
-- `scripts/register-hermes-cronjobs.sh`: removes disabled legacy Hermes cron
-  jobs from the JSON registry.
+- `scripts/register-hermes-cronjobs.sh`: syncs active Hermes cron jobs and
+  removes disabled legacy jobs from the JSON registry.
 - `scripts/hermes-tech-digest-cron.sh`: implementation script run by the
   `tech-digest-trigger` route; it generates, saves, lints, evaluates, and
   prints the digest for Hermes webhook delivery.

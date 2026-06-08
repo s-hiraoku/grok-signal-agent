@@ -14,8 +14,8 @@
     "webhook_timeout_seconds": 20,
     "cooldown_minutes": 90,
     "min_new_urls": 4,
-    "min_total_urls": 6,
-    "min_score": 120,
+    "min_total_urls": 4,
+    "min_score": 100,
     "max_seen_urls": 400,
     "max_curation_chars": 6000
   },

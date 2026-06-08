@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH="${HOME}/.bun/bin:${PATH}"
+
 HERMES_BIN="${HERMES_BIN:-${HOME}/.local/bin/hermes}"
 STATE_DIR="${HERMES_STATE_DIR:-${HOME}/.hermes/state}"
 LOG_DIR="${HERMES_LOG_DIR:-${HOME}/.hermes/logs}"

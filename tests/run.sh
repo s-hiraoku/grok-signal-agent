@@ -79,6 +79,10 @@ if [[ "$1" == "webhook" && "$2" == "subscribe" ]]; then
   exit 0
 fi
 
+if [[ "$1" == "webhook" && "$2" == "remove" ]]; then
+  exit 0
+fi
+
 if [[ "$1" == "config" && "$2" == "set" ]]; then
   exit 0
 fi
@@ -171,7 +175,10 @@ test_installer_uses_builtin_gateway_only() {
   write_hermes_stub "${tmp_home}" "*"
   stub_bin="${tmp_home}/stub-bin"
   launchctl_log="${tmp_home}/launchctl-calls.log"
-  mkdir -p "${stub_bin}" "${tmp_home}/Library/LaunchAgents"
+  mkdir -p "${stub_bin}" "${tmp_home}/Library/LaunchAgents" "${tmp_home}/.hermes"
+  cat > "${tmp_home}/.hermes/config.yaml" <<'YAML'
+hooks: {}
+YAML
   printf '<plist/>\n' > "${tmp_home}/Library/LaunchAgents/ai.hermes.gateway.plist"
   printf 'legacy\n' > "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway.plist"
   printf 'legacy\n' > "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway-healthcheck.plist"
@@ -233,6 +240,10 @@ STUB
   [[ -x "${tmp_home}/.hermes/scripts/hermes-daily-review-cron.sh" ]] || fail "daily review cron wrapper should be installed"
   [[ -x "${tmp_home}/.hermes/scripts/hermes-weekly-review-cron.sh" ]] || fail "weekly review cron wrapper should be installed"
   [[ -f "${tmp_home}/.hermes/prompts/nightly-dreaming.md" ]] || fail "dreaming prompt should be installed"
+  assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-discord-feedback.sh"
+  assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-discord-feedback.sh"
   assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.signal-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
   assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.x-pulse-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
   assert_file_not_contains "${tmp_home}/hermes-calls.log" "gateway install"
@@ -479,6 +490,50 @@ STUB
   assert_file_contains "${report_file}" "honcho"
 }
 
+test_review_cron_finds_bun_for_gbrain() {
+  local tmp_home hermes_stub output
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/.local/bin" "${tmp_home}/.bun/bin" "${tmp_home}/.hermes/brain" "${tmp_home}/state" "${tmp_home}/logs"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  cat > "${tmp_home}/.bun/bin/bun" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "gbrain list ok"
+STUB
+  chmod +x "${tmp_home}/.bun/bin/bun"
+  cat > "${tmp_home}/.bun/bin/gbrain" <<'STUB'
+#!/usr/bin/env bun
+STUB
+  chmod +x "${tmp_home}/.bun/bin/gbrain"
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "memory" && "${2:-}" == "status" ]]; then
+  echo "Honcho: not configured"
+  exit 0
+fi
+if [[ "${1:-}" == "-z" ]]; then
+  printf '%s\n' "${2:-}"
+  exit 0
+fi
+echo "unexpected hermes call: $*" >&2
+exit 64
+STUB
+  chmod +x "${hermes_stub}"
+
+  output="$(
+    env -i \
+      HOME="${tmp_home}" \
+      PATH="${tmp_home}/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+      HERMES_BIN="${hermes_stub}" \
+      HERMES_STATE_DIR="${tmp_home}/state" \
+      HERMES_LOG_DIR="${tmp_home}/logs" \
+      "${REPO_DIR}/scripts/hermes-review-cron.sh" --daily
+  )"
+
+  assert_contains "${output}" "gbrain list ok"
+}
+
 test_scheduled_prompts_require_direct_source_links() {
   assert_file_contains "${REPO_DIR}/prompts/x-daily-summary.md" "handle だけの出典は不可"
   assert_file_contains "${REPO_DIR}/prompts/x-daily-summary.md" "Google の検索結果 URL ではなく"
@@ -520,13 +575,15 @@ JSON
 
   assert_contains "${output}" "Synced existing webhook: signal-catchup"
   assert_contains "${output}" "Created webhook: tech-digest-trigger"
-  assert_contains "${output}" "Created webhook: morning-brief-trigger"
   assert_contains "${output}" "Created webhook: nightly-dreaming-trigger"
-  assert_contains "${output}" "Created webhook: gbrain-weekly-summary-trigger"
-  assert_contains "${output}" "Webhook registration complete: 4 created, 1 updated."
+  assert_contains "${output}" "Skipped disabled webhook: morning-brief-trigger"
+  assert_contains "${output}" "Skipped disabled webhook: gbrain-weekly-summary-trigger"
+  assert_contains "${output}" "Webhook registration complete: 2 created, 1 updated, 2 disabled, 0 removed."
   assert_file_contains "${log_file}" "webhook subscribe signal-catchup"
   assert_file_contains "${log_file}" "webhook subscribe tech-digest-trigger"
   assert_file_contains "${log_file}" "hermes-tech-digest-cron.sh"
+  assert_file_contains "${log_file}" 'bash "${HOME}/.hermes/scripts/hermes-tech-digest-cron.sh"'
+  assert_file_not_contains "${log_file}" '\"${HOME}/.hermes/scripts/hermes-tech-digest-cron.sh\"'
   assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1510425425971515503"
   assert_file_contains "${log_file}" "--secret existing-secret"
   assert_file_contains "${log_file}" "--secret post-secret-from-env-file"
@@ -1075,6 +1132,7 @@ main() {
     test_jina_mcp_setup_can_reference_api_key_env
     test_dreaming_cron_recomposes_memory_and_writes_report
     test_review_cron_reports_gbrain_and_honcho_status
+    test_review_cron_finds_bun_for_gbrain
     test_scheduled_prompts_require_direct_source_links
     test_register_webhooks_preserves_existing_secret
     test_signal_watcher_scores_local_feed

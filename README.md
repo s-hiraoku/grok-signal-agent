@@ -144,9 +144,7 @@ The webhook registration script reads
 routes:
 
 - `signal-catchup` and `tech-digest-trigger` to `#tech-digest`
-- `morning-brief-trigger` to `#morning-brief`
 - `nightly-dreaming-trigger` to `#ask-hermes`
-- `gbrain-weekly-summary-trigger` to `#weekly-review`
 
 The active cron jobs are:
 
@@ -324,8 +322,9 @@ gbrain list -n 20            # verify pages imported
 
 ### Feature flags
 
-Set these in the Hermes Gateway environment before triggered jobs run, and make
-sure `~/.bun/bin` is on the agent `PATH` so the `gbrain` binary resolves.
+Set these in the Hermes Gateway environment before triggered jobs run. The
+repository helper scripts prepend `~/.bun/bin` to `PATH` before invoking
+`gbrain`.
 
 | Flag | Job | Effect |
 | --- | --- | --- |
@@ -351,17 +350,18 @@ Recognized prefixes: `覚えて` / `おぼえて` / `記憶して` / `/remember`
 `remember` (followed by an optional `:` or `：`). Normal conversation is never
 captured.
 
-Enable it:
+The macOS installer registers and approves the memory/feedback hooks. To do it
+manually:
 
 ```bash
-# 1. config.yaml — register the hook (path must be absolute):
+# 1. config.yaml — register the hooks (paths must be absolute):
 #    hooks:
 #      pre_gateway_dispatch:
 #        - command: ~/.hermes/bin/hermes-gbrain-remember.sh
 #          timeout: 30
 #        - command: ~/.hermes/bin/hermes-discord-feedback.sh
 #          timeout: 30
-# 2. Approve the hook once (Hermes gates new shell hooks):
+# 2. Approve the hooks once (Hermes gates new shell hooks):
 hermes gateway run --replace --accept-hooks   # Ctrl-C after it starts
 hermes hooks doctor                           # should now show ✓
 # 3. Restart the background gateway:

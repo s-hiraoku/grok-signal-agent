@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH="${HOME}/.bun/bin:${PATH}"
+
 # Phase 1 of the gbrain integration (see docs/self-growth.md).
 #
 # Backfills the existing self-growth state under ~/.hermes/state into a gbrain

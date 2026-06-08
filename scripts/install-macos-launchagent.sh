@@ -115,6 +115,66 @@ install_agent() {
   launchctl enable "${GUI_DOMAIN}/${label}"
 }
 
+ensure_gateway_hooks() {
+  local config_file="${HOME}/.hermes/config.yaml"
+  [[ -f "${config_file}" ]] || return 0
+  command -v ruby >/dev/null 2>&1 || {
+    echo "Skipped Gateway hook config merge because ruby was not found"
+    return 0
+  }
+
+  ruby -ryaml -e '
+    config_file = ARGV.shift
+    commands = ARGV
+    config = YAML.load_file(config_file) || {}
+    config["hooks"] = {} unless config["hooks"].is_a?(Hash)
+    hooks = config["hooks"]
+    hooks["pre_gateway_dispatch"] = [] unless hooks["pre_gateway_dispatch"].is_a?(Array)
+    existing = hooks["pre_gateway_dispatch"]
+    commands.each do |command|
+      next if existing.any? { |entry| entry.is_a?(Hash) && entry["command"] == command }
+      existing << { "command" => command, "timeout" => 30 }
+    end
+    File.write(config_file, YAML.dump(config))
+  ' "${config_file}" \
+    "${HOME}/.hermes/bin/hermes-gbrain-remember.sh" \
+    "${HOME}/.hermes/bin/hermes-discord-feedback.sh"
+}
+
+approve_gateway_hooks() {
+  local allowlist_file="${HOME}/.hermes/shell-hooks-allowlist.json"
+  command -v ruby >/dev/null 2>&1 || {
+    echo "Skipped Gateway hook allowlist update because ruby was not found"
+    return 0
+  }
+
+  ruby -rjson -rtime -e '
+    allowlist_file = ARGV.shift
+    commands = ARGV
+    data = begin
+      File.exist?(allowlist_file) ? JSON.parse(File.read(allowlist_file)) : {}
+    rescue JSON::ParserError
+      {}
+    end
+    data["approvals"] = [] unless data["approvals"].is_a?(Array)
+    commands.each do |command|
+      data["approvals"].reject! do |entry|
+        entry.is_a?(Hash) &&
+          entry["event"] == "pre_gateway_dispatch" &&
+          entry["command"] == command
+      end
+      data["approvals"] << {
+        "event" => "pre_gateway_dispatch",
+        "command" => command,
+        "approved_at" => Time.now.utc.iso8601(6).sub("+00:00", "Z")
+      }
+    end
+    File.write(allowlist_file, JSON.pretty_generate(data) + "\n")
+  ' "${allowlist_file}" \
+    "${HOME}/.hermes/bin/hermes-gbrain-remember.sh" \
+    "${HOME}/.hermes/bin/hermes-discord-feedback.sh"
+}
+
 remove_legacy_agent() {
   local label="$1"
   local target="${HOME}/Library/LaunchAgents/${label}.plist"
@@ -136,6 +196,8 @@ pmset -g log 2>/dev/null | awk '
 render_plist "${WEEKLY_REFLECTION_LABEL}"
 render_plist "${SIGNAL_WATCHER_LABEL}"
 render_plist "${X_PULSE_WATCHER_LABEL}"
+ensure_gateway_hooks
+approve_gateway_hooks
 
 remove_legacy_agent "${HEARTBEAT_LABEL}"
 remove_legacy_agent "${LEGACY_GATEWAY_LABEL}"
@@ -166,6 +228,7 @@ echo "Removed legacy ${HEARTBEAT_LABEL}, ${LEGACY_GATEWAY_LABEL}, and ${LEGACY_H
 echo "Installed ${WEEKLY_REFLECTION_LABEL}; it will update self-memory weekly"
 echo "Installed ${SIGNAL_WATCHER_LABEL}; it will catch up source changes via webhook thresholds"
 echo "Installed ${X_PULSE_WATCHER_LABEL}; it will trigger X tech digest on X discussion pulses"
+echo "Installed and approved Gateway memory/feedback hooks"
 echo "Installed watcher runtime under ${RUNTIME_DIR}"
 echo "Status:"
 launchctl print "${GUI_DOMAIN}/ai.hermes.gateway" | sed -n '1,80p'

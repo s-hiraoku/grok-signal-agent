@@ -173,7 +173,6 @@ By default, event-triggered posts route to:
 
 - `tech-digest-trigger` and `signal-catchup` post to `#tech-digest`.
 - `nightly-dreaming-trigger` posts to `#ask-hermes`.
-- `gbrain-weekly-summary-trigger` posts to `#weekly-review`.
 
 The active cron posts route to:
 
@@ -234,7 +233,8 @@ scripts/hermes-obsidian-mcp-setup.sh --vault "$HOME/Documents/Notes" --read-only
 After the restart, ask Hermes from Discord or the CLI to search/read/update a
 specific note in the Obsidian vault. Details are in [obsidian.md](obsidian.md).
 
-Optional Gateway hooks for memory and feedback:
+The installer also registers and approves Gateway hooks for memory and
+feedback:
 
 ```yaml
 hooks:
@@ -245,7 +245,7 @@ hooks:
       timeout: 30
 ```
 
-After adding hooks, approve them once:
+If you add hooks manually, approve them once:
 
 ```bash
 hermes gateway run --replace --accept-hooks

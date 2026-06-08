@@ -28,9 +28,7 @@ routing, prompt text, or job-specific behavior.
 
 - `signal-catchup`
 - `tech-digest-trigger`
-- `morning-brief-trigger`
 - `nightly-dreaming-trigger`
-- `gbrain-weekly-summary-trigger`
 
 The `tech-digest-trigger` route uses `mode: "script"` and calls
 `hermes-tech-digest-cron.sh`. That script is a handler: it generates the digest,
@@ -184,8 +182,8 @@ The default `signal-catchup` route is intentionally generic: an upstream
 watcher decides that something changed, POSTs the event to
 `/webhooks/signal-catchup`, and Hermes summarizes the payload into the
 `tech-digest` channel. The former tech digest time slots are represented by
-`tech-digest-trigger`; morning and review posts are cron jobs again because
-their value is tied to a specific local time.
+`tech-digest-trigger`; morning and review posts are cron jobs because their
+value is tied to a specific local time.
 
 Setup outline:
 

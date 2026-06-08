@@ -36,6 +36,7 @@ jq -e '
   and all(.subscriptions[];
     (.name | type == "string" and length > 0)
     and (.channel | type == "string" and length > 0)
+    and ((if has("enabled") then .enabled else true end) | type == "boolean")
     and (.mode == "prompt" or .mode == "script" or .mode == "agent" or .mode == "deliver-only")
     and (if .mode == "script" then (.script | type == "string" and length > 0) else (.prompt | type == "string") end)
     and ((.events // []) | type == "array")
@@ -118,7 +119,7 @@ script_prompt() {
 terminal/shell が利用可能なら、次のコマンドを実行してください。
 
 \`\`\`bash
-${cd_line}\"${script_path}\"
+${cd_line}bash "${script_path}"
 \`\`\`
 
 script の標準出力が Discord 投稿本文です。成功した場合は、その標準出力を最終回答としてそのまま返してください。失敗した場合は、失敗したコマンド、終了コード、重要な stderr を短く報告してください。
@@ -141,9 +142,12 @@ run_hermes() {
 
 created_count=0
 updated_count=0
+disabled_count=0
+removed_count=0
 
 while IFS= read -r subscription; do
   name="$(normalize_name "$(jq -r '.name' <<< "${subscription}")")"
+  enabled="$(jq -r 'if has("enabled") then .enabled else true end' <<< "${subscription}")"
   channel="$(jq -r '.channel' <<< "${subscription}")"
   target="$(jq -r --arg ch "${channel}" '.channels[$ch] // empty' "${CRON_CONFIG_FILE}")"
   mode="$(jq -r '.mode' <<< "${subscription}")"
@@ -171,6 +175,18 @@ while IFS= read -r subscription; do
     prompt="$(script_prompt "${script}" "${workdir}")"
   else
     prompt="$(jq -r '.prompt' <<< "${subscription}")"
+  fi
+
+  if [[ "${enabled}" != "true" ]]; then
+    disabled_count=$((disabled_count + 1))
+    if [[ "${existed}" == "1" ]]; then
+      run_hermes webhook remove "${name}"
+      removed_count=$((removed_count + 1))
+      echo "Removed disabled webhook: ${name}"
+    else
+      echo "Skipped disabled webhook: ${name}"
+    fi
+    continue
   fi
 
   args=(webhook subscribe "${name}" --prompt "${prompt}" --deliver "${deliver}" --deliver-chat-id "${chat_id}")
@@ -216,4 +232,4 @@ while IFS= read -r subscription; do
   fi
 done < <(jq -c '.subscriptions[]' "${CONFIG_FILE}")
 
-echo "Webhook registration complete: ${created_count} created, ${updated_count} updated."
+echo "Webhook registration complete: ${created_count} created, ${updated_count} updated, ${disabled_count} disabled, ${removed_count} removed."

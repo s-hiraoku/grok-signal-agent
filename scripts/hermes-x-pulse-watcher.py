@@ -133,6 +133,7 @@ def build_prompt(config: dict[str, Any]) -> str:
 
 条件:
 - X/Twitter の直接 URL をできるだけ多く残す。
+- 各 URL は https://x.com/<handle>/status/<id> または https://twitter.com/<handle>/status/<id> の完全な直接 URL として独立行に出す。
 - 開発者、AI agent builder、Web engineer、IT watcher に意味がある話題を優先する。
 - 同じ話題の重複や薄い感想は落とす。
 - URL が確認できない話題は出さない。

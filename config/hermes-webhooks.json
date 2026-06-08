@@ -31,7 +31,8 @@
     {
       "id": "morning-brief-trigger",
       "name": "morning-brief-trigger",
-      "description": "Event-driven replacement for the weekday 09:50 morning brief cron post.",
+      "enabled": false,
+      "description": "Disabled legacy event-driven morning brief route. Morning brief is intentionally scheduled by Hermes cron.",
       "channel": "morning-brief",
       "mode": "prompt",
       "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
@@ -59,7 +60,8 @@
     {
       "id": "gbrain-weekly-summary-trigger",
       "name": "gbrain-weekly-summary-trigger",
-      "description": "Event-driven replacement for the previous Friday 17:00 gbrain summary cron post.",
+      "enabled": false,
+      "description": "Disabled legacy event-driven weekly review route. Weekly review is intentionally scheduled by Hermes cron.",
       "channel": "weekly-review",
       "mode": "prompt",
       "workdir": "~/.hermes/brain",
