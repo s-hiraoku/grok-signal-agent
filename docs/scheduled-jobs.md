@@ -161,6 +161,14 @@ For launchd reliability, the installer copies the watcher script and config to
 of the repository checkout. Re-run `scripts/install-macos-launchagent.sh` after
 changing watcher code or `config/signal-watchers.json`.
 
+`scripts/hermes-x-pulse-watcher.py` is the X/Twitter discussion watcher. X does
+not provide a local push feed here, so it samples `x_search` every 30 minutes
+through `com.shiraoku.grok-signal-agent.x-pulse-watcher`. First run primes
+current X URLs; later runs trigger `tech-digest-trigger` only when the sample
+contains enough new direct X/Twitter URLs. It uses
+`config/x-pulse-watchers.json`, route cooldowns, and the same signed webhook
+delivery path as the feed watcher.
+
 The default `signal-catchup` route is intentionally generic: an upstream
 watcher decides that something changed, POSTs the event to
 `/webhooks/signal-catchup`, and Hermes summarizes the payload into the
@@ -181,6 +189,7 @@ HERMES_POST_TRIGGER_WEBHOOK_SECRET=<post-trigger-route-secret>
 
 scripts/register-hermes-webhooks.sh
 scripts/hermes-signal-watcher.sh --dry-run --allow-first-run-send
+scripts/hermes-x-pulse-watcher.sh --dry-run --allow-first-run-send
 hermes webhook list
 hermes gateway restart
 ```

@@ -163,6 +163,11 @@ The signal watcher LaunchAgent runs from
 script and `config/signal-watchers.json`. Re-run the installer after changing
 watcher code or source thresholds.
 
+The X pulse watcher uses the same runtime directory and runs every 30 minutes
+through `com.shiraoku.grok-signal-agent.x-pulse-watcher`. It samples recent
+`x_search` results and triggers `tech-digest-trigger` only when enough new
+direct X/Twitter URLs appear.
+
 By default, event-triggered posts route to the same Discord channels as before:
 
 - `tech-digest-trigger` and `signal-catchup` post to `#tech-digest`.
@@ -185,6 +190,7 @@ scripts/register-hermes-webhooks.sh
 hermes cron list
 hermes webhook list
 launchctl print gui/$(id -u)/ai.hermes.gateway
+launchctl print gui/$(id -u)/com.shiraoku.grok-signal-agent.x-pulse-watcher
 ```
 
 The Gateway service starts immediately. Scheduled jobs wait for the next

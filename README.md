@@ -29,6 +29,7 @@ docs/setup.md
 systemd/hermes-gateway.service
 config/hermes-cronjobs.json
 config/hermes-webhooks.json
+config/x-pulse-watchers.json
 launchd/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist
 scripts/install-macos-launchagent.sh
 scripts/uninstall-macos-launchagent.sh
@@ -36,6 +37,8 @@ scripts/register-hermes-cronjobs.sh
 scripts/register-hermes-webhooks.sh
 scripts/hermes-tech-digest-cron.sh
 scripts/hermes-dreaming-cron.sh
+scripts/hermes-x-pulse-watcher.py
+scripts/hermes-x-pulse-watcher.sh
 scripts/hermes-weekly-self-reflection.sh
 scripts/hermes-gbrain-backfill.sh
 scripts/hermes-gbrain-retrieval.sh
@@ -152,6 +155,8 @@ intended split is:
 - Hermes built-in service: keep Hermes Gateway running.
 - Signal watcher: monitor Zenn, wbsb.dev, release feeds, and other sources;
   score/dedupe/cooldown changes before any Discord post is triggered.
+- X pulse watcher: sample recent X discussion with `x_search`; trigger the
+  tech digest only when enough new direct X URLs appear.
 - Hermes webhook platform: event ingress and delivery targets.
 - Handler scripts: job implementation details such as tech digest generation,
   digest/evaluation persistence, digest quality linting/metadata, alerts, and
@@ -170,6 +175,12 @@ so old articles are not posted in bulk; later runs post only threshold-crossing
 new signals. The macOS installer copies the watcher runtime to
 `~/.hermes/runtime/grok-signal-agent/`; re-run the installer after changing the
 watcher code or config.
+
+The X pulse configuration is in
+[config/x-pulse-watchers.json](config/x-pulse-watchers.json). It runs every 30
+minutes, primes existing X URLs on the first run, and triggers
+`tech-digest-trigger` only when recent `x_search` results contain enough new
+direct X/Twitter URLs.
 
 ## Digest Quality And Feedback
 

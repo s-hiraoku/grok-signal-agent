@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "settings": {
+    "state_file": "~/.hermes/state/x-pulse-watcher-state.json",
+    "log_file": "~/.hermes/logs/hermes-x-pulse-watcher.log",
+    "env_file": "~/.hermes/.env",
+    "hermes_bin": "~/.local/bin/hermes",
+    "webhook_base_url_env": "HERMES_WEBHOOK_BASE_URL",
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "route": "tech-digest-trigger",
+    "prime_only_on_first_run": true,
+    "x_search_timeout_seconds": 240,
+    "webhook_timeout_seconds": 20,
+    "cooldown_minutes": 90,
+    "min_new_urls": 4,
+    "min_total_urls": 6,
+    "min_score": 120,
+    "max_seen_urls": 400,
+    "max_curation_chars": 6000
+  },
+  "queries": [
+    "AI agents coding agents Claude Code Codex MCP OpenAI Grok xAI developer tools",
+    "Web development TypeScript React JavaScript browser CSS frontend backend developer news",
+    "GitHub Copilot Cursor IDE programming languages security cloud infrastructure open source"
+  ]
+}

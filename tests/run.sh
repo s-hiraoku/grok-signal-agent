@@ -219,16 +219,21 @@ STUB
   [[ -x "${tmp_home}/.hermes/bin/hermes-jina-mcp-setup.sh" ]] || fail "jina MCP setup helper should be installed"
   [[ -x "${tmp_home}/.hermes/bin/register-hermes-webhooks.sh" ]] || fail "webhook registration helper should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-signal-watcher.sh" ]] || fail "signal watcher helper should be installed"
+  [[ -x "${tmp_home}/.hermes/bin/hermes-x-pulse-watcher.sh" ]] || fail "x pulse watcher helper should be installed"
   [[ -x "${tmp_home}/.hermes/runtime/grok-signal-agent/scripts/hermes-signal-watcher.py" ]] || fail "signal watcher runtime script should be installed"
+  [[ -x "${tmp_home}/.hermes/runtime/grok-signal-agent/scripts/hermes-x-pulse-watcher.py" ]] || fail "x pulse watcher runtime script should be installed"
   [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/signal-watchers.json" ]] || fail "signal watcher runtime config should be installed"
+  [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/x-pulse-watchers.json" ]] || fail "x pulse watcher runtime config should be installed"
   [[ -x "${tmp_home}/.hermes/scripts/hermes-dreaming-cron.sh" ]] || fail "dreaming cron script should be installed"
   [[ -f "${tmp_home}/.hermes/prompts/nightly-dreaming.md" ]] || fail "dreaming prompt should be installed"
   assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.signal-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
+  assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.x-pulse-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
   assert_file_not_contains "${tmp_home}/hermes-calls.log" "gateway install"
   assert_file_not_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway.plist"
   assert_file_not_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway-healthcheck.plist"
   assert_file_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist"
   assert_file_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.signal-watcher.plist"
+  assert_file_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.x-pulse-watcher.plist"
   assert_file_contains "${launchctl_log}" "print gui/$(id -u)/ai.hermes.gateway"
 }
 
@@ -683,6 +688,99 @@ JSON
   assert_file_contains "${log_file}" "cooldown route=signal-catchup candidates=1"
 }
 
+test_x_pulse_watcher_primes_sample_urls() {
+  local tmp_home sample config state output seen_count
+  tmp_home="$(mktemp -d)"
+  sample="${tmp_home}/x-sample.txt"
+  config="${tmp_home}/x-pulse.json"
+  state="${tmp_home}/state.json"
+  cat > "${sample}" <<'SAMPLE'
+pulse summary
+https://x.com/devrel/status/10001
+https://x.com/codingagent/status/10002
+https://twitter.com/webdev/status/10003
+https://x.com/security/status/10004
+https://x.com/typescript/status/10005
+https://x.com/browser/status/10006
+SAMPLE
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${tmp_home}/x-pulse.log",
+    "prime_only_on_first_run": true,
+    "route": "tech-digest-trigger",
+    "cooldown_minutes": 90,
+    "min_new_urls": 4,
+    "min_total_urls": 6,
+    "min_score": 120
+  },
+  "queries": ["AI agents"]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-x-pulse-watcher.py" --config "${config}" --sample-file "${sample}")"
+  seen_count="$(jq -r '.seen_urls | length' "${state}")"
+
+  assert_contains "${output}" '"total_urls": 6'
+  assert_contains "${output}" '"sent": 0'
+  assert_contains "${output}" '"prime_only": true'
+  assert_contains "${seen_count}" "6"
+}
+
+test_x_pulse_watcher_detects_sample_pulse() {
+  local tmp_home sample config state output
+  tmp_home="$(mktemp -d)"
+  sample="${tmp_home}/x-sample.txt"
+  config="${tmp_home}/x-pulse.json"
+  state="${tmp_home}/state.json"
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen_urls": {
+    "https://x.com/devrel/status/10001": {
+      "first_seen_at": "2026-06-08T00:00:00+00:00"
+    }
+  },
+  "sent": {},
+  "runs": []
+}
+JSON
+  cat > "${sample}" <<'SAMPLE'
+high signal
+https://x.com/devrel/status/10001
+https://x.com/codingagent/status/10002
+https://twitter.com/webdev/status/10003
+https://x.com/security/status/10004
+https://x.com/typescript/status/10005
+https://x.com/browser/status/10006
+SAMPLE
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${tmp_home}/x-pulse.log",
+    "prime_only_on_first_run": true,
+    "route": "tech-digest-trigger",
+    "cooldown_minutes": 90,
+    "min_new_urls": 4,
+    "min_total_urls": 6,
+    "min_score": 120
+  },
+  "queries": ["AI agents"]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-x-pulse-watcher.py" --config "${config}" --sample-file "${sample}" --dry-run)"
+
+  assert_contains "${output}" '"total_urls": 6'
+  assert_contains "${output}" '"new_urls": 5'
+  assert_contains "${output}" '"should_trigger": true'
+  assert_contains "${output}" '"dry_run": true'
+}
+
 test_digest_linter_writes_metadata() {
   local tmp_home digest metadata report
   tmp_home="$(mktemp -d)"
@@ -923,6 +1021,8 @@ main() {
     test_signal_watcher_scores_local_feed
     test_signal_watcher_reads_env_file_for_secret
     test_signal_watcher_retries_candidates_blocked_by_cooldown
+    test_x_pulse_watcher_primes_sample_urls
+    test_x_pulse_watcher_detects_sample_pulse
     test_digest_linter_writes_metadata
     test_digest_linter_rejects_missing_section_urls
     test_discord_feedback_hook_writes_fallback_artifact
