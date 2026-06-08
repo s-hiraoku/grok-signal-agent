@@ -152,9 +152,10 @@ The script installs or refreshes Hermes' built-in Gateway LaunchAgent:
 ~/Library/LaunchAgents/ai.hermes.gateway.plist
 ```
 
-It also removes the old Discord posting cron jobs when they are present. The
-Hermes Gateway stays responsible for process runtime; posting work is now
-triggered by Hermes webhook subscriptions instead of wall-clock schedules.
+It also syncs the explicit Hermes cron jobs and removes disabled legacy jobs
+when they are present. Hermes Gateway stays responsible for process runtime;
+signal-driven tech posts are triggered by webhook subscriptions, while
+morning/review posts remain intentional wall-clock jobs.
 Older repo-managed Gateway and heartbeat LaunchAgents are removed by the
 installer.
 
@@ -168,18 +169,21 @@ through `com.shiraoku.grok-signal-agent.x-pulse-watcher`. It samples recent
 `x_search` results and triggers `tech-digest-trigger` only when enough new
 direct X/Twitter URLs appear.
 
-By default, event-triggered posts route to the same Discord channels as before:
+By default, event-triggered posts route to:
 
 - `tech-digest-trigger` and `signal-catchup` post to `#tech-digest`.
-- `morning-brief-trigger` posts to `#morning-brief`.
 - `nightly-dreaming-trigger` posts to `#ask-hermes`.
 - `gbrain-weekly-summary-trigger` posts to `#weekly-review`.
 
+The active cron posts route to:
+
+- `平日9:50リマインダー` posts to `#morning-brief`.
+- `金曜17時gbrainサマリー` posts gbrain/honcho status to `#weekly-review`.
+- `毎晩23:30 gbrain/honcho daily review` posts to `#daily-review`.
+
 Webhook subscription definitions live in `config/hermes-webhooks.json`; the
 registration script reads that file and creates or updates Hermes webhook
-subscriptions. The legacy scheduled post definitions in
-`config/hermes-cronjobs.json` are kept disabled so the registrar can remove
-already-registered cron jobs by name.
+subscriptions. Time-based post definitions live in `config/hermes-cronjobs.json`.
 See `docs/scheduled-jobs.md` for the extension model.
 
 Validate and inspect jobs:
@@ -193,8 +197,8 @@ launchctl print gui/$(id -u)/ai.hermes.gateway
 launchctl print gui/$(id -u)/com.shiraoku.grok-signal-agent.x-pulse-watcher
 ```
 
-The Gateway service starts immediately. Scheduled jobs wait for the next
-matching Hermes webhook POST after installation.
+The Gateway service starts immediately. Cron jobs wait for their next scheduled
+time; webhook jobs wait for the next matching signed POST.
 
 The installer also installs エルメスちゃん's self-growth loop:
 
@@ -274,9 +278,9 @@ an external service POSTs a signed event. This is for event-driven sources such
 as GitHub, release monitors, uptime alerts, RSS-to-webhook bridges, or custom
 watchers. X/news services that do not provide push events still need an
 upstream watcher; Hermes should receive the watcher's event, not poll on a cron.
-The former posting cron jobs are replaced by `/webhooks/tech-digest-trigger`,
-`/webhooks/morning-brief-trigger`, `/webhooks/nightly-dreaming-trigger`, and
-`/webhooks/gbrain-weekly-summary-trigger`.
+The former tech digest time slots are replaced by `/webhooks/tech-digest-trigger`.
+Morning brief and gbrain/honcho review posts are registered as Hermes cron jobs
+because they are intentionally time-based.
 
 ## 7. Operate the Service
 

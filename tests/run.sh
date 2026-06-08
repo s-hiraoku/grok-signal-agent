@@ -119,8 +119,12 @@ test_register_cronjobs_removes_disabled_jobs() {
   )"
 
   assert_contains "${output}" "Removed disabled cron job: tech-digest 08:00"
-  assert_contains "${output}" "Cron registration complete: 0 created, 0 updated, 0 already existed, 6 disabled, 1 removed."
+  assert_contains "${output}" "Cron registration complete: 3 created, 0 updated, 0 already existed, 4 disabled, 1 removed."
   assert_file_contains "${log_file}" "cron remove stub-id"
+  assert_file_contains "${log_file}" "discord:1510425534436212817 50\\ 9\\ \\*\\ \\*\\ 1-5"
+  assert_file_contains "${log_file}" "--script hermes-weekly-review-cron.sh"
+  assert_file_contains "${log_file}" "--script hermes-daily-review-cron.sh"
+  assert_file_contains "${log_file}" "--deliver discord:1513665059723808878"
   assert_file_not_contains "${log_file}" "cron create --name tech-digest\\ 08:00"
   assert_file_not_contains "${log_file}" "cron edit --name tech-digest\\ 08:00"
 }
@@ -225,6 +229,9 @@ STUB
   [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/signal-watchers.json" ]] || fail "signal watcher runtime config should be installed"
   [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/x-pulse-watchers.json" ]] || fail "x pulse watcher runtime config should be installed"
   [[ -x "${tmp_home}/.hermes/scripts/hermes-dreaming-cron.sh" ]] || fail "dreaming cron script should be installed"
+  [[ -x "${tmp_home}/.hermes/scripts/hermes-review-cron.sh" ]] || fail "review cron script should be installed"
+  [[ -x "${tmp_home}/.hermes/scripts/hermes-daily-review-cron.sh" ]] || fail "daily review cron wrapper should be installed"
+  [[ -x "${tmp_home}/.hermes/scripts/hermes-weekly-review-cron.sh" ]] || fail "weekly review cron wrapper should be installed"
   [[ -f "${tmp_home}/.hermes/prompts/nightly-dreaming.md" ]] || fail "dreaming prompt should be installed"
   assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.signal-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
   assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.x-pulse-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
@@ -419,6 +426,57 @@ USER
   [[ -n "${report_file}" ]] || fail "expected dreaming report"
   assert_file_contains "${report_file}" "# Dreaming Report"
   assert_file_contains "${report_file}" "# エルメスちゃんの自己メモリ"
+}
+
+test_review_cron_reports_gbrain_and_honcho_status() {
+  local tmp_home hermes_stub output report_file
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/.local/bin" "${tmp_home}/state/digests" "${tmp_home}/state/evaluations" "${tmp_home}/logs"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "memory" && "${2:-}" == "status" ]]; then
+  echo "Honcho: not configured"
+  exit 0
+fi
+if [[ "${1:-}" == "-z" ]]; then
+  cat <<'REVIEW'
+daily-review
+
+## 今日の更新
+- gbrainとhonchoの状態を確認したよ。
+
+## gbrain 状況
+- gbrain binary は未検出。
+
+## honcho 状況
+- honcho は未設定。
+
+## 明日の確認ポイント
+- Honcho API key と config を設定するか確認。
+REVIEW
+  exit 0
+fi
+echo "unexpected hermes call: $*" >&2
+exit 64
+STUB
+  chmod +x "${hermes_stub}"
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${hermes_stub}" \
+    HERMES_STATE_DIR="${tmp_home}/state" \
+    HERMES_LOG_DIR="${tmp_home}/logs" \
+    "${REPO_DIR}/scripts/hermes-review-cron.sh" --daily
+  )"
+
+  assert_contains "${output}" "daily-review"
+  assert_contains "${output}" "honcho は未設定"
+  report_file="$(find "${tmp_home}/state/reviews/daily" -type f -name '*.md' -print -quit)"
+  [[ -n "${report_file}" ]] || fail "expected daily review report"
+  assert_file_contains "${report_file}" "gbrain"
+  assert_file_contains "${report_file}" "honcho"
 }
 
 test_scheduled_prompts_require_direct_source_links() {
@@ -1016,6 +1074,7 @@ main() {
     test_jina_mcp_setup_writes_reader_only_config
     test_jina_mcp_setup_can_reference_api_key_env
     test_dreaming_cron_recomposes_memory_and_writes_report
+    test_review_cron_reports_gbrain_and_honcho_status
     test_scheduled_prompts_require_direct_source_links
     test_register_webhooks_preserves_existing_secret
     test_signal_watcher_scores_local_feed

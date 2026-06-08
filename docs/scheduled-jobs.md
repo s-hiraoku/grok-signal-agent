@@ -1,8 +1,8 @@
-# Triggered Jobs Design
+# Scheduled And Triggered Jobs Design
 
-Discord posting work is event-triggered through Hermes webhooks. Hermes cron is
-kept only as a legacy cleanup path so existing registered cron jobs can be
-removed safely.
+Discord posting work uses both Hermes webhooks and Hermes cron. Webhooks own
+signal-driven posts; cron is reserved for intentionally time-based operational
+posts such as the weekday morning brief and daily/weekly reviews.
 
 Hermes' built-in LaunchAgent is only process supervision. It starts and
 restarts Hermes Gateway. It must not contain business schedules, channel
@@ -13,12 +13,12 @@ routing, prompt text, or job-specific behavior.
 | Layer | Owns | Must not own |
 | --- | --- | --- |
 | Hermes built-in LaunchAgent | Gateway process lifecycle | schedules, channels, prompts |
-| Hermes Gateway | runtime host for webhooks and hooks | job-specific business logic |
+| Hermes Gateway | runtime host for webhooks, cron, and hooks | job-specific business logic |
 | Hermes webhook platform | event ingress and delivery target | deciding when external events happen |
 | `config/hermes-webhooks.json` | trigger declarations: route, channel, mode | shell control flow |
 | `scripts/register-hermes-webhooks.sh` | generic JSON-to-Hermes-webhook registration | hardcoded trigger definitions |
-| `config/hermes-cronjobs.json` | disabled legacy cron declarations for cleanup | active posting schedules |
-| `scripts/register-hermes-cronjobs.sh` | removes disabled legacy cron jobs by name | creating new posting schedules |
+| `config/hermes-cronjobs.json` | explicit time-based jobs and disabled legacy cleanup declarations | signal-driven event detection |
+| `scripts/register-hermes-cronjobs.sh` | creates/updates enabled cron jobs and removes disabled legacy jobs by name | deciding external event significance |
 | job handler scripts | concrete job behavior | scheduling or channel routing |
 | Gateway hooks | Discord event-triggered actions | time-based scheduling |
 
@@ -64,8 +64,19 @@ Set `HERMES_DIGEST_LINT_STRICT=1` if you prefer failed lint to block delivery.
 Alerts are log-only unless an operator configures
 `HERMES_ALERT_DISCORD_WEBHOOK_URL` or `HERMES_ALERT_COMMAND`.
 
-Morning brief and gbrain summary routes use `mode: "prompt"` because they do
-not need a custom implementation handler.
+## Current Cron Jobs
+
+`config/hermes-cronjobs.json` declares these active time-based posts:
+
+- `平日9:50リマインダー`: weekday 09:50 `#morning-brief`.
+- `金曜17時gbrainサマリー`: Friday 17:00 `#weekly-review`, using
+  `hermes-weekly-review-cron.sh` to summarize gbrain and honcho updates/status.
+- `毎晩23:30 gbrain/honcho daily review`: nightly 23:30 `#daily-review`, using
+  `hermes-daily-review-cron.sh`.
+
+The old tech digest time slots and the old nightly dreaming post remain
+disabled in the same file so `scripts/register-hermes-cronjobs.sh` can remove
+stale registered jobs by name.
 
 ## Source Links
 
@@ -172,10 +183,9 @@ delivery path as the feed watcher.
 The default `signal-catchup` route is intentionally generic: an upstream
 watcher decides that something changed, POSTs the event to
 `/webhooks/signal-catchup`, and Hermes summarizes the payload into the
-`tech-digest` channel. The former posting cron jobs are represented as
-`tech-digest-trigger`, `morning-brief-trigger`, `nightly-dreaming-trigger`, and
-`gbrain-weekly-summary-trigger`. This avoids adding another time-based
-scheduler here.
+`tech-digest` channel. The former tech digest time slots are represented by
+`tech-digest-trigger`; morning and review posts are cron jobs again because
+their value is tied to a specific local time.
 
 Setup outline:
 

@@ -4,6 +4,7 @@
     "tech-digest": "discord:1510425425971515503",
     "morning-brief": "discord:1510425534436212817",
     "weekly-review": "discord:1510425635745435648",
+    "daily-review": "discord:1513665059723808878",
     "ask-hermes": "discord:1510425922384167043"
   },
   "jobs": [
@@ -43,7 +44,7 @@
     {
       "id": "weekday-0950-reminder",
       "name": "平日9:50リマインダー",
-      "enabled": false,
+      "enabled": true,
       "schedule": "50 9 * * 1-5",
       "channel": "morning-brief",
       "mode": "prompt",
@@ -63,12 +64,24 @@
     {
       "id": "friday-1700-gbrain-summary",
       "name": "金曜17時gbrainサマリー",
-      "enabled": false,
+      "enabled": true,
       "schedule": "0 17 * * 5",
       "channel": "weekly-review",
-      "mode": "prompt",
-      "workdir": "~/.hermes/brain",
-      "prompt": "毎週金曜17:00のgbrain週次サマリーをDiscordに投稿してください。~/.hermes/brain と ~/.hermes/brain/pages、必要なら gbrain CLI を確認し、この1週間に蓄積された digest、evaluation、note、reflection、learnings から重要な学びを日本語で要約してください。構成は、1) 今週の大きなテーマ、2) 開発/AI/運用で使える知見、3) gbrainに残った重要メモ、4) 来週見直すとよいTODO、の順にしてください。外部ページ、X投稿、Google/Web検索で見つけたページを参照した場合は、各項目に `参照: <直接URL>` を残してください。Google検索結果URLではなく、元記事・公式発表・ドキュメントなど実際に参照したページのURLを使ってください。エルメスちゃんらしい明るい口調で、ただし内容は実務的に簡潔にしてください。"
+      "mode": "script",
+      "script": "hermes-weekly-review-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the weekly gbrain/honcho review script."
+    },
+    {
+      "id": "daily-2330-gbrain-honcho-review",
+      "name": "毎晩23:30 gbrain/honcho daily review",
+      "enabled": true,
+      "schedule": "30 23 * * *",
+      "channel": "daily-review",
+      "mode": "script",
+      "script": "hermes-daily-review-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the daily gbrain/honcho review script."
     }
   ]
 }

@@ -37,6 +37,9 @@ scripts/register-hermes-cronjobs.sh
 scripts/register-hermes-webhooks.sh
 scripts/hermes-tech-digest-cron.sh
 scripts/hermes-dreaming-cron.sh
+scripts/hermes-review-cron.sh
+scripts/hermes-daily-review-cron.sh
+scripts/hermes-weekly-review-cron.sh
 scripts/hermes-x-pulse-watcher.py
 scripts/hermes-x-pulse-watcher.sh
 scripts/hermes-weekly-self-reflection.sh
@@ -122,14 +125,15 @@ The triggered job architecture is in
 [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
 The older cloud VM notes are in [docs/setup.md](docs/setup.md).
 
-## Discord Triggered Posts
+## Discord Jobs
 
-Discord posts are now managed by Hermes webhook subscriptions. The old posting
-cron entries are kept disabled only so the registrar can remove already-created
-Hermes cron jobs by name:
+Discord jobs use two mechanisms:
+
+- Event-triggered webhooks for signal-driven tech digest posts.
+- Hermes cron for intentionally time-based operational posts.
 
 ```bash
-scripts/register-hermes-cronjobs.sh    # removes disabled legacy posting cron jobs
+scripts/register-hermes-cronjobs.sh    # syncs morning/review cron jobs and removes disabled legacy jobs
 scripts/register-hermes-webhooks.sh    # creates/updates webhook triggers
 hermes cron list
 hermes webhook list
@@ -143,6 +147,12 @@ routes:
 - `morning-brief-trigger` to `#morning-brief`
 - `nightly-dreaming-trigger` to `#ask-hermes`
 - `gbrain-weekly-summary-trigger` to `#weekly-review`
+
+The active cron jobs are:
+
+- `平日9:50リマインダー` to `#morning-brief`
+- `金曜17時gbrainサマリー` to `#weekly-review`, using gbrain/honcho status
+- `毎晩23:30 gbrain/honcho daily review` to `#daily-review`
 
 The older `discord-heartbeat` LaunchAgent is treated as legacy and removed by
 the macOS installer.
@@ -160,7 +170,7 @@ intended split is:
 - Hermes webhook platform: event ingress and delivery targets.
 - Handler scripts: job implementation details such as tech digest generation,
   digest/evaluation persistence, digest quality linting/metadata, alerts, and
-  gbrain write-back.
+  gbrain write-back, plus gbrain/honcho daily and weekly reviews.
 - Gateway hooks: Discord message/event-triggered actions.
 - Job prompts and channel targets: versioned in this repository, registered
   into Hermes runtime state by scripts.
