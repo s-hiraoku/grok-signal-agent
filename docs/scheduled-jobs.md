@@ -1,6 +1,8 @@
-# Scheduled Jobs Design
+# Triggered Jobs Design
 
-Scheduled Discord work has one scheduler: Hermes cron.
+Discord posting work is event-triggered through Hermes webhooks. Hermes cron is
+kept only as a legacy cleanup path so existing registered cron jobs can be
+removed safely.
 
 Hermes' built-in LaunchAgent is only process supervision. It starts and
 restarts Hermes Gateway. It must not contain business schedules, channel
@@ -11,26 +13,39 @@ routing, prompt text, or job-specific behavior.
 | Layer | Owns | Must not own |
 | --- | --- | --- |
 | Hermes built-in LaunchAgent | Gateway process lifecycle | schedules, channels, prompts |
-| Hermes Gateway | runtime host for cron and hooks | job-specific business logic |
-| Hermes cron | time-based scheduling and delivery target | digest/evaluation implementation |
-| `config/hermes-cronjobs.json` | job declarations: name, schedule, channel, mode | shell control flow |
-| `scripts/register-hermes-cronjobs.sh` | generic JSON-to-Hermes-cron registration | hardcoded job definitions |
+| Hermes Gateway | runtime host for webhooks and hooks | job-specific business logic |
+| Hermes webhook platform | event ingress and delivery target | deciding when external events happen |
+| `config/hermes-webhooks.json` | trigger declarations: route, channel, mode | shell control flow |
+| `scripts/register-hermes-webhooks.sh` | generic JSON-to-Hermes-webhook registration | hardcoded trigger definitions |
+| `config/hermes-cronjobs.json` | disabled legacy cron declarations for cleanup | active posting schedules |
+| `scripts/register-hermes-cronjobs.sh` | removes disabled legacy cron jobs by name | creating new posting schedules |
 | job handler scripts | concrete job behavior | scheduling or channel routing |
 | Gateway hooks | Discord event-triggered actions | time-based scheduling |
 
-## Current Jobs
+## Current Triggers
 
-`config/hermes-cronjobs.json` declares:
+`config/hermes-webhooks.json` declares:
 
-- `tech-digest 08:00`, `tech-digest 12:30`, `tech-digest 18:00`
-- `平日9:50リマインダー`
-- `金曜17時gbrainサマリー`
+- `signal-catchup`
+- `tech-digest-trigger`
+- `morning-brief-trigger`
+- `nightly-dreaming-trigger`
+- `gbrain-weekly-summary-trigger`
 
-The `tech-digest` jobs use `mode: "script"` and call
+The `tech-digest-trigger` route uses `mode: "script"` and calls
 `hermes-tech-digest-cron.sh`. That script is a handler: it generates the digest,
 saves digest/evaluation artifacts, lints the digest, emits structured metadata,
 optionally writes back to gbrain, and prints the final Discord message to
-stdout. Hermes cron owns the schedule and delivery target.
+stdout. The webhook route owns event ingress and delivery target.
+
+The `nightly-dreaming-trigger` route uses `mode: "script"` and calls
+`hermes-dreaming-cron.sh`. That script is an internal memory maintenance
+handler: it reads recent conversation excerpts, digests, evaluations, explicit
+feedback, built-in Hermes memories, and prior reflections, then writes a full
+dreaming report under `~/.hermes/state/dreaming/`. It does not delete raw
+memory; it replaces only the current working memory view
+`~/.hermes/state/hermes-chan-memory.md` with the recomposed section from the
+report.
 
 ## Quality Gate
 
@@ -49,8 +64,8 @@ Set `HERMES_DIGEST_LINT_STRICT=1` if you prefer failed lint to block delivery.
 Alerts are log-only unless an operator configures
 `HERMES_ALERT_DISCORD_WEBHOOK_URL` or `HERMES_ALERT_COMMAND`.
 
-Reminder and weekly summary jobs use `mode: "prompt"` because they do not need a
-custom implementation handler.
+Morning brief and gbrain summary routes use `mode: "prompt"` because they do
+not need a custom implementation handler.
 
 ## Source Links
 
@@ -65,20 +80,22 @@ source later.
 - Items without a verifiable source URL should be omitted from scheduled news
   and digest posts.
 
-## Adding A Scheduled Job
+## Adding A Triggered Job
 
-Add a new entry to `config/hermes-cronjobs.json`.
+Add a new entry to `config/hermes-webhooks.json`.
 
 Use `mode: "prompt"` when the job can be expressed as a self-contained Hermes
 prompt:
 
 ```json
 {
-  "id": "example-reminder",
-  "name": "example reminder",
-  "schedule": "0 10 * * 1-5",
+  "id": "example-trigger",
+  "name": "example-trigger",
   "channel": "morning-brief",
   "mode": "prompt",
+  "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+  "events": [],
+  "skills": [],
   "prompt": "Post a short reminder."
 }
 ```
@@ -88,19 +105,24 @@ artifact persistence, external command calls, or custom post-processing:
 
 ```json
 {
-  "id": "example-script-job",
-  "name": "example script job",
-  "schedule": "0 18 * * 5",
+  "id": "example-script-trigger",
+  "name": "example-script-trigger",
   "channel": "weekly-review",
   "mode": "script",
   "script": "example-script-job.sh",
-  "no_agent": true,
-  "prompt": "Run the example script."
+  "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+  "events": [],
+  "skills": []
 }
 ```
 
 Scripts must live under `~/.hermes/scripts/` at runtime. The installer copies
 repository scripts matching `scripts/*-cron.sh` there.
+
+The old posting cron entries remain in `config/hermes-cronjobs.json` with
+`enabled: false`. Running `scripts/register-hermes-cronjobs.sh` removes matching
+registered cron jobs by name. Set `HERMES_CRONJOBS_REMOVE_DISABLED=0` only when
+you want to inspect old jobs without deleting them.
 
 ## Event Triggers
 
@@ -120,3 +142,53 @@ Current event-trigger helpers:
 - `hermes-discord-feedback.sh`: captures explicit feedback and follow-up/deep
   dive requests as `feedback` or `followup` pages, with a local fallback under
   `~/.hermes/state/user-feedback/`.
+
+External service-triggered behavior should use Hermes' webhook platform. The
+repository keeps dynamic webhook subscriptions in
+`config/hermes-webhooks.json`, while `scripts/register-hermes-webhooks.sh`
+registers them with `hermes webhook subscribe`.
+
+`scripts/hermes-signal-watcher.py` is the default upstream watcher. It reads
+`config/signal-watchers.json`, fetches configured feeds/pages, dedupes stable
+URLs, scores new items with keyword weights, applies route cooldowns, and sends
+only threshold-crossing payloads to Hermes webhooks. The macOS installer runs it
+through `com.shiraoku.grok-signal-agent.signal-watcher` every 10 minutes. The
+periodic check is mechanical, but Discord posting is not: posts happen only when
+new signals cross the configured thresholds.
+
+For launchd reliability, the installer copies the watcher script and config to
+`~/.hermes/runtime/grok-signal-agent/` and points the LaunchAgent there instead
+of the repository checkout. Re-run `scripts/install-macos-launchagent.sh` after
+changing watcher code or `config/signal-watchers.json`.
+
+The default `signal-catchup` route is intentionally generic: an upstream
+watcher decides that something changed, POSTs the event to
+`/webhooks/signal-catchup`, and Hermes summarizes the payload into the
+`tech-digest` channel. The former posting cron jobs are represented as
+`tech-digest-trigger`, `morning-brief-trigger`, `nightly-dreaming-trigger`, and
+`gbrain-weekly-summary-trigger`. This avoids adding another time-based
+scheduler here.
+
+Setup outline:
+
+```bash
+# In ~/.hermes/.env, set HMAC secrets.
+WEBHOOK_ENABLED=true
+WEBHOOK_PORT=8644
+WEBHOOK_SECRET=<global-secret>
+HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET=<route-secret>
+HERMES_POST_TRIGGER_WEBHOOK_SECRET=<post-trigger-route-secret>
+
+scripts/register-hermes-webhooks.sh
+scripts/hermes-signal-watcher.sh --dry-run --allow-first-run-send
+hermes webhook list
+hermes gateway restart
+```
+
+Set `platforms.webhook.extra.host` in `~/.hermes/config.yaml` when the listener
+must bind to `127.0.0.1`; Hermes v0.14.0 does not read `WEBHOOK_HOST` from
+`.env`.
+
+For a public callback URL, put a reverse proxy or tunnel in front of the
+webhook listener and keep HMAC verification enabled. Do not expose a local Mac
+gateway directly to the internet.

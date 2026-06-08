@@ -7,7 +7,7 @@ for later digests.
 
 ## What Runs
 
-The scheduled digest cron jobs do four things:
+The event-triggered digest handler does four things:
 
 1. Reads identity from `~/.hermes/prompts/hermes-chan-identity.md`.
 2. Reads self-memory from `~/.hermes/state/hermes-chan-memory.md`.
@@ -17,6 +17,25 @@ The scheduled digest cron jobs do four things:
    `~/.hermes/state/digest-quality/`.
 5. Evaluates each digest and saves the result under
    `~/.hermes/state/evaluations/`.
+
+A Hermes webhook trigger can run the dreaming memory recomposition handler when
+an upstream event source asks for it. It reads recent conversation excerpts, digests,
+evaluations, explicit feedback, built-in Hermes memories, and prior
+reflections, then saves:
+
+```text
+~/.hermes/state/dreaming/<ts>.md
+```
+
+The raw inputs are not deleted. The job replaces only the current working
+memory view:
+
+```text
+~/.hermes/state/hermes-chan-memory.md
+```
+
+with the recomposed `# エルメスちゃんの自己メモリ` section from the report.
+This is designed as reinterpretation and synthesis, not forgetting.
 
 A weekly LaunchAgent runs on Sunday at 21:10 local time. It reads recent
 evaluations and rewrites:
@@ -31,15 +50,21 @@ That memory is then included in future digest prompts.
 
 - `prompts/hermes-chan-identity.md`: stable identity, values, and voice.
 - `prompts/evaluate-digest.md`: per-digest self-evaluation rubric.
+- `prompts/nightly-dreaming.md`: nightly memory recomposition prompt.
 - `prompts/weekly-self-reflection.md`: weekly memory update prompt.
-- `prompts/tech-digest.md`: prompt used by the `tech-digest` Hermes cron jobs.
-- `config/hermes-cronjobs.json`: declarative schedule/channel/job registry for
-  Hermes cron jobs.
-- `scripts/register-hermes-cronjobs.sh`: creates missing Hermes cron jobs from
-  the JSON registry.
+- `prompts/tech-digest.md`: prompt used by the `tech-digest` handler.
+- `config/hermes-webhooks.json`: declarative webhook trigger/channel registry.
+- `config/hermes-cronjobs.json`: disabled legacy cron registry used to remove
+  old posting cron jobs by name.
+- `scripts/register-hermes-webhooks.sh`: creates or updates Hermes webhook
+  subscriptions from the JSON registry.
+- `scripts/register-hermes-cronjobs.sh`: removes disabled legacy Hermes cron
+  jobs from the JSON registry.
 - `scripts/hermes-tech-digest-cron.sh`: implementation script run by the
-  `tech-digest` cron jobs; it generates, saves, lints, evaluates, and prints
-  the digest for Hermes cron delivery.
+  `tech-digest-trigger` route; it generates, saves, lints, evaluates, and
+  prints the digest for Hermes webhook delivery.
+- `scripts/hermes-dreaming-cron.sh`: nightly recomposition script; it saves a
+  reviewable dreaming report and refreshes the current working memory view.
 - `scripts/hermes-weekly-self-reflection.sh`: weekly memory update.
 - `scripts/hermes-gbrain-retrieval.sh`: prints high-priority guidance from
   prior digests/evaluations plus user notes, feedback, and follow-up requests.
@@ -63,6 +88,7 @@ Check self-growth logs:
 
 ```bash
 tail -f ~/.hermes/logs/gateway.log ~/.hermes/logs/gateway.error.log
+tail -f ~/.hermes/logs/hermes-dreaming.log
 tail -f ~/.hermes/logs/hermes-weekly-self-reflection.log
 ```
 
@@ -76,6 +102,12 @@ Run weekly reflection manually:
 
 ```bash
 ~/.hermes/bin/hermes-weekly-self-reflection.sh
+```
+
+Run nightly dreaming manually:
+
+```bash
+~/.hermes/scripts/hermes-dreaming-cron.sh
 ```
 
 ## Safety Boundary
@@ -134,7 +166,7 @@ Ordered so each phase is useful on its own and reversible.
 1. **Bootstrap, read-only.** Stand up gbrain with PGLite and the stdio MCP
    server. Backfill existing `~/.hermes/state/digests` and `evaluations` as
    `digest` / `evaluation` pages via `scripts/hermes-gbrain-backfill.sh`. No
-   change to scheduled jobs yet. Validate keyword search by hand.
+   change to trigger jobs yet. Validate keyword search by hand.
    Hybrid (vector) search needs an embedding provider key (OpenAI / Voyage /
    ZeroEntropy); the bootstrap defaults to `--no-embedding` so it runs with no
    key, and embeddings are enabled in Phase 2 once a key is available

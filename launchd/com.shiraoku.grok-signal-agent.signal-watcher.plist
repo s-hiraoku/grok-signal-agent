@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.shiraoku.grok-signal-agent.signal-watcher</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__HOME__/.hermes/bin/hermes-signal-watcher.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>PATH</key>
+    <string>__HOME__/.local/bin:__HOME__/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HERMES_SIGNAL_WATCHER_REPO</key>
+    <string>__RUNTIME__</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>__RUNTIME__</string>
+
+  <key>StartInterval</key>
+  <integer>600</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/.hermes/logs/hermes-signal-watcher.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.hermes/logs/hermes-signal-watcher.err.log</string>
+</dict>
+</plist>

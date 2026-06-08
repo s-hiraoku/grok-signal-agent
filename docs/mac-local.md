@@ -152,34 +152,43 @@ The script installs or refreshes Hermes' built-in Gateway LaunchAgent:
 ~/Library/LaunchAgents/ai.hermes.gateway.plist
 ```
 
-It also registers Discord scheduled posts in Hermes cron. The Hermes Gateway is
-the single scheduler for Discord posts; the LaunchAgent is only used to keep the
-Gateway process running. Older repo-managed Gateway and heartbeat LaunchAgents
-are removed by the installer.
+It also removes the old Discord posting cron jobs when they are present. The
+Hermes Gateway stays responsible for process runtime; posting work is now
+triggered by Hermes webhook subscriptions instead of wall-clock schedules.
+Older repo-managed Gateway and heartbeat LaunchAgents are removed by the
+installer.
 
-The default `tech-digest` posts three times per day in the local macOS user
-session:
+The signal watcher LaunchAgent runs from
+`~/.hermes/runtime/grok-signal-agent/`, where the installer copies the watcher
+script and `config/signal-watchers.json`. Re-run the installer after changing
+watcher code or source thresholds.
 
-- 08:00
-- 12:30
-- 18:00
+By default, event-triggered posts route to the same Discord channels as before:
 
-By default, `tech-digest` posts to `#tech-digest`. Scheduled post definitions
-live in `config/hermes-cronjobs.json`; the registration script reads that file
-and creates missing Hermes cron jobs. Add new scheduled posts by adding JSON
-entries, not by changing shell control flow.
+- `tech-digest-trigger` and `signal-catchup` post to `#tech-digest`.
+- `morning-brief-trigger` posts to `#morning-brief`.
+- `nightly-dreaming-trigger` posts to `#ask-hermes`.
+- `gbrain-weekly-summary-trigger` posts to `#weekly-review`.
+
+Webhook subscription definitions live in `config/hermes-webhooks.json`; the
+registration script reads that file and creates or updates Hermes webhook
+subscriptions. The legacy scheduled post definitions in
+`config/hermes-cronjobs.json` are kept disabled so the registrar can remove
+already-registered cron jobs by name.
 See `docs/scheduled-jobs.md` for the extension model.
 
 Validate and inspect jobs:
 
 ```bash
 scripts/register-hermes-cronjobs.sh
+scripts/register-hermes-webhooks.sh
 hermes cron list
+hermes webhook list
 launchctl print gui/$(id -u)/ai.hermes.gateway
 ```
 
 The Gateway service starts immediately. Scheduled jobs wait for the next
-matching Hermes cron trigger after installation.
+matching Hermes webhook POST after installation.
 
 The installer also installs エルメスちゃん's self-growth loop:
 
@@ -191,12 +200,29 @@ The installer also installs エルメスちゃん's self-growth loop:
 - Each digest is evaluated under `~/.hermes/state/evaluations/`.
 - Explicit Discord feedback/follow-up captures are saved under
   `~/.hermes/state/user-feedback/`.
+- A nightly dreaming job saves recomposition reports under
+  `~/.hermes/state/dreaming/` and refreshes
+  `~/.hermes/state/hermes-chan-memory.md` as the current working memory view.
 - A weekly reflection job updates `~/.hermes/state/hermes-chan-memory.md` on
   Sunday at 21:10 local time.
 - Hermes cron script timeout is set to 300 seconds so the tech digest script can
   finish X curation plus self-evaluation without being marked as failed.
 
 Details are in [self-growth.md](self-growth.md).
+
+Optional Obsidian vault access:
+
+```bash
+# Read/write within this vault only. Requires Node.js/npm for npx.
+OBSIDIAN_VAULT_PATH="$HOME/Documents/Notes" \
+  scripts/hermes-obsidian-mcp-setup.sh --restart-gateway
+
+# Safer read-only mode:
+scripts/hermes-obsidian-mcp-setup.sh --vault "$HOME/Documents/Notes" --read-only
+```
+
+After the restart, ask Hermes from Discord or the CLI to search/read/update a
+specific note in the Obsidian vault. Details are in [obsidian.md](obsidian.md).
 
 Optional Gateway hooks for memory and feedback:
 
@@ -216,6 +242,35 @@ hermes gateway run --replace --accept-hooks
 hermes hooks doctor
 hermes gateway restart
 ```
+
+Optional event-driven catch-up via webhook:
+
+```yaml
+# ~/.hermes/config.yaml
+platforms:
+  webhook:
+    enabled: true
+    extra:
+      host: "127.0.0.1"
+      port: 8644
+      secret: "<global-secret>"
+```
+
+```bash
+scripts/register-hermes-webhooks.sh
+hermes webhook list
+hermes gateway restart
+```
+
+The default `signal-catchup` subscription listens at
+`/webhooks/signal-catchup` and posts to the `tech-digest` Discord channel when
+an external service POSTs a signed event. This is for event-driven sources such
+as GitHub, release monitors, uptime alerts, RSS-to-webhook bridges, or custom
+watchers. X/news services that do not provide push events still need an
+upstream watcher; Hermes should receive the watcher's event, not poll on a cron.
+The former posting cron jobs are replaced by `/webhooks/tech-digest-trigger`,
+`/webhooks/morning-brief-trigger`, `/webhooks/nightly-dreaming-trigger`, and
+`/webhooks/gbrain-weekly-summary-trigger`.
 
 ## 7. Operate the Service
 

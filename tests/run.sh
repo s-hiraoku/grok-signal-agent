@@ -45,9 +45,9 @@ set -euo pipefail
 printf '%q ' "$@" >> "${HERMES_STUB_LOG}"
 printf '\n' >> "${HERMES_STUB_LOG}"
 
-if [[ "$1" == "cron" && "$2" == "list" ]]; then
+  if [[ "$1" == "cron" && "$2" == "list" ]]; then
   if [[ "${HERMES_EXISTING_JOB:-}" == "*" ]]; then
-    for name in "tech-digest 08:00" "tech-digest 12:30" "tech-digest 18:00" "平日9:50リマインダー" "金曜17時gbrainサマリー"; do
+    for name in "tech-digest 08:00" "tech-digest 12:30" "tech-digest 18:00" "平日9:50リマインダー" "毎晩2:30 dreaming再合成" "金曜17時gbrainサマリー"; do
       printf '  stub-%s [active]\n' "${name// /-}"
       printf '    Name:      %s\n' "${name}"
     done
@@ -63,6 +63,19 @@ if [[ "$1" == "cron" && "$2" == "create" ]]; then
 fi
 
 if [[ "$1" == "cron" && "$2" == "edit" ]]; then
+  exit 0
+fi
+
+if [[ "$1" == "cron" && "$2" == "remove" ]]; then
+  exit 0
+fi
+
+if [[ "$1" == "webhook" && "$2" == "list" ]]; then
+  echo "Webhook platform is not enabled"
+  exit 0
+fi
+
+if [[ "$1" == "webhook" && "$2" == "subscribe" ]]; then
   exit 0
 fi
 
@@ -91,7 +104,7 @@ STUB
   : > "${log_file}"
 }
 
-test_register_cronjobs_creates_missing_jobs() {
+test_register_cronjobs_removes_disabled_jobs() {
   local tmp_home output log_file
   tmp_home="$(make_tmp_home)"
   write_hermes_stub "${tmp_home}" "tech-digest 08:00"
@@ -105,13 +118,11 @@ test_register_cronjobs_creates_missing_jobs() {
     "${REPO_DIR}/scripts/register-hermes-cronjobs.sh"
   )"
 
-  assert_contains "${output}" "Already exists: tech-digest 08:00"
-  assert_contains "${output}" "Cron registration complete: 4 created, 1 updated, 1 already existed."
-  assert_file_contains "${log_file}" "cron edit --name tech-digest\\ 08:00 --schedule 0\\ 8\\ \\*\\ \\*\\ \\* --deliver discord:1510425425971515503 --prompt Run\\ the\\ tech\\ digest\\ script. --workdir '' --script hermes-tech-digest-cron.sh --no-agent stub-id"
-  assert_file_contains "${log_file}" "cron create --name tech-digest\\ 12:30 --deliver discord:1510425425971515503 --script hermes-tech-digest-cron.sh --no-agent 30\\ 12\\ \\*\\ \\*\\ \\* Run\\ the\\ tech\\ digest\\ script."
-  assert_file_contains "${log_file}" "--deliver discord:1510425534436212817 50\\ 9\\ \\*\\ \\*\\ 1-5"
-  assert_file_contains "${log_file}" "--deliver discord:1510425635745435648 --workdir ${tmp_home}/.hermes/brain 0\\ 17\\ \\*\\ \\*\\ 5"
+  assert_contains "${output}" "Removed disabled cron job: tech-digest 08:00"
+  assert_contains "${output}" "Cron registration complete: 0 created, 0 updated, 0 already existed, 6 disabled, 1 removed."
+  assert_file_contains "${log_file}" "cron remove stub-id"
   assert_file_not_contains "${log_file}" "cron create --name tech-digest\\ 08:00"
+  assert_file_not_contains "${log_file}" "cron edit --name tech-digest\\ 08:00"
 }
 
 test_register_cronjobs_rejects_unknown_channel() {
@@ -198,15 +209,211 @@ STUB
   [[ ! -e "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.discord-heartbeat.plist" ]] || fail "legacy heartbeat plist should be removed"
   [[ -e "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist" ]] || fail "weekly reflection plist should be rendered"
   assert_file_contains "${tmp_home}/hermes-calls.log" "config set cron.script_timeout_seconds 300"
+  assert_file_contains "${tmp_home}/hermes-calls.log" "cron remove"
+  assert_contains "${output}" "Skipped webhook registration because Hermes webhook platform is not enabled"
   assert_file_contains "${tmp_home}/hermes-calls.log" "gateway restart"
   [[ -x "${tmp_home}/.hermes/bin/hermes-digest-lint.sh" ]] || fail "digest linter should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-discord-feedback.sh" ]] || fail "feedback hook should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-alert.sh" ]] || fail "alert helper should be installed"
+  [[ -x "${tmp_home}/.hermes/bin/hermes-obsidian-mcp-setup.sh" ]] || fail "obsidian MCP setup helper should be installed"
+  [[ -x "${tmp_home}/.hermes/bin/hermes-jina-mcp-setup.sh" ]] || fail "jina MCP setup helper should be installed"
+  [[ -x "${tmp_home}/.hermes/bin/register-hermes-webhooks.sh" ]] || fail "webhook registration helper should be installed"
+  [[ -x "${tmp_home}/.hermes/bin/hermes-signal-watcher.sh" ]] || fail "signal watcher helper should be installed"
+  [[ -x "${tmp_home}/.hermes/runtime/grok-signal-agent/scripts/hermes-signal-watcher.py" ]] || fail "signal watcher runtime script should be installed"
+  [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/signal-watchers.json" ]] || fail "signal watcher runtime config should be installed"
+  [[ -x "${tmp_home}/.hermes/scripts/hermes-dreaming-cron.sh" ]] || fail "dreaming cron script should be installed"
+  [[ -f "${tmp_home}/.hermes/prompts/nightly-dreaming.md" ]] || fail "dreaming prompt should be installed"
+  assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.signal-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
   assert_file_not_contains "${tmp_home}/hermes-calls.log" "gateway install"
   assert_file_not_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway.plist"
   assert_file_not_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway-healthcheck.plist"
   assert_file_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist"
+  assert_file_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.signal-watcher.plist"
   assert_file_contains "${launchctl_log}" "print gui/$(id -u)/ai.hermes.gateway"
+}
+
+test_obsidian_mcp_setup_writes_read_write_config() {
+  local tmp_home stub_bin vault config output
+  tmp_home="$(mktemp -d)"
+  stub_bin="${tmp_home}/bin"
+  vault="${tmp_home}/Vault"
+  config="${tmp_home}/config.yaml"
+  mkdir -p "${stub_bin}" "${vault}/.obsidian"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${stub_bin}/npx"
+  chmod +x "${stub_bin}/npx"
+  cat > "${config}" <<'YAML'
+model:
+  provider: xai-oauth
+YAML
+
+  output="$(
+    PATH="${stub_bin}:${PATH}" \
+      "${REPO_DIR}/scripts/hermes-obsidian-mcp-setup.sh" \
+        --vault "${vault}" \
+        --config "${config}"
+  )"
+
+  assert_contains "${output}" "Configured Hermes MCP server 'obsidian'"
+  assert_file_contains "${config}" "mcp_servers:"
+  assert_file_contains "${config}" "obsidian:"
+  assert_file_contains "${config}" "@modelcontextprotocol/server-filesystem"
+  assert_file_contains "${config}" "${vault}"
+  assert_file_contains "${config}" "write_file"
+  assert_file_contains "${config}" "edit_file"
+  assert_file_contains "${config}" "create_directory"
+  assert_file_not_contains "${config}" "move_file"
+  assert_file_not_contains "${config}" "delete"
+  assert_file_contains "${config}" "provider: xai-oauth"
+}
+
+test_obsidian_mcp_setup_read_only_omits_write_tools() {
+  local tmp_home stub_bin vault config
+  tmp_home="$(mktemp -d)"
+  stub_bin="${tmp_home}/bin"
+  vault="${tmp_home}/Vault"
+  config="${tmp_home}/config.yaml"
+  mkdir -p "${stub_bin}" "${vault}/.obsidian"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${stub_bin}/npx"
+  chmod +x "${stub_bin}/npx"
+
+  PATH="${stub_bin}:${PATH}" \
+    "${REPO_DIR}/scripts/hermes-obsidian-mcp-setup.sh" \
+      --vault "${vault}" \
+      --config "${config}" \
+      --read-only >/dev/null
+
+  assert_file_contains "${config}" "search_files"
+  assert_file_contains "${config}" "read_text_file"
+  assert_file_not_contains "${config}" "write_file"
+  assert_file_not_contains "${config}" "edit_file"
+  assert_file_not_contains "${config}" "create_directory"
+}
+
+test_jina_mcp_setup_writes_reader_only_config() {
+  local tmp_home config output
+  tmp_home="$(mktemp -d)"
+  config="${tmp_home}/config.yaml"
+  cat > "${config}" <<'YAML'
+model:
+  provider: xai-oauth
+YAML
+
+  output="$(
+    "${REPO_DIR}/scripts/hermes-jina-mcp-setup.sh" \
+      --config "${config}"
+  )"
+
+  assert_contains "${output}" "Configured Hermes MCP server 'jina_reader'"
+  assert_contains "${output}" "Authorization header: none"
+  assert_file_contains "${config}" "jina_reader:"
+  assert_file_contains "${config}" "url: https://mcp.jina.ai/v1"
+  assert_file_contains "${config}" "read_url"
+  assert_file_contains "${config}" "parallel_read_url"
+  assert_file_contains "${config}" "capture_screenshot_url"
+  assert_file_contains "${config}" "search_jina_blog"
+  assert_file_not_contains "${config}" "search_web"
+  assert_file_not_contains "${config}" "sort_by_relevance"
+  assert_file_not_contains "${config}" "Authorization"
+  assert_file_contains "${config}" "provider: xai-oauth"
+}
+
+test_jina_mcp_setup_can_reference_api_key_env() {
+  local tmp_home config
+  tmp_home="$(mktemp -d)"
+  config="${tmp_home}/config.yaml"
+
+  "${REPO_DIR}/scripts/hermes-jina-mcp-setup.sh" \
+    --config "${config}" \
+    --api-key-env JINA_API_KEY >/dev/null
+
+  assert_file_contains "${config}" "Authorization"
+  assert_file_contains "${config}" 'Bearer ${JINA_API_KEY}'
+}
+
+test_dreaming_cron_recomposes_memory_and_writes_report() {
+  local tmp_home hermes_stub output report_file memory_file
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/.local/bin" "${tmp_home}/prompts" "${tmp_home}/state/digests" "${tmp_home}/state/evaluations" "${tmp_home}/state/user-feedback" "${tmp_home}/memories"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+cat <<'DREAM'
+# Dreaming Report
+
+## 入力の要約
+- 最近の明示指示と評価を確認した。
+
+## 再合成した変化
+- Zenn と wbsb.dev を技術記事ソースとして整理した。
+
+## 矛盾解決
+- AI偏重を避けつつ、必要なAI情報は一次情報で扱う。
+
+## 次の観察テーマ
+- 出典品質。
+
+# エルメスちゃんの自己メモリ
+
+## 私は誰か
+- 名前はエルメスちゃん。
+
+## 好み
+- 忘却ではなく再合成として記憶を更新する。
+
+## 最近の学び
+- Jina Readerで技術記事ソースを確認する。
+
+## 避けたい癖
+- 生ログをそのまま記憶に混ぜる。
+
+## 次に改善すること
+- 明示指示と最近の傾向を統合する。
+
+## 見守るテーマ
+- 記憶の再合成品質。
+DREAM
+STUB
+  chmod +x "${hermes_stub}"
+
+  cat > "${tmp_home}/prompts/nightly-dreaming.md" <<'PROMPT'
+# Nightly Dreaming Recomposition
+PROMPT
+  cat > "${tmp_home}/prompts/hermes-chan-identity.md" <<'IDENTITY'
+# Identity
+IDENTITY
+  cat > "${tmp_home}/state/hermes-chan-memory.md" <<'MEMORY'
+# old memory
+MEMORY
+  cat > "${tmp_home}/state/evaluations/eval.md" <<'EVAL'
+# eval
+EVAL
+  cat > "${tmp_home}/memories/MEMORY.md" <<'MEMORY'
+source memory
+MEMORY
+  cat > "${tmp_home}/memories/USER.md" <<'USER'
+source user
+USER
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${hermes_stub}" \
+    HERMES_PROMPT_DIR="${tmp_home}/prompts" \
+    HERMES_STATE_DIR="${tmp_home}/state" \
+    HERMES_LOG_DIR="${tmp_home}/logs" \
+    HERMES_MEMORY_DIR="${tmp_home}/memories" \
+    "${REPO_DIR}/scripts/hermes-dreaming-cron.sh"
+  )"
+
+  assert_contains "${output}" "nightly dreaming updated memory:"
+  memory_file="${tmp_home}/state/hermes-chan-memory.md"
+  assert_file_contains "${memory_file}" "# エルメスちゃんの自己メモリ"
+  assert_file_contains "${memory_file}" "忘却ではなく再合成"
+  assert_file_not_contains "${memory_file}" "# Dreaming Report"
+  report_file="$(find "${tmp_home}/state/dreaming" -type f -name '*.md' -print -quit)"
+  [[ -n "${report_file}" ]] || fail "expected dreaming report"
+  assert_file_contains "${report_file}" "# Dreaming Report"
+  assert_file_contains "${report_file}" "# エルメスちゃんの自己メモリ"
 }
 
 test_scheduled_prompts_require_direct_source_links() {
@@ -216,6 +423,187 @@ test_scheduled_prompts_require_direct_source_links() {
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '各ニュース項目には必ず `出典: <直接URL>`'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" "Google検索結果URLではなく"
   assert_file_contains "${REPO_DIR}/docs/scheduled-jobs.md" "Google/Web-derived items must include the original page URL"
+  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "signal-catchup"'
+  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "tech-digest-trigger"'
+  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"replaces_cron_jobs"'
+  assert_file_contains "${REPO_DIR}/config/signal-watchers.json" '"id": "zenn-trending"'
+  assert_file_contains "${REPO_DIR}/config/signal-watchers.json" '"id": "wbsb-feed"'
+  assert_file_contains "${REPO_DIR}/docs/scheduled-jobs.md" "Hermes' webhook platform"
+}
+
+test_register_webhooks_preserves_existing_secret() {
+  local tmp_home output log_file
+  tmp_home="$(make_tmp_home)"
+  write_hermes_stub "${tmp_home}" ""
+  log_file="${tmp_home}/hermes-calls.log"
+  mkdir -p "${tmp_home}/.hermes"
+  cat > "${tmp_home}/.hermes/.env" <<'ENV'
+HERMES_POST_TRIGGER_WEBHOOK_SECRET=post-secret-from-env-file
+ENV
+  cat > "${tmp_home}/.hermes/webhook_subscriptions.json" <<'JSON'
+{
+  "signal-catchup": {
+    "secret": "existing-secret"
+  }
+}
+JSON
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${tmp_home}/.local/bin/hermes" \
+    HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
+    "${REPO_DIR}/scripts/register-hermes-webhooks.sh"
+  )"
+
+  assert_contains "${output}" "Synced existing webhook: signal-catchup"
+  assert_contains "${output}" "Created webhook: tech-digest-trigger"
+  assert_contains "${output}" "Created webhook: morning-brief-trigger"
+  assert_contains "${output}" "Created webhook: nightly-dreaming-trigger"
+  assert_contains "${output}" "Created webhook: gbrain-weekly-summary-trigger"
+  assert_contains "${output}" "Webhook registration complete: 4 created, 1 updated."
+  assert_file_contains "${log_file}" "webhook subscribe signal-catchup"
+  assert_file_contains "${log_file}" "webhook subscribe tech-digest-trigger"
+  assert_file_contains "${log_file}" "hermes-tech-digest-cron.sh"
+  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1510425425971515503"
+  assert_file_contains "${log_file}" "--secret existing-secret"
+  assert_file_contains "${log_file}" "--secret post-secret-from-env-file"
+}
+
+test_signal_watcher_scores_local_feed() {
+  local tmp_home feed config output
+  tmp_home="$(mktemp -d)"
+  feed="${tmp_home}/feed.xml"
+  config="${tmp_home}/watchers.json"
+  cat > "${feed}" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Local Feed</title>
+    <item>
+      <title>Claude Code agent security release</title>
+      <link>https://example.com/agent-security</link>
+      <guid>agent-security</guid>
+      <description>AI agent security and MCP release notes.</description>
+      <pubDate>Sun, 07 Jun 2026 10:15:27 GMT</pubDate>
+    </item>
+    <item>
+      <title>Unrelated gardening note</title>
+      <link>https://example.com/garden</link>
+      <guid>garden</guid>
+      <description>not technical</description>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${tmp_home}/state.json",
+    "log_file": "${tmp_home}/watcher.log",
+    "prime_only_on_first_run": true,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET"
+  },
+  "keyword_weights": {
+    "agent": 30,
+    "security": 25,
+    "mcp": 20,
+    "release": 15
+  },
+  "sources": [
+    {
+      "id": "local-feed",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${feed}",
+      "base_score": 20,
+      "min_score": 70,
+      "route": "signal-catchup",
+      "tags": ["test"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run --allow-first-run-send)"
+
+  assert_contains "${output}" '"observed": 2'
+  assert_contains "${output}" '"candidates": 1'
+  assert_contains "${output}" '"dry_run": true'
+}
+
+test_signal_watcher_reads_env_file_for_secret() {
+  local tmp_home feed config env_file output log_file
+  tmp_home="$(mktemp -d)"
+  feed="${tmp_home}/feed.xml"
+  config="${tmp_home}/watchers.json"
+  env_file="${tmp_home}/.env"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${env_file}" <<'ENV'
+HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET=signal-secret-from-env-file
+ENV
+  cat > "${feed}" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Local Feed</title>
+    <item>
+      <title>AI agent MCP release</title>
+      <link>https://example.com/agent-release</link>
+      <guid>agent-release</guid>
+      <description>MCP release for AI agents.</description>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${tmp_home}/state.json",
+    "log_file": "${log_file}",
+    "env_file": "${env_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:1",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET"
+  },
+  "keyword_weights": {
+    "agent": 30,
+    "mcp": 20,
+    "release": 15
+  },
+  "sources": [
+    {
+      "id": "local-feed",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${feed}",
+      "base_score": 30,
+      "min_score": 70,
+      "route": "signal-catchup",
+      "tags": ["test"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --allow-first-run-send)"
+
+  assert_contains "${output}" '"candidates": 1'
+  assert_contains "${output}" '"sent": 0'
+  assert_file_contains "${log_file}" "send failed route=signal-catchup"
+  assert_file_not_contains "${log_file}" "missing secret env"
 }
 
 test_digest_linter_writes_metadata() {
@@ -445,10 +833,18 @@ STUB
 
 main() {
   local tests=(
-    test_register_cronjobs_creates_missing_jobs
+    test_register_cronjobs_removes_disabled_jobs
     test_register_cronjobs_rejects_unknown_channel
     test_installer_uses_builtin_gateway_only
+    test_obsidian_mcp_setup_writes_read_write_config
+    test_obsidian_mcp_setup_read_only_omits_write_tools
+    test_jina_mcp_setup_writes_reader_only_config
+    test_jina_mcp_setup_can_reference_api_key_env
+    test_dreaming_cron_recomposes_memory_and_writes_report
     test_scheduled_prompts_require_direct_source_links
+    test_register_webhooks_preserves_existing_secret
+    test_signal_watcher_scores_local_feed
+    test_signal_watcher_reads_env_file_for_secret
     test_digest_linter_writes_metadata
     test_digest_linter_rejects_missing_section_urls
     test_discord_feedback_hook_writes_fallback_artifact
