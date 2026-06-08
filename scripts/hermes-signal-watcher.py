@@ -230,14 +230,51 @@ def score_item(item: SignalItem, source: dict[str, Any], keyword_weights: dict[s
         " ".join(item.tags or []),
     ]).lower()
     for keyword, weight in keyword_weights.items():
-        if keyword.lower() in haystack:
+        if keyword_matches(haystack, keyword):
             score += int(weight)
             reasons.append(f"{keyword}+{weight}")
     return score, reasons
 
 
+def keyword_matches(haystack: str, keyword: str) -> bool:
+    needle = keyword.lower()
+    if re.fullmatch(r"[a-z0-9][a-z0-9 +#./-]*", needle):
+        return re.search(rf"(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])", haystack) is not None
+    return needle in haystack
+
+
 def route_url(base_url: str, route: str) -> str:
     return base_url.rstrip("/") + "/webhooks/" + route.lstrip("/")
+
+
+def canonical_url_key(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    return urllib.parse.urlunparse((
+        parsed.scheme.lower(),
+        parsed.netloc.lower(),
+        parsed.path,
+        "",
+        parsed.query,
+        "",
+    ))
+
+
+def mark_seen_item(state: dict[str, Any], item: SignalItem) -> None:
+    state.setdefault("seen", {}).setdefault(item.stable_key, {
+        "first_seen_at": now_iso(),
+        "source_id": item.source_id,
+        "title": item.title,
+        "url": item.url,
+    })
+
+
+def mark_seen_candidate(state: dict[str, Any], candidate: dict[str, Any]) -> None:
+    state.setdefault("seen", {}).setdefault(candidate["stable_key"], {
+        "first_seen_at": now_iso(),
+        "source_id": candidate["source_id"],
+        "title": candidate["title"],
+        "url": candidate["url"],
+    })
 
 
 def post_webhook(url: str, secret: str, payload: dict[str, Any], timeout: int) -> tuple[int, str]:
@@ -298,6 +335,7 @@ def main() -> int:
     max_items = int(settings.get("max_items_per_source", 20))
 
     observed: list[SignalItem] = []
+    observed_url_keys: set[str] = set()
     candidates: list[dict[str, Any]] = []
     errors: list[str] = []
 
@@ -318,6 +356,10 @@ def main() -> int:
             continue
 
         for item in items[:max_items]:
+            url_key = canonical_url_key(item.url)
+            if url_key in observed_url_keys:
+                continue
+            observed_url_keys.add(url_key)
             observed.append(item)
             key = item.stable_key
             if key in state.get("seen", {}):
@@ -342,15 +384,8 @@ def main() -> int:
                     "cooldown_minutes": int(source.get("cooldown_minutes", settings.get("default_cooldown_minutes", 90))),
                 })
 
-    for item in observed:
-        state.setdefault("seen", {}).setdefault(item.stable_key, {
-            "first_seen_at": now_iso(),
-            "source_id": item.source_id,
-            "title": item.title,
-            "url": item.url,
-        })
-
     candidates.sort(key=lambda c: c["score"], reverse=True)
+    candidate_keys = {c["stable_key"] for c in candidates}
     should_prime_only = (
         first_run
         and settings.get("prime_only_on_first_run", True)
@@ -359,17 +394,34 @@ def main() -> int:
     sent_count = 0
 
     if should_prime_only:
+        for item in observed:
+            mark_seen_item(state, item)
         log_line(log_path, f"primed {len(observed)} observed items; no webhook sent")
     else:
+        for item in observed:
+            if item.stable_key not in candidate_keys:
+                mark_seen_item(state, item)
+
         batch_min_items = int(settings.get("batch_min_items", 4))
         batch_min_score = int(settings.get("batch_min_score", 220))
         total_score = sum(c["score"] for c in candidates)
         if len(candidates) >= batch_min_items and total_score >= batch_min_score:
             batch_route = settings.get("batch_route", "tech-digest-trigger")
-            sent_count += send_candidates(batch_route, candidates, config, settings, env_file_values, args.dry_run, timeout, state, log_path)
+            sent = send_candidates(batch_route, candidates, config, settings, env_file_values, args.dry_run, timeout, state, log_path)
+            sent_count += sent
+            if sent:
+                for candidate in candidates:
+                    mark_seen_candidate(state, candidate)
         else:
+            candidates_by_route: dict[str, list[dict[str, Any]]] = {}
             for candidate in candidates:
-                sent_count += send_candidates(candidate["route"], [candidate], config, settings, env_file_values, args.dry_run, timeout, state, log_path)
+                candidates_by_route.setdefault(candidate["route"], []).append(candidate)
+            for route, route_candidates in candidates_by_route.items():
+                sent = send_candidates(route, route_candidates, config, settings, env_file_values, args.dry_run, timeout, state, log_path)
+                sent_count += sent
+                if sent:
+                    for candidate in route_candidates:
+                        mark_seen_candidate(state, candidate)
 
     state["initialized"] = True
     state.setdefault("runs", []).append({

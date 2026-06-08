@@ -606,6 +606,83 @@ JSON
   assert_file_not_contains "${log_file}" "missing secret env"
 }
 
+test_signal_watcher_retries_candidates_blocked_by_cooldown() {
+  local tmp_home feed config state output log_file seen_count
+  tmp_home="$(mktemp -d)"
+  feed="${tmp_home}/feed.xml"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "last_sent_routes": {
+    "signal-catchup": 9999999999
+  }
+}
+JSON
+  cat > "${feed}" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Local Feed</title>
+    <item>
+      <title>Claude Code agent MCP release</title>
+      <link>https://example.com/retry-candidate</link>
+      <guid>retry-candidate</guid>
+      <description>Agent release with MCP notes.</description>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:1",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET"
+  },
+  "keyword_weights": {
+    "agent": 30,
+    "mcp": 20,
+    "release": 15,
+    "claude code": 30
+  },
+  "sources": [
+    {
+      "id": "local-feed",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${feed}",
+      "base_score": 20,
+      "min_score": 70,
+      "route": "signal-catchup",
+      "tags": ["test"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}")"
+  seen_count="$(jq -r '.seen | length' "${state}")"
+
+  assert_contains "${output}" '"candidates": 1'
+  assert_contains "${output}" '"sent": 0'
+  assert_contains "${seen_count}" "0"
+  assert_file_contains "${log_file}" "cooldown route=signal-catchup candidates=1"
+}
+
 test_digest_linter_writes_metadata() {
   local tmp_home digest metadata report
   tmp_home="$(mktemp -d)"
@@ -845,6 +922,7 @@ main() {
     test_register_webhooks_preserves_existing_secret
     test_signal_watcher_scores_local_feed
     test_signal_watcher_reads_env_file_for_secret
+    test_signal_watcher_retries_candidates_blocked_by_cooldown
     test_digest_linter_writes_metadata
     test_digest_linter_rejects_missing_section_urls
     test_discord_feedback_hook_writes_fallback_artifact
