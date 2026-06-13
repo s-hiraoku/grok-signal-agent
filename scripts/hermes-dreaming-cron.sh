@@ -88,7 +88,8 @@ SQL
 
 extract_recomposed_memory() {
   awk '
-    /^# ヘルメスちゃんの自己メモリ[[:space:]]*$/ { capture=1 }
+    /^# ヘルメスちゃんの自己メモリ[[:space:]]*$/ { capture=1; print; next }
+    capture && /^# / { exit }
     capture { print }
   ' "$1"
 }

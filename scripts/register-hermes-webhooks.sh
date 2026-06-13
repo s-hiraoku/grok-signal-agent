@@ -119,6 +119,11 @@ script_prompt() {
   local script_path
   local cd_line=""
 
+  case "${script}" in
+    *-cron.sh) ;;
+    *) echo "Script-mode webhook script must match scripts/*-cron.sh for runtime sync: ${script}" >&2; exit 1 ;;
+  esac
+
   script_path="$(expand_home "~/.hermes/scripts/${script}")"
 
   if [[ -n "${workdir}" ]]; then
@@ -196,6 +201,10 @@ while IFS= read -r subscription; do
   if [[ "${mode}" == "script" ]]; then
     script="$(jq -r '.script' <<< "${subscription}")"
     workdir="$(jq -r '.workdir // empty' <<< "${subscription}")"
+    case "${script}" in
+      *-cron.sh) ;;
+      *) echo "Script-mode webhook '${name}' script must match scripts/*-cron.sh for runtime sync: ${script}" >&2; exit 1 ;;
+    esac
     if [[ ! -f "${REPO_DIR}/scripts/${script}" ]]; then
       echo "Script-mode webhook '${name}' references missing script: scripts/${script}" >&2
       exit 1

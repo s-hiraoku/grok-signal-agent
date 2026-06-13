@@ -39,16 +39,16 @@ if command -v jq >/dev/null 2>&1; then
   text="$(printf '%s' "${payload}" | jq -r '
     .text
     // .message
-    // .event.text
+    // (.event? | objects | .text?)
     // .content
-    // .extra.text
-    // .extra.message
-    // .extra.event.text
-    // .extra.event.content
+    // (.extra? | objects | .text?)
+    // (.extra? | objects | .message?)
+    // (.extra? | objects | .event? | objects | .text?)
+    // (.extra? | objects | .event? | objects | .content?)
     // empty
   ' 2>/dev/null || true)"
   if [[ -z "${text}" ]]; then
-    text="$(printf '%s' "${payload}" | jq -r '.extra.event // .event // empty' 2>/dev/null \
+    text="$(printf '%s' "${payload}" | jq -r '(.extra? | objects | .event?) // .event? // empty' 2>/dev/null \
       | sed -n "s/.*text='\([^']*\)'.*/\1/p" \
       | head -1)"
   fi

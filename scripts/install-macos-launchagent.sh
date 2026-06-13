@@ -208,15 +208,20 @@ pmset -g log 2>/dev/null | awk '
 render_plist "${WEEKLY_REFLECTION_LABEL}"
 render_plist "${SIGNAL_WATCHER_LABEL}"
 render_plist "${X_PULSE_WATCHER_LABEL}"
-ensure_gateway_hooks
-approve_gateway_hooks
 
 remove_legacy_agent "${HEARTBEAT_LABEL}"
 remove_legacy_agent "${LEGACY_GATEWAY_LABEL}"
 remove_legacy_agent "${LEGACY_HEALTHCHECK_LABEL}"
 "${REPO_DIR}/scripts/register-hermes-cronjobs.sh"
-if "${HERMES_BIN}" webhook list 2>&1 | grep -q "Webhook platform is not enabled"; then
+set +e
+webhook_list_output="$("${HERMES_BIN}" webhook list 2>&1)"
+webhook_list_status=$?
+set -e
+if [[ "${webhook_list_status}" -ne 0 && "${webhook_list_output}" == *"Webhook platform is not enabled"* ]]; then
   echo "Skipped webhook registration because Hermes webhook platform is not enabled"
+elif [[ "${webhook_list_status}" -ne 0 ]]; then
+  printf '%s\n' "${webhook_list_output}" >&2
+  exit "${webhook_list_status}"
 else
   "${REPO_DIR}/scripts/register-hermes-webhooks.sh"
 fi
@@ -227,6 +232,8 @@ install_agent "${X_PULSE_WATCHER_LABEL}"
 if [[ ! -f "${BUILTIN_GATEWAY_PLIST}" ]]; then
   "${HERMES_BIN}" gateway install
 fi
+ensure_gateway_hooks
+approve_gateway_hooks
 "${HERMES_BIN}" gateway restart
 for _ in {1..20}; do
   if [[ -f "${HOME}/.hermes/gateway_state.json" ]] && grep -q '"gateway_state":"running"' "${HOME}/.hermes/gateway_state.json"; then

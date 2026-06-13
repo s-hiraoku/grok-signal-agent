@@ -2,7 +2,7 @@
 set -euo pipefail
 
 DEFAULT_REPO="${HOME}/.hermes/runtime/grok-signal-agent"
-if [[ ! -x "${DEFAULT_REPO}/scripts/hermes-signal-watcher.py" ]]; then
+if [[ ! -f "${DEFAULT_REPO}/scripts/hermes-signal-watcher.py" ]]; then
   DEFAULT_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 REPO_DIR="${HERMES_SIGNAL_WATCHER_REPO:-${DEFAULT_REPO}}"

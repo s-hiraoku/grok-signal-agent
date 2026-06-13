@@ -173,7 +173,7 @@ artifact persistence, external command calls, or custom post-processing:
   "name": "example-script-trigger",
   "channel": "weekly-review",
   "mode": "script",
-  "script": "example-script-job.sh",
+  "script": "example-script-cron.sh",
   "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
   "events": [],
   "skills": []
@@ -181,7 +181,9 @@ artifact persistence, external command calls, or custom post-processing:
 ```
 
 Scripts must live under `~/.hermes/scripts/` at runtime. The installer copies
-repository scripts matching `scripts/*-cron.sh` there.
+repository scripts matching `scripts/*-cron.sh` there, and webhook registration
+rejects script-mode entries whose script name does not match that runtime sync
+contract.
 
 `hermes-morning-brief-cron.sh` intentionally does its own source collection
 instead of relying on a prompt-only search request. It reads direct feeds such

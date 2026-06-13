@@ -21,6 +21,7 @@ from typing import Any
 
 X_URL_RE = re.compile(r"https?://(?:x\.com|twitter\.com)/[^\s<>()\"']+", re.IGNORECASE)
 NUM_RE = re.compile(r"-?\d+")
+COUNT_RE = re.compile(r"(?i)(\d+(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)([kmb])?")
 
 
 def expand_path(value: str) -> Path:
@@ -130,6 +131,17 @@ def parse_int(value: str, default: int = 0) -> int:
     return int(match.group(0))
 
 
+def parse_count(value: str, default: int = 0) -> int:
+    text = str(value).strip()
+    match = COUNT_RE.search(text)
+    if not match:
+        return default
+    number = float(match.group(1).replace(",", ""))
+    suffix = (match.group(2) or "").lower()
+    multiplier = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}.get(suffix, 1)
+    return int(number * multiplier)
+
+
 def field_value(body: str, name: str) -> str:
     pattern = re.compile(rf"(?im)^\s*{re.escape(name)}\s*:\s*(.+?)\s*$")
     match = pattern.search(body)
@@ -143,11 +155,11 @@ def parse_candidate_blocks(text: str) -> list[dict[str, Any]]:
         urls = extract_x_urls(block)
         if not urls:
             continue
-        likes = parse_int(field_value(block, "likes"))
-        reposts = parse_int(field_value(block, "reposts"))
-        replies = parse_int(field_value(block, "replies"))
-        quotes = parse_int(field_value(block, "quotes"))
-        views = max(parse_int(field_value(block, "views")), parse_int(field_value(block, "impressions")))
+        likes = parse_count(field_value(block, "likes"))
+        reposts = parse_count(field_value(block, "reposts"))
+        replies = parse_count(field_value(block, "replies"))
+        quotes = parse_count(field_value(block, "quotes"))
+        views = max(parse_count(field_value(block, "views")), parse_count(field_value(block, "impressions")))
         independent_posts = parse_int(field_value(block, "independent_posts"), 1)
         posted_minutes_ago = parse_int(field_value(block, "posted_minutes_ago"), 9999)
         account_type = (field_value(block, "account_type") or "unknown").lower()
@@ -385,7 +397,7 @@ def main() -> int:
             log_path,
         )
         print(json.dumps({"total_urls": 0, "new_urls": 0, "sent": 0, "errors": [str(exc)], "dry_run": args.dry_run}, ensure_ascii=False))
-        return 0
+        return 1
 
     urls = extract_x_urls(curation)
     parsed_candidates = parse_candidate_blocks(curation)

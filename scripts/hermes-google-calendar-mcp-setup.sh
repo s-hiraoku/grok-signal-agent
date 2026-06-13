@@ -17,6 +17,7 @@ ALLOW_WRITE=0
 PUBLIC_CLIENT=0
 LOGIN=0
 RESTART_GATEWAY=0
+HELPER_PATH="${GOOGLE_CALENDAR_HELPER_PATH:-${HOME}/.hermes/skills/productivity/google-workspace/scripts/google_api.py}"
 
 usage() {
   cat <<'USAGE'
@@ -142,6 +143,7 @@ if ! [[ "${REDIRECT_PORT}" =~ ^[0-9]+$ ]] || (( REDIRECT_PORT > 65535 )); then
 fi
 
 CONFIG_FILE="$(ruby -e 'puts File.expand_path(ARGV.fetch(0))' "${CONFIG_FILE}")"
+HELPER_PATH="$(ruby -e 'puts File.expand_path(ARGV.fetch(0))' "${HELPER_PATH}")"
 
 mkdir -p "$(dirname "${CONFIG_FILE}")"
 CREATED_CONFIG=0
@@ -204,10 +206,105 @@ File.write(tmp, YAML.dump(config))
 File.rename(tmp, config_file)
 RUBY
 
+mkdir -p "$(dirname "${HELPER_PATH}")"
+cat > "${HELPER_PATH}" <<'PY'
+#!/usr/bin/env python3
+"""Small Hermes Calendar MCP proxy used by hermes-morning-brief-cron.sh."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+def extract_json_array(text: str) -> list[dict]:
+    stripped = text.strip()
+    if stripped.startswith("["):
+        return json.loads(stripped)
+    match = re.search(r"\[[\s\S]*\]", stripped)
+    if not match:
+        raise ValueError("no JSON array found in Hermes response")
+    return json.loads(match.group(0))
+
+
+def normalize_events(raw_events: object) -> list[dict[str, str]]:
+    events: list[dict[str, str]] = []
+    if not isinstance(raw_events, list):
+        return events
+    for raw in raw_events:
+        if not isinstance(raw, dict):
+            continue
+        events.append(
+            {
+                "summary": str(raw.get("summary") or raw.get("title") or "(タイトルなし)"),
+                "start": str(raw.get("start") or raw.get("startTime") or ""),
+                "end": str(raw.get("end") or raw.get("endTime") or ""),
+                "location": str(raw.get("location") or ""),
+                "htmlLink": str(raw.get("htmlLink") or raw.get("url") or raw.get("link") or ""),
+            }
+        )
+    return events
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="resource", required=True)
+    calendar = subparsers.add_parser("calendar")
+    calendar_sub = calendar.add_subparsers(dest="action", required=True)
+    list_cmd = calendar_sub.add_parser("list")
+    list_cmd.add_argument("--start", required=True)
+    list_cmd.add_argument("--end", required=True)
+    list_cmd.add_argument("--max", default="6")
+    args = parser.parse_args()
+
+    if args.resource != "calendar" or args.action != "list":
+        parser.error("only calendar list is supported")
+
+    hermes_bin = os.environ.get("HERMES_BIN") or str(Path.home() / ".local/bin/hermes")
+    server_name = os.environ.get("HERMES_GOOGLE_CALENDAR_MCP_SERVER", "__HERMES_GOOGLE_CALENDAR_MCP_SERVER__")
+    prompt = (
+        "Use the Google Calendar MCP tools to list calendar events between "
+        f"{args.start} and {args.end}. Return ONLY a JSON array with at most {args.max} "
+        "objects. Each object must have string fields: summary, start, end, "
+        "location, htmlLink. Do not include markdown or commentary."
+    )
+    completed = subprocess.run(
+        [hermes_bin, "-t", server_name, "-z", prompt],
+        check=False,
+        text=True,
+        capture_output=True,
+        timeout=int(os.environ.get("HERMES_GOOGLE_CALENDAR_HELPER_TIMEOUT", "90")),
+    )
+    if completed.returncode != 0:
+        sys.stderr.write(completed.stderr or completed.stdout)
+        return completed.returncode
+    try:
+        events = normalize_events(extract_json_array(completed.stdout))
+    except Exception as exc:
+        sys.stderr.write(f"failed to parse Hermes Calendar response: {exc}\n")
+        return 1
+    print(json.dumps(events, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+PY
+ruby -e 'path, name = ARGV; File.write(path, File.read(path).gsub("__HERMES_GOOGLE_CALENDAR_MCP_SERVER__", name))' \
+  "${HELPER_PATH}" "${SERVER_NAME}"
+chmod 755 "${HELPER_PATH}"
+
 echo "Configured Hermes MCP server '${SERVER_NAME}' for Google Calendar:"
 echo "  ${CALENDAR_MCP_URL}"
 echo "Config updated:"
 echo "  ${CONFIG_FILE}"
+echo "Morning brief Calendar helper installed:"
+echo "  ${HELPER_PATH}"
 if [[ -n "${BACKUP_FILE}" ]]; then
   echo "Backup written:"
   echo "  ${BACKUP_FILE}"

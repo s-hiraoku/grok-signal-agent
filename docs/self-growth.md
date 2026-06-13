@@ -7,7 +7,7 @@ for later digests.
 
 ## What Runs
 
-The event-triggered digest handler does four things:
+The event-triggered digest handler does five things:
 
 1. Reads identity from `~/.hermes/prompts/hermes-chan-identity.md`.
 2. Reads self-memory from `~/.hermes/state/hermes-chan-memory.md`.

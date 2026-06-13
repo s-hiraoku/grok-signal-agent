@@ -14,6 +14,20 @@ assert_contains() {
   [[ "${haystack}" == *"${needle}"* ]] || fail "expected output to contain: ${needle}"
 }
 
+assert_eq() {
+  local actual="$1"
+  local expected="$2"
+  local label="${3:-value}"
+  [[ "${actual}" == "${expected}" ]] || fail "expected ${label}=${expected}, got ${actual}"
+}
+
+assert_json_eq() {
+  local json="$1"
+  local expr="$2"
+  local expected="$3"
+  assert_eq "$(jq -r "${expr}" <<< "${json}")" "${expected}" "${expr}"
+}
+
 assert_file_contains() {
   local file="$1"
   local needle="$2"
@@ -72,7 +86,7 @@ fi
 
 if [[ "$1" == "webhook" && "$2" == "list" ]]; then
   echo "Webhook platform is not enabled"
-  exit 0
+  exit "${HERMES_WEBHOOK_LIST_STATUS:-0}"
 fi
 
 if [[ "$1" == "webhook" && "$2" == "subscribe" ]]; then
@@ -90,6 +104,7 @@ fi
 if [[ "$1" == "gateway" && "$2" == "install" ]]; then
   mkdir -p "${HOME}/Library/LaunchAgents"
   printf '<plist/>\n' > "${HOME}/Library/LaunchAgents/ai.hermes.gateway.plist"
+  [[ -f "${HOME}/.hermes/config.yaml" ]] || printf 'hooks: {}\n' > "${HOME}/.hermes/config.yaml"
   exit 0
 fi
 
@@ -404,6 +419,7 @@ STUB
     PATH="${stub_bin}:${PATH}" \
     HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
     HERMES_EXISTING_JOB="*" \
+    HERMES_WEBHOOK_LIST_STATUS=1 \
     LAUNCHCTL_STUB_LOG="${launchctl_log}" \
     "${REPO_DIR}/scripts/install-macos-launchagent.sh"
   )"
@@ -455,6 +471,52 @@ STUB
   assert_file_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.signal-watcher.plist"
   assert_file_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.x-pulse-watcher.plist"
   assert_file_contains "${launchctl_log}" "print gui/$(id -u)/ai.hermes.gateway"
+}
+
+test_installer_installs_gateway_before_merging_hooks() {
+  local tmp_home stub_bin launchctl_log output
+  tmp_home="$(make_tmp_home)"
+  write_hermes_stub "${tmp_home}" "*"
+  stub_bin="${tmp_home}/stub-bin"
+  launchctl_log="${tmp_home}/launchctl-calls.log"
+  mkdir -p "${stub_bin}"
+
+  cat > "${stub_bin}/launchctl" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%q ' "$@" >> "${LAUNCHCTL_STUB_LOG}"
+printf '\n' >> "${LAUNCHCTL_STUB_LOG}"
+if [[ "$1" == "print" ]]; then
+  printf 'state = running\n'
+fi
+exit 0
+STUB
+  chmod +x "${stub_bin}/launchctl"
+
+  cat > "${stub_bin}/pmset" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+  chmod +x "${stub_bin}/pmset"
+
+  : > "${launchctl_log}"
+  output="$(
+    HOME="${tmp_home}" \
+    PATH="${stub_bin}:${PATH}" \
+    HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
+    HERMES_EXISTING_JOB="*" \
+    HERMES_WEBHOOK_LIST_STATUS=1 \
+    LAUNCHCTL_STUB_LOG="${launchctl_log}" \
+    "${REPO_DIR}/scripts/install-macos-launchagent.sh"
+  )"
+
+  assert_contains "${output}" "Skipped webhook registration because Hermes webhook platform is not enabled"
+  assert_file_contains "${tmp_home}/hermes-calls.log" "gateway install"
+  assert_file_contains "${tmp_home}/hermes-calls.log" "gateway restart"
+  assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-discord-feedback.sh"
+  assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-discord-feedback.sh"
 }
 
 test_obsidian_mcp_setup_writes_read_write_config() {
@@ -556,21 +618,26 @@ test_jina_mcp_setup_can_reference_api_key_env() {
 }
 
 test_google_calendar_mcp_setup_writes_read_only_oauth_config() {
-  local tmp_home config output
+  local tmp_home config helper_path output
   tmp_home="$(mktemp -d)"
   config="${tmp_home}/config.yaml"
+  helper_path="${tmp_home}/google_api.py"
   cat > "${config}" <<'YAML'
 model:
   provider: xai-oauth
 YAML
 
   output="$(
+    GOOGLE_CALENDAR_HELPER_PATH="${helper_path}" \
     "${REPO_DIR}/scripts/hermes-google-calendar-mcp-setup.sh" \
       --config "${config}"
   )"
 
   assert_contains "${output}" "Configured Hermes MCP server 'google_calendar'"
+  assert_contains "${output}" "Morning brief Calendar helper installed:"
   assert_contains "${output}" "Mode: read-only Calendar tools"
+  [[ -x "${helper_path}" ]] || fail "calendar helper should be executable"
+  assert_file_contains "${helper_path}" 'os.environ.get("HERMES_GOOGLE_CALENDAR_MCP_SERVER", "google_calendar")'
   assert_file_contains "${config}" "google_calendar:"
   assert_file_contains "${config}" "url: https://calendarmcp.googleapis.com/mcp/v1"
   assert_file_contains "${config}" "auth: oauth"
@@ -589,18 +656,22 @@ YAML
 }
 
 test_google_calendar_mcp_setup_can_enable_write_tools_and_public_client() {
-  local tmp_home config
+  local tmp_home config helper_path
   tmp_home="$(mktemp -d)"
   config="${tmp_home}/config.yaml"
+  helper_path="${tmp_home}/calendar_ro_api.py"
 
-  "${REPO_DIR}/scripts/hermes-google-calendar-mcp-setup.sh" \
-    --config "${config}" \
-    --name calendar_ro \
-    --client-id-env CUSTOM_CALENDAR_CLIENT_ID \
-    --public-client \
-    --redirect-port 56122 \
-    --allow-write >/dev/null
+  GOOGLE_CALENDAR_HELPER_PATH="${helper_path}" \
+    "${REPO_DIR}/scripts/hermes-google-calendar-mcp-setup.sh" \
+      --config "${config}" \
+      --name calendar_ro \
+      --client-id-env CUSTOM_CALENDAR_CLIENT_ID \
+      --public-client \
+      --redirect-port 56122 \
+      --allow-write >/dev/null
 
+  [[ -x "${helper_path}" ]] || fail "calendar helper should be executable"
+  assert_file_contains "${helper_path}" 'os.environ.get("HERMES_GOOGLE_CALENDAR_MCP_SERVER", "calendar_ro")'
   assert_file_contains "${config}" "calendar_ro:"
   assert_file_contains "${config}" 'client_id: "${CUSTOM_CALENDAR_CLIENT_ID}"'
   assert_file_not_contains "${config}" "client_secret"
@@ -653,6 +724,9 @@ cat <<'DREAM'
 
 ## 見守るテーマ
 - 記憶の再合成品質。
+
+# 付録
+- これは report だけに残る。
 DREAM
 STUB
   chmod +x "${hermes_stub}"
@@ -691,10 +765,12 @@ USER
   assert_file_contains "${memory_file}" "# ヘルメスちゃんの自己メモリ"
   assert_file_contains "${memory_file}" "忘却ではなく再合成"
   assert_file_not_contains "${memory_file}" "# Dreaming Report"
+  assert_file_not_contains "${memory_file}" "# 付録"
   report_file="$(find "${tmp_home}/state/dreaming" -type f -name '*.md' -print -quit)"
   [[ -n "${report_file}" ]] || fail "expected dreaming report"
   assert_file_contains "${report_file}" "# Dreaming Report"
   assert_file_contains "${report_file}" "# ヘルメスちゃんの自己メモリ"
+  assert_file_contains "${report_file}" "# 付録"
 }
 
 test_review_cron_reports_gbrain_and_honcho_status() {
@@ -921,6 +997,106 @@ JSON
   assert_file_contains "${log_file}" "--deliver-chat-id 1514063816093335653"
 }
 
+test_register_webhooks_rejects_script_names_outside_runtime_cron_pattern() {
+  local tmp_home webhooks_config cron_config output status
+  tmp_home="$(make_tmp_home)"
+  write_hermes_stub "${tmp_home}" ""
+  webhooks_config="${tmp_home}/webhooks.json"
+  cron_config="${tmp_home}/cronjobs.json"
+  cat > "${cron_config}" <<'JSON'
+{
+  "version": 1,
+  "channels": {
+    "tech-signals": "discord:123"
+  },
+  "jobs": []
+}
+JSON
+  cat > "${webhooks_config}" <<'JSON'
+{
+  "version": 1,
+  "subscriptions": [
+    {
+      "name": "bad-script-trigger",
+      "enabled": true,
+      "channel": "tech-signals",
+      "mode": "script",
+      "script": "example-script-job.sh",
+      "prompt": "",
+      "events": [],
+      "skills": []
+    }
+  ]
+}
+JSON
+
+  set +e
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${tmp_home}/.local/bin/hermes" \
+    HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
+    HERMES_WEBHOOKS_CONFIG="${webhooks_config}" \
+    HERMES_CRONJOBS_CONFIG="${cron_config}" \
+    "${REPO_DIR}/scripts/register-hermes-webhooks.sh" 2>&1
+  )"
+  status=$?
+  set -e
+
+  [[ "${status}" -ne 0 ]] || fail "expected non-cron script-mode webhook to fail"
+  assert_contains "${output}" "must match scripts/*-cron.sh"
+}
+
+test_posting_admin_escapes_test_payload_and_rejects_unknown_routes() {
+  local tmp_home tmp_repo hermes_stub webhook_log output status
+  tmp_home="$(make_tmp_home)"
+  tmp_repo="${tmp_home}/repo"
+  webhook_log="${tmp_home}/webhook-payloads.log"
+  mkdir -p "${tmp_repo}/config"
+  cp "${REPO_DIR}/config/hermes-cronjobs.json" "${tmp_repo}/config/hermes-cronjobs.json"
+  cp "${REPO_DIR}/config/hermes-webhooks.json" "${tmp_repo}/config/hermes-webhooks.json"
+  cp "${REPO_DIR}/config/signal-watchers.json" "${tmp_repo}/config/signal-watchers.json"
+  cp "${REPO_DIR}/config/x-pulse-watchers.json" "${tmp_repo}/config/x-pulse-watchers.json"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "webhook" && "$2" == "test" ]]; then
+  [[ "$4" == "--payload" ]] || exit 64
+  printf '%s\n%s\n' "$3" "$5" >> "${HERMES_TEST_WEBHOOK_LOG}"
+  jq -e . >/dev/null <<< "$5"
+  exit 0
+fi
+exit 0
+STUB
+  chmod +x "${hermes_stub}"
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${hermes_stub}" \
+    HERMES_POSTING_REPO="${tmp_repo}" \
+    HERMES_TEST_WEBHOOK_LOG="${webhook_log}" \
+    "${REPO_DIR}/scripts/hermes-posting-admin.sh" test-webhooks 'quote"route'
+  )"
+
+  [[ -z "${output}" ]] || fail "posting admin test-webhooks should be quiet on success"
+  assert_file_contains "${webhook_log}" 'quote"route'
+  assert_eq "$(sed -n '2p' "${webhook_log}" | jq -r '.route')" 'quote"route' "test webhook route"
+
+  set +e
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${hermes_stub}" \
+    HERMES_POSTING_REPO="${tmp_repo}" \
+    "${REPO_DIR}/scripts/hermes-posting-admin.sh" set-source-route zenn-trending missing-route 2>&1
+  )"
+  status=$?
+  set -e
+
+  [[ "${status}" -ne 0 ]] || fail "expected unknown route update to fail"
+  assert_contains "${output}" "unknown enabled webhook route: missing-route"
+  assert_file_not_contains "${tmp_repo}/config/signal-watchers.json" "missing-route"
+}
+
 test_signal_watcher_scores_local_feed() {
   local tmp_home feed config output
   tmp_home="$(mktemp -d)"
@@ -985,9 +1161,9 @@ JSON
 
   output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run --allow-first-run-send)"
 
-  assert_contains "${output}" '"observed": 2'
-  assert_contains "${output}" '"candidates": 1'
-  assert_contains "${output}" '"dry_run": true'
+  assert_json_eq "${output}" ".observed" "2"
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_json_eq "${output}" ".dry_run" "true"
 }
 
 test_signal_watcher_reads_env_file_for_secret() {
@@ -1064,8 +1240,8 @@ JSON
     "${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --allow-first-run-send
   )"
 
-  assert_contains "${output}" '"candidates": 1'
-  assert_contains "${output}" '"sent": 0'
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_json_eq "${output}" ".sent" "0"
   assert_file_contains "${log_file}" "send failed route=signal-catchup"
   assert_file_not_contains "${log_file}" "missing secret env"
   assert_file_contains "${alert_log}" "Hermes signal watcher webhook send failed"
@@ -1125,8 +1301,8 @@ JSON
 
   output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run --allow-first-run-send)"
 
-  assert_contains "${output}" '"observed": 2'
-  assert_contains "${output}" '"candidates": 2'
+  assert_json_eq "${output}" ".observed" "2"
+  assert_json_eq "${output}" ".candidates" "2"
   assert_file_contains "${tmp_home}/watcher.log" "dry-run route=signal-catchup candidates=2"
 }
 
@@ -1201,9 +1377,9 @@ JSON
   output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}")"
   seen_count="$(jq -r '.seen | length' "${state}")"
 
-  assert_contains "${output}" '"candidates": 1'
-  assert_contains "${output}" '"sent": 0'
-  assert_contains "${seen_count}" "0"
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_json_eq "${output}" ".sent" "0"
+  assert_eq "${seen_count}" "0" "seen_count"
   assert_file_contains "${log_file}" "cooldown route=signal-catchup candidates=1"
 }
 
@@ -1299,7 +1475,7 @@ JSON
 
   output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run --allow-first-run-send)"
 
-  assert_contains "${output}" '"candidates": 3'
+  assert_json_eq "${output}" ".candidates" "3"
   assert_file_contains "${log_file}" "dry-run route=tech-digest-trigger candidates=2"
   assert_file_contains "${log_file}" "dry-run route=zenn-dev-trigger candidates=1"
   assert_file_not_contains "${log_file}" "dry-run route=tech-digest-trigger candidates=3"
@@ -1358,10 +1534,10 @@ JSON
   output="$("${REPO_DIR}/scripts/hermes-x-pulse-watcher.py" --config "${config}" --sample-file "${sample}")"
   seen_count="$(jq -r '.seen_urls | length' "${state}")"
 
-  assert_contains "${output}" '"total_urls": 2'
-  assert_contains "${output}" '"sent": 0'
-  assert_contains "${output}" '"prime_only": true'
-  assert_contains "${seen_count}" "2"
+  assert_json_eq "${output}" ".total_urls" "2"
+  assert_json_eq "${output}" ".sent" "0"
+  assert_json_eq "${output}" ".prime_only" "true"
+  assert_eq "${seen_count}" "2" "seen_count"
 }
 
 test_x_pulse_watcher_detects_sample_pulse() {
@@ -1401,11 +1577,11 @@ CANDIDATE
 topic: Browser security update
 url: https://twitter.com/webdev/status/10003
 posted_minutes_ago: 75
-likes: 140
-reposts: 18
-replies: 12
-quotes: 9
-views: 18000
+likes: 1,234
+reposts: 1
+replies: 2
+quotes: 1
+views: 12K
 account_type: notable
 independent_posts: 3
 reason: browser security update with early engagement
@@ -1441,12 +1617,12 @@ JSON
 
   output="$("${REPO_DIR}/scripts/hermes-x-pulse-watcher.py" --config "${config}" --sample-file "${sample}" --dry-run)"
 
-  assert_contains "${output}" '"total_urls": 3'
-  assert_contains "${output}" '"new_urls": 1'
-  assert_contains "${output}" '"candidate_count": 3'
-  assert_contains "${output}" '"qualified_count": 1'
-  assert_contains "${output}" '"should_trigger": true'
-  assert_contains "${output}" '"dry_run": true'
+  assert_json_eq "${output}" ".total_urls" "3"
+  assert_json_eq "${output}" ".new_urls" "1"
+  assert_json_eq "${output}" ".candidate_count" "3"
+  assert_json_eq "${output}" ".qualified_count" "1"
+  assert_json_eq "${output}" ".should_trigger" "true"
+  assert_json_eq "${output}" ".dry_run" "true"
 }
 
 test_x_pulse_watcher_rejects_low_engagement_url_bundle() {
@@ -1533,10 +1709,10 @@ JSON
 
   output="$("${REPO_DIR}/scripts/hermes-x-pulse-watcher.py" --config "${config}" --sample-file "${sample}" --dry-run)"
 
-  assert_contains "${output}" '"total_urls": 4'
-  assert_contains "${output}" '"candidate_count": 4'
-  assert_contains "${output}" '"qualified_count": 0'
-  assert_contains "${output}" '"should_trigger": false'
+  assert_json_eq "${output}" ".total_urls" "4"
+  assert_json_eq "${output}" ".candidate_count" "4"
+  assert_json_eq "${output}" ".qualified_count" "0"
+  assert_json_eq "${output}" ".should_trigger" "false"
 }
 
 test_x_pulse_watcher_treats_search_failure_as_nonfatal() {
@@ -1575,8 +1751,8 @@ JSON
   status=$?
   set -e
 
-  [[ "${status}" -eq 0 ]] || fail "expected x pulse watcher search failure to be nonfatal"
-  assert_contains "${output}" '"sent": 0'
+  [[ "${status}" -ne 0 ]] || fail "expected x pulse watcher search failure to be fatal"
+  assert_json_eq "${output}" ".sent" "0"
   assert_contains "${output}" '"errors":'
   assert_file_contains "${tmp_home}/x-pulse.log" "x_search failed"
   assert_file_contains "${alert_log}" "Hermes X pulse watcher x_search failed"
@@ -1655,9 +1831,9 @@ DIGEST
     "${REPO_DIR}/scripts/hermes-digest-lint.sh" "${digest}" "${metadata}" "${report}"
 
   assert_file_contains "${report}" "Status: pass"
-  assert_contains "$(jq -r '.status' "${metadata}")" "pass"
-  assert_contains "$(jq -r '.section_count' "${metadata}")" "8"
-  assert_contains "$(jq -r '.sections[0].accounts[0]' "${metadata}")" "openai"
+  assert_eq "$(jq -r '.status' "${metadata}")" "pass" "digest status"
+  assert_eq "$(jq -r '.section_count' "${metadata}")" "8" "digest section count"
+  assert_eq "$(jq -r '.sections[0].accounts[0]' "${metadata}")" "openai" "digest first account"
 }
 
 test_digest_linter_rejects_missing_section_urls() {
@@ -1701,6 +1877,39 @@ test_discord_feedback_hook_writes_fallback_artifact() {
   [[ -n "${feedback_file}" ]] || fail "expected feedback artifact"
   assert_file_contains "${feedback_file}" 'type: "feedback"'
   assert_file_contains "${feedback_file}" "今日のセキュリティ項目は良かった"
+}
+
+test_discord_feedback_and_remember_hooks_accept_string_event_payloads() {
+  local tmp_home feedback_file gbrain_stub capture_log
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/brain"
+
+  printf '%s\n' '{"event":"MessageCreate(text='\''評価: event string safe feedback'\'')","user_id":"u1","channel_id":"c1"}' \
+    | HOME="${tmp_home}" HERMES_STATE_DIR="${tmp_home}/state" \
+      "${REPO_DIR}/scripts/hermes-discord-feedback.sh"
+
+  feedback_file="$(find "${tmp_home}/state/user-feedback" -type f -name 'feedback-*.md' -print -quit)"
+  [[ -n "${feedback_file}" ]] || fail "expected feedback artifact from string event"
+  assert_file_contains "${feedback_file}" "event string safe feedback"
+
+  gbrain_stub="${tmp_home}/gbrain"
+  capture_log="${tmp_home}/captured-note.txt"
+  cat > "${gbrain_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == "capture" && "$2" == "--stdin" ]] || exit 64
+cat > "${GBRAIN_TEST_CAPTURE_LOG}"
+STUB
+  chmod +x "${gbrain_stub}"
+
+  printf '%s\n' '{"extra":{"event":"MessageCreate(text='\''覚えて: event string safe memory'\'')"}}' \
+    | HOME="${tmp_home}" \
+      GBRAIN_BIN="${gbrain_stub}" \
+      GBRAIN_BRAIN="${tmp_home}/brain" \
+      GBRAIN_TEST_CAPTURE_LOG="${capture_log}" \
+      "${REPO_DIR}/scripts/hermes-gbrain-remember.sh"
+
+  assert_file_contains "${capture_log}" "event string safe memory"
 }
 
 test_tech_digest_cron_runs_lint_and_low_score_alert() {
@@ -1802,7 +2011,7 @@ STUB
   assert_contains "${output}" "更新:"
   metadata_file="$(find "${tmp_home}/.hermes/state/digest-metadata" -type f -name '*.json' -print -quit)"
   [[ -n "${metadata_file}" ]] || fail "expected digest metadata"
-  assert_contains "$(jq -r '.status' "${metadata_file}")" "pass"
+  assert_eq "$(jq -r '.status' "${metadata_file}")" "pass" "digest status"
   alert_log="${tmp_home}/.hermes/logs/hermes-alerts.log"
   assert_file_contains "${alert_log}" "Hermes digest self-evaluation is low"
 }
@@ -1816,6 +2025,7 @@ main() {
     test_morning_brief_includes_today_calendar_events
     test_monday_morning_brief_includes_weekly_calendar_events
     test_installer_uses_builtin_gateway_only
+    test_installer_installs_gateway_before_merging_hooks
     test_obsidian_mcp_setup_writes_read_write_config
     test_obsidian_mcp_setup_read_only_omits_write_tools
     test_jina_mcp_setup_writes_reader_only_config
@@ -1828,6 +2038,8 @@ main() {
     test_scheduled_prompts_require_direct_source_links
     test_register_webhooks_preserves_existing_secret
     test_register_webhooks_uses_local_channel_overrides
+    test_register_webhooks_rejects_script_names_outside_runtime_cron_pattern
+    test_posting_admin_escapes_test_payload_and_rejects_unknown_routes
     test_signal_watcher_scores_local_feed
     test_signal_watcher_reads_env_file_for_secret
     test_signal_watcher_parses_nested_html_links
@@ -1840,6 +2052,7 @@ main() {
     test_digest_linter_writes_metadata
     test_digest_linter_rejects_missing_section_urls
     test_discord_feedback_hook_writes_fallback_artifact
+    test_discord_feedback_and_remember_hooks_accept_string_event_payloads
     test_tech_digest_cron_runs_lint_and_low_score_alert
   )
   local test_name

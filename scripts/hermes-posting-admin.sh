@@ -165,13 +165,31 @@ cmd_dry_run_watchers() {
 
 cmd_test_webhooks() {
   local routes=("$@")
-  local route
+  local route payload
   if [[ "${#routes[@]}" -eq 0 ]]; then
     routes=(signal-catchup zenn-dev-trigger wbsb-trigger)
   fi
+  need_jq
   for route in "${routes[@]}"; do
-    "${HERMES_BIN}" webhook test "${route}" --payload "{\"event_type\":\"posting_admin_test\",\"source\":\"hermes-posting-admin\",\"route\":\"${route}\",\"url\":\"https://github.com/s-hiraoku/grok-signal-agent\"}"
+    payload="$(
+      jq -cn \
+        --arg route "${route}" \
+        --arg url "https://github.com/s-hiraoku/grok-signal-agent" \
+        '{event_type:"posting_admin_test", source:"hermes-posting-admin", route:$route, url:$url}'
+    )"
+    "${HERMES_BIN}" webhook test "${route}" --payload "${payload}"
   done
+}
+
+route_exists() {
+  local route="$1"
+  need_jq
+  jq -e --arg route "${route}" '
+    any(.subscriptions[];
+      ((if has("enabled") then .enabled else true end) == true)
+      and (.name == $route)
+    )
+  ' "${repo_dir}/config/hermes-webhooks.json" >/dev/null
 }
 
 update_source_field() {
@@ -216,6 +234,7 @@ case "${command}" in
     ;;
   set-source-route)
     [[ "$#" -eq 3 ]] || die "usage: set-source-route <source-id> <route>"
+    route_exists "$3" || die "unknown enabled webhook route: $3"
     update_source_field "$2" route "$3"
     ;;
   set-source-threshold)

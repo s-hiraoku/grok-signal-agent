@@ -26,21 +26,21 @@ if command -v jq >/dev/null 2>&1; then
   text="$(printf '%s' "${payload}" | jq -r '
     .text
     // .message
-    // .event.text
+    // (.event? | objects | .text?)
     // .content
-    // .extra.text
-    // .extra.message
-    // .extra.event.text
-    // .extra.event.content
+    // (.extra? | objects | .text?)
+    // (.extra? | objects | .message?)
+    // (.extra? | objects | .event? | objects | .text?)
+    // (.extra? | objects | .event? | objects | .content?)
     // empty
   ' 2>/dev/null || true)"
   if [[ -z "${text}" ]]; then
-    text="$(printf '%s' "${payload}" | jq -r '.extra.event // .event // empty' 2>/dev/null \
+    text="$(printf '%s' "${payload}" | jq -r '(.extra? | objects | .event?) // .event? // empty' 2>/dev/null \
       | sed -n "s/.*text='\([^']*\)'.*/\1/p" \
       | head -1)"
   fi
-  user_id="$(printf '%s' "${payload}" | jq -r '.user_id // .author.id // .event.author.id // .event.user_id // .extra.user_id // .extra.author.id // .extra.event.author.id // .extra.event.user_id // empty' 2>/dev/null || true)"
-  channel_id="$(printf '%s' "${payload}" | jq -r '.channel_id // .event.channel_id // .extra.channel_id // .extra.event.channel_id // empty' 2>/dev/null || true)"
+  user_id="$(printf '%s' "${payload}" | jq -r '.user_id // (.author? | objects | .id?) // (.event? | objects | .author? | objects | .id?) // (.event? | objects | .user_id?) // (.extra? | objects | .user_id?) // (.extra? | objects | .author? | objects | .id?) // (.extra? | objects | .event? | objects | .author? | objects | .id?) // (.extra? | objects | .event? | objects | .user_id?) // empty' 2>/dev/null || true)"
+  channel_id="$(printf '%s' "${payload}" | jq -r '.channel_id // (.event? | objects | .channel_id?) // (.extra? | objects | .channel_id?) // (.extra? | objects | .event? | objects | .channel_id?) // empty' 2>/dev/null || true)"
 else
   text="$(printf '%s' "${payload}" | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
   user_id=""
