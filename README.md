@@ -28,11 +28,21 @@ README.md
 docs/setup.md
 systemd/hermes-gateway.service
 config/hermes-cronjobs.json
+config/hermes-webhooks.json
+config/x-pulse-watchers.json
 launchd/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist
 scripts/install-macos-launchagent.sh
 scripts/uninstall-macos-launchagent.sh
 scripts/register-hermes-cronjobs.sh
+scripts/register-hermes-webhooks.sh
+scripts/hermes-morning-brief-cron.sh
 scripts/hermes-tech-digest-cron.sh
+scripts/hermes-dreaming-cron.sh
+scripts/hermes-review-cron.sh
+scripts/hermes-daily-review-cron.sh
+scripts/hermes-weekly-review-cron.sh
+scripts/hermes-x-pulse-watcher.py
+scripts/hermes-x-pulse-watcher.sh
 scripts/hermes-weekly-self-reflection.sh
 scripts/hermes-gbrain-backfill.sh
 scripts/hermes-gbrain-retrieval.sh
@@ -40,10 +50,14 @@ scripts/hermes-gbrain-remember.sh
 scripts/hermes-discord-feedback.sh
 scripts/hermes-digest-lint.sh
 scripts/hermes-alert.sh
+scripts/hermes-obsidian-mcp-setup.sh
+scripts/hermes-jina-mcp-setup.sh
+scripts/hermes-google-calendar-mcp-setup.sh
 prompts/x-daily-summary.md
 prompts/tech-digest.md
 prompts/hermes-chan-identity.md
 prompts/evaluate-digest.md
+prompts/nightly-dreaming.md
 prompts/weekly-self-reflection.md
 examples/.env.example
 ```
@@ -99,48 +113,124 @@ chmod +x scripts/install-macos-launchagent.sh scripts/uninstall-macos-launchagen
 ```
 
 Full Mac-local details are in [docs/mac-local.md](docs/mac-local.md).
-The self-growth loop for エルメスちゃん is in
+The self-growth loop for ヘルメスちゃん is in
 [docs/self-growth.md](docs/self-growth.md).
-The scheduled job architecture is in
+The optional Obsidian vault connection is in
+[docs/obsidian.md](docs/obsidian.md).
+The optional Jina Reader connection is in
+[docs/jina-reader.md](docs/jina-reader.md).
+The optional Google Calendar connection is in
+[docs/google-calendar.md](docs/google-calendar.md).
+The wbsb.dev source note is in
+[docs/wbsb-dev.md](docs/wbsb-dev.md).
+The Zenn source note is in
+[docs/zenn-dev.md](docs/zenn-dev.md).
+The triggered job architecture is in
 [docs/scheduled-jobs.md](docs/scheduled-jobs.md).
 The older cloud VM notes are in [docs/setup.md](docs/setup.md).
 
-## Discord Scheduled Posts
+## Discord Jobs
 
-Scheduled Discord posts are managed by Hermes cron. There is one scheduler and
-one place to inspect jobs:
+Discord jobs use two mechanisms:
+
+- Event-triggered webhooks for signal-driven tech digest posts.
+- Hermes cron for intentionally time-based operational posts.
 
 ```bash
+scripts/register-hermes-cronjobs.sh    # syncs morning/review cron jobs and removes disabled legacy jobs
+scripts/register-hermes-webhooks.sh    # creates/updates webhook triggers
 hermes cron list
-launchctl print gui/$(id -u)/ai.hermes.gateway
-scripts/register-hermes-cronjobs.sh
+hermes webhook list
 ```
 
-The registration script reads [config/hermes-cronjobs.json](config/hermes-cronjobs.json)
-and creates recurring jobs if they are missing:
+The webhook registration script reads
+[config/hermes-webhooks.json](config/hermes-webhooks.json) and creates trigger
+routes:
 
-- `tech-digest 08:00`, `tech-digest 12:30`, `tech-digest 18:00` to
-  `#tech-digest`
-- `平日9:50リマインダー` to `#morning-brief`
-- `金曜17時gbrainサマリー` to `#weekly-review`
+- `tech-digest-trigger` to `#tech-digest`
+- `x-buzz-trigger` to `#x-buzz-info`
+- `zenn-dev-trigger` to `#zenn-dev-info`
+- `wbsb-trigger` to `#wbsb-dev-info`
+- `signal-catchup` to `#tech-signals`
+- `nightly-dreaming-trigger` to `#ask-hermes`
+
+Channel IDs can be overridden locally without committing personal Discord
+targets. Copy [config/hermes-channels.example.json](config/hermes-channels.example.json)
+to `config/hermes-channels.local.json`, replace the channel IDs, and rerun the
+registration or installer script. The local override file is ignored by git.
+
+The active cron jobs are:
+
+- `平日9:50リマインダー` to `#morning-brief`, using direct RSS/Atom feeds
+  plus Google Workspace Calendar events
+- `金曜17時gbrainサマリー` to `#weekly-review`, using gbrain/honcho status
+- `毎晩23:30 gbrain/honcho daily review` to `#daily-review`
 
 The older `discord-heartbeat` LaunchAgent is treated as legacy and removed by
 the macOS installer.
 
-Event-driven Discord triggers should be added through Hermes Gateway hooks, not
-through another scheduler. The intended split is:
+### Channel Design
+
+Hermes channel routing is organized by what readers expect to find in each
+channel, not by whether the post was started by cron or a webhook.
+
+| Channel | Purpose |
+| --- | --- |
+| `#tech-digest` | Scheduled full tech digests and manually triggered full digests. |
+| `#x-buzz-info` | Short X/Twitter discussion spikes from `x-buzz-trigger`. |
+| `#zenn-dev-info` | Zenn article signals from `zenn-dev-trigger`. |
+| `#wbsb-dev-info` | wbsb.dev article signals from `wbsb-trigger`. |
+| `#tech-signals` | Generic external technical signals from `signal-catchup`. |
+| `#morning-brief` | Weekday morning work brief. |
+| `#weekly-review` | Weekly gbrain/honcho review. |
+| `#daily-review` | Daily gbrain/honcho operations review. |
+| `#ask-hermes` | Hermes memory, internal maintenance, and direct interaction. |
+
+Keep `#tech-digest` focused on full digest posts. Source-specific automatic
+notifications should use their source channels, and broad webhook catch-up
+items should use `#tech-signals`.
+
+External movement must come from an upstream event source such as GitHub,
+release monitors, uptime alerts, RSS-to-webhook bridges, or a custom watcher.
+Hermes receives those signed webhook POSTs and posts the result to Discord. The
+intended split is:
 
 - Hermes built-in service: keep Hermes Gateway running.
-- Hermes cron: time-based jobs and delivery targets.
-- Cron scripts: job implementation details such as tech digest generation,
+- Signal watcher: monitor Zenn, wbsb.dev, Anthropic, GitHub Changelog, OpenAI
+  News, Cloudflare Changelog, Hacker News, Publickey, release feeds, and other
+  sources; score/dedupe/cooldown changes before any Discord post is triggered.
+- X pulse watcher: sample recent X discussion with `x_search`; trigger a short
+  `x-buzz-trigger` post only when engagement-qualified X posts appear.
+- Hermes webhook platform: event ingress and delivery targets.
+- Handler scripts: job implementation details such as tech digest generation,
   digest/evaluation persistence, digest quality linting/metadata, alerts, and
-  gbrain write-back.
+  gbrain write-back, plus gbrain/honcho daily and weekly reviews.
 - Gateway hooks: Discord message/event-triggered actions.
 - Job prompts and channel targets: versioned in this repository, registered
   into Hermes runtime state by scripts.
 
-See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) before adding new scheduled
-or trigger-driven behavior.
+See [docs/scheduled-jobs.md](docs/scheduled-jobs.md) before adding new
+trigger-driven behavior.
+
+The watcher configuration is in
+[config/signal-watchers.json](config/signal-watchers.json). It currently
+monitors Zenn, wbsb.dev, Anthropic News/Engineering/Research, GitHub Changelog,
+OpenAI News, Cloudflare Changelog, Hacker News frontpage/best, Publickey, and
+Hermes Agent releases. First run primes state only so old articles are not
+posted in bulk; later runs post only threshold-crossing new signals. The macOS
+installer copies the watcher runtime to
+`~/.hermes/runtime/grok-signal-agent/`; re-run the installer after changing the
+watcher code or config.
+
+The X pulse configuration is in
+[config/x-pulse-watchers.json](config/x-pulse-watchers.json). It runs every 30
+minutes, primes existing X URLs on the first run, and triggers
+`x-buzz-trigger` only when recent `x_search` results contain new direct
+X/Twitter posts that pass the engagement filter. The watcher prioritizes the
+latest 120 minutes, can look back up to 240 minutes, and qualifies candidates by
+likes, reposts, replies/quotes, views/impressions when available, official or
+notable accounts with visible traction, or independent same-topic posts that
+also have enough direct engagement. URL count alone is not treated as buzz.
 
 ## Digest Quality And Feedback
 
@@ -151,6 +241,8 @@ Every `tech-digest` run now writes three runtime artifact types under
 - `digest-metadata/<ts>.json`: section titles, inferred categories, source
   URLs, accounts, duplicate counts, and lint status.
 - `digest-quality/<ts>.md`: human-readable lint errors and warnings.
+- `dreaming/<ts>.md`: nightly memory recomposition report; raw inputs are kept,
+  while the current working memory view is regenerated.
 
 The linter checks that each detailed section has a direct X/Twitter source URL,
 that section counts stay in the expected 8-12 range, that search-result URLs do
@@ -165,6 +257,9 @@ alerts somewhere else, set one of:
 HERMES_ALERT_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 HERMES_ALERT_COMMAND='your-command-that-reads-stdin'
 ```
+
+The signal and X pulse watchers call the same alert helper when webhook
+delivery fails, required webhook secrets are missing, or X search cannot run.
 
 Explicit Discord feedback and follow-up requests can be captured with the
 Gateway hook `~/.hermes/bin/hermes-discord-feedback.sh`. Supported message
@@ -186,7 +281,8 @@ guidance.
 ## Running as a Service
 
 On macOS, use Hermes' built-in LaunchAgent. The repository installer registers
-cron jobs, removes older repo-managed Gateway agents, and restarts this service:
+webhook triggers, removes older posting cron jobs and repo-managed Gateway
+agents, and restarts this service:
 
 ```bash
 launchctl print gui/$(id -u)/ai.hermes.gateway
@@ -204,6 +300,49 @@ journalctl -u hermes-gateway -f
 
 The file [systemd/hermes-gateway.service](systemd/hermes-gateway.service) is a conservative fallback template if you want to manage the unit yourself.
 
+## Obsidian Vault Access (Optional)
+
+ヘルメスちゃん can access an Obsidian vault through Hermes' MCP support and
+the official filesystem MCP server. Access is limited to the vault directory
+you pass to the setup script.
+
+```bash
+OBSIDIAN_VAULT_PATH="$HOME/Documents/Notes" \
+  scripts/hermes-obsidian-mcp-setup.sh --restart-gateway
+```
+
+Use `--read-only` if you want search/list/read access without note writes or
+edits. Full setup, verification, and safety notes are in
+[docs/obsidian.md](docs/obsidian.md).
+
+## Jina Reader Access (Optional)
+
+Hermes can use Jina Reader through the official remote MCP server to convert
+public URLs into clean Markdown. Anonymous URL reading works without an API key,
+subject to Jina's rate limits:
+
+```bash
+scripts/hermes-jina-mcp-setup.sh --restart-gateway
+```
+
+For higher limits, set `JINA_API_KEY` in `~/.hermes/.env` and rerun with
+`--api-key-env JINA_API_KEY`. Details are in
+[docs/jina-reader.md](docs/jina-reader.md).
+
+## Google Calendar Access (Optional)
+
+Hermes can use Google's official remote Calendar MCP server to answer schedule
+questions from Discord, such as `今日の予定は？`. The repository helper registers
+the Calendar MCP server as read-only by default.
+
+```bash
+scripts/hermes-google-calendar-mcp-setup.sh --login --restart-gateway
+```
+
+Set `GOOGLE_CALENDAR_MCP_CLIENT_ID` and
+`GOOGLE_CALENDAR_MCP_CLIENT_SECRET` in `~/.hermes/.env` before login. Details
+are in [docs/google-calendar.md](docs/google-calendar.md).
+
 ## Tests
 
 Run the shell regression tests:
@@ -214,9 +353,9 @@ tests/run.sh
 
 ## gbrain Memory Backend (Optional)
 
-エルメスちゃん's self-growth loop can use [`garrytan/gbrain`](https://github.com/garrytan/gbrain)
+ヘルメスちゃん's self-growth loop can use [`garrytan/gbrain`](https://github.com/garrytan/gbrain)
 as a searchable memory backend: it stores each digest and self-evaluation as a
-page, lets digest cron jobs recall what was recently covered, and runs an
+page, lets digest triggers recall what was recently covered, and runs an
 enrichment cycle during the weekly reflection. The full design and storage
 model are in [docs/self-growth.md](docs/self-growth.md).
 
@@ -242,19 +381,20 @@ gbrain list -n 20            # verify pages imported
 
 ### Feature flags
 
-Set these in the Hermes Gateway environment before scheduled jobs run, and make
-sure `~/.bun/bin` is on the agent `PATH` so the `gbrain` binary resolves.
+Set these in the Hermes Gateway environment before triggered jobs run. The
+repository helper scripts prepend `~/.bun/bin` to `PATH` before invoking
+`gbrain`.
 
 | Flag | Job | Effect |
 | --- | --- | --- |
-| `HERMES_GBRAIN_RETRIEVAL=1` | digest cron | Inject recent digest headlines + the latest evaluation's improvement notes into the prompt as soft guidance. |
-| `HERMES_GBRAIN_WRITEBACK=1` | digest cron | Upsert each digest and evaluation into the brain (`digest-<ts>` / `evaluation-<ts>`). |
+| `HERMES_GBRAIN_RETRIEVAL=1` | digest trigger | Inject recent digest headlines + the latest evaluation's improvement notes into the prompt as soft guidance. |
+| `HERMES_GBRAIN_WRITEBACK=1` | digest trigger | Upsert each digest and evaluation into the brain (`digest-<ts>` / `evaluation-<ts>`). |
 | `HERMES_GBRAIN_RECONCILE=1` | weekly | Upsert a `learnings-<ts>` page, export the brain to `~/.hermes/brain/pages`, `git commit` it, then run `gbrain dream`. |
-| `GBRAIN_SEARCH_MODE=query` | digest cron | Switch retrieval from keyword search to hybrid (vector) search. Requires an embedding provider key configured in the brain (default is keyword `search`). |
+| `GBRAIN_SEARCH_MODE=query` | digest trigger | Switch retrieval from keyword search to hybrid (vector) search. Requires an embedding provider key configured in the brain (default is keyword `search`). |
 
 ### Remember things from Discord (optional)
 
-You can tell エルメスちゃん to remember something straight from Discord. A
+You can tell ヘルメスちゃん to remember something straight from Discord. A
 `pre_gateway_dispatch` shell hook (`scripts/hermes-gbrain-remember.sh`) watches
 incoming messages and, when one starts with a remember-prefix, saves the rest
 as a `note` page in the brain. Digest retrieval then surfaces recent
@@ -269,17 +409,18 @@ Recognized prefixes: `覚えて` / `おぼえて` / `記憶して` / `/remember`
 `remember` (followed by an optional `:` or `：`). Normal conversation is never
 captured.
 
-Enable it:
+The macOS installer registers and approves the memory/feedback hooks. To do it
+manually:
 
 ```bash
-# 1. config.yaml — register the hook (path must be absolute):
+# 1. config.yaml — register the hooks (paths must be absolute):
 #    hooks:
 #      pre_gateway_dispatch:
 #        - command: ~/.hermes/bin/hermes-gbrain-remember.sh
 #          timeout: 30
 #        - command: ~/.hermes/bin/hermes-discord-feedback.sh
 #          timeout: 30
-# 2. Approve the hook once (Hermes gates new shell hooks):
+# 2. Approve the hooks once (Hermes gates new shell hooks):
 hermes gateway run --replace --accept-hooks   # Ctrl-C after it starts
 hermes hooks doctor                           # should now show ✓
 # 3. Restart the background gateway:
@@ -300,8 +441,8 @@ export OPENAI_API_KEY=sk-…   # or VOYAGE_API_KEY / ZEROENTROPY_API_KEY
 ### Check it is working
 
 ```bash
-# After digest cron jobs run, inspect Hermes cron and gateway logs:
-hermes cron list
+# After digest triggers run, inspect Hermes webhook and gateway logs:
+hermes webhook list
 
 # Pages accumulating in the brain:
 gbrain list -n 30

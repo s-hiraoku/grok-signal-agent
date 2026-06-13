@@ -2,14 +2,20 @@
   "version": 1,
   "channels": {
     "tech-digest": "discord:1510425425971515503",
+    "x-buzz-info": "discord:1514063902529556491",
+    "zenn-dev-info": "discord:1513332081806147724",
+    "wbsb-dev-info": "discord:1514063970368229447",
+    "tech-signals": "discord:1514063816093335653",
     "morning-brief": "discord:1510425534436212817",
     "weekly-review": "discord:1510425635745435648",
+    "daily-review": "discord:1513665059723808878",
     "ask-hermes": "discord:1510425922384167043"
   },
   "jobs": [
     {
       "id": "tech-digest-0800",
       "name": "tech-digest 08:00",
+      "enabled": true,
       "schedule": "0 8 * * *",
       "channel": "tech-digest",
       "mode": "script",
@@ -20,6 +26,7 @@
     {
       "id": "tech-digest-1230",
       "name": "tech-digest 12:30",
+      "enabled": true,
       "schedule": "30 12 * * *",
       "channel": "tech-digest",
       "mode": "script",
@@ -30,6 +37,7 @@
     {
       "id": "tech-digest-1800",
       "name": "tech-digest 18:00",
+      "enabled": true,
       "schedule": "0 18 * * *",
       "channel": "tech-digest",
       "mode": "script",
@@ -40,19 +48,46 @@
     {
       "id": "weekday-0950-reminder",
       "name": "平日9:50リマインダー",
+      "enabled": true,
       "schedule": "50 9 * * 1-5",
       "channel": "morning-brief",
-      "mode": "prompt",
-      "prompt": "平日朝9:50のmorning briefをDiscordに投稿してください。日本語で、エルメスちゃんらしく明るくかわいく、でも情報は実用的に簡潔にしてください。構成は必ず、1) もうすぐ仕事だよーという短いリマインダー、2) 今日の一般ニュース、3) 今日のTech/AI/開発ニュース、4) 今日の優先順位確認の一言、の順にしてください。一般ニュースとTechニュースは見出しを分け、各セクションは3-5項目までに絞ってください。必要に応じて利用可能なニュース検索・Web検索・X検索ツールを使い、当日の新しい情報を優先してください。各ニュース項目には必ず `出典: <直接URL>` を付けてください。Google/Web検索で見つけた情報はGoogle検索結果URLではなく、元記事・公式発表・ドキュメントなど参照したページの直接URLを残してください。X由来の情報は https://x.com/ または https://twitter.com/ の投稿URLを残してください。URLを確認できない話題は投稿しないでください。未確認の噂は断定せず、重要度が低い話題は省いてください。長文にしすぎず、Discordで読みやすい箇条書きにしてください。絵文字は控えめに1-3個まで。"
+      "mode": "script",
+      "script": "hermes-morning-brief-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the morning brief script."
+    },
+    {
+      "id": "nightly-0230-dreaming",
+      "name": "毎晩2:30 dreaming再合成",
+      "enabled": false,
+      "schedule": "30 2 * * *",
+      "channel": "ask-hermes",
+      "mode": "script",
+      "script": "hermes-dreaming-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the nightly dreaming memory recomposition script."
     },
     {
       "id": "friday-1700-gbrain-summary",
       "name": "金曜17時gbrainサマリー",
+      "enabled": true,
       "schedule": "0 17 * * 5",
       "channel": "weekly-review",
-      "mode": "prompt",
-      "workdir": "~/.hermes/brain",
-      "prompt": "毎週金曜17:00のgbrain週次サマリーをDiscordに投稿してください。~/.hermes/brain と ~/.hermes/brain/pages、必要なら gbrain CLI を確認し、この1週間に蓄積された digest、evaluation、note、reflection、learnings から重要な学びを日本語で要約してください。構成は、1) 今週の大きなテーマ、2) 開発/AI/運用で使える知見、3) gbrainに残った重要メモ、4) 来週見直すとよいTODO、の順にしてください。外部ページ、X投稿、Google/Web検索で見つけたページを参照した場合は、各項目に `参照: <直接URL>` を残してください。Google検索結果URLではなく、元記事・公式発表・ドキュメントなど実際に参照したページのURLを使ってください。エルメスちゃんらしい明るい口調で、ただし内容は実務的に簡潔にしてください。"
+      "mode": "script",
+      "script": "hermes-weekly-review-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the weekly gbrain/honcho review script."
+    },
+    {
+      "id": "daily-2330-gbrain-honcho-review",
+      "name": "毎晩23:30 gbrain/honcho daily review",
+      "enabled": true,
+      "schedule": "30 23 * * *",
+      "channel": "daily-review",
+      "mode": "script",
+      "script": "hermes-daily-review-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the daily gbrain/honcho review script."
     }
   ]
 }

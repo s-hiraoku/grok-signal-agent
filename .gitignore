@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 !examples/.env.example
+config/hermes-channels.local.json
 .hermes/
 auth.json
 *.token

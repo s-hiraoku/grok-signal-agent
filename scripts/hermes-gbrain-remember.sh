@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH="${HOME}/.bun/bin:${PATH}"
+
 # Discord-to-brain memory hook (see docs/self-growth.md).
 #
 # Registered as a Hermes `pre_gateway_dispatch` shell hook: it fires once per
@@ -34,7 +36,22 @@ payload="$(cat 2>/dev/null || true)"
 # Extract the message text. Prefer jq; fall back to a minimal grep if absent.
 text=""
 if command -v jq >/dev/null 2>&1; then
-  text="$(printf '%s' "${payload}" | jq -r '.text // .message // .event.text // empty' 2>/dev/null || true)"
+  text="$(printf '%s' "${payload}" | jq -r '
+    .text
+    // .message
+    // (.event? | objects | .text?)
+    // .content
+    // (.extra? | objects | .text?)
+    // (.extra? | objects | .message?)
+    // (.extra? | objects | .event? | objects | .text?)
+    // (.extra? | objects | .event? | objects | .content?)
+    // empty
+  ' 2>/dev/null || true)"
+  if [[ -z "${text}" ]]; then
+    text="$(printf '%s' "${payload}" | jq -r '(.extra? | objects | .event?) // .event? // empty' 2>/dev/null \
+      | sed -n "s/.*text='\([^']*\)'.*/\1/p" \
+      | head -1)"
+  fi
 fi
 if [[ -z "${text}" ]]; then
   # crude fallback: first "text":"..." value

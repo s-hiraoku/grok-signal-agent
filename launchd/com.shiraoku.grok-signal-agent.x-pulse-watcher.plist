@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.shiraoku.grok-signal-agent.x-pulse-watcher</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__HOME__/.hermes/bin/hermes-x-pulse-watcher.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>PATH</key>
+    <string>__HOME__/.local/bin:__HOME__/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HERMES_X_PULSE_WATCHER_REPO</key>
+    <string>__RUNTIME__</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>__RUNTIME__</string>
+
+  <key>StartInterval</key>
+  <integer>1800</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/.hermes/logs/hermes-x-pulse-watcher.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.hermes/logs/hermes-x-pulse-watcher.err.log</string>
+</dict>
+</plist>

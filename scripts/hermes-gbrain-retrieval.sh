@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH="${HOME}/.bun/bin:${PATH}"
+
 # Phase 2 of the gbrain integration (see docs/self-growth.md): retrieval
 # injection helper.
 #
@@ -88,7 +90,7 @@ fi
 topic_hits="$(hits_for "${HINT}" 'digest-')"
 
 # user_notes: the most recent direct user guidance pages — things the user
-# explicitly asked エルメスちゃん to remember, feedback on past posts, or topics
+# explicitly asked ヘルメスちゃん to remember, feedback on past posts, or topics
 # to track/deep-dive. These rank above the auto-derived guidance below. The page
 # title is the note text, which `list` exposes in column 4.
 user_notes="$(

@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 HERMES_BIN="${HERMES_BIN:-${HOME}/.local/bin/hermes}"
 CONFIG_FILE="${HERMES_CRONJOBS_CONFIG:-${REPO_DIR}/config/hermes-cronjobs.json}"
+CHANNELS_CONFIG="${HERMES_CHANNELS_CONFIG:-${REPO_DIR}/config/hermes-channels.local.json}"
 
 if [[ ! -x "${HERMES_BIN}" ]]; then
   echo "Hermes is not installed at ${HERMES_BIN}." >&2
@@ -29,11 +30,16 @@ jq -e '
     (.name | type == "string" and length > 0)
     and (.schedule | type == "string" and length > 0)
     and (.channel | type == "string" and length > 0)
+    and ((if has("enabled") then .enabled else true end) | type == "boolean")
     and (.mode == "prompt" or .mode == "script")
     and (.prompt | type == "string")
     and (if .mode == "script" then (.script | type == "string" and length > 0) else true end)
   )
 ' "${CONFIG_FILE}" >/dev/null
+
+if [[ -f "${CHANNELS_CONFIG}" ]]; then
+  jq -e '.version == 1 and (.channels | type == "object")' "${CHANNELS_CONFIG}" >/dev/null
+fi
 
 existing_job_id() {
   local name="$1"
@@ -60,6 +66,17 @@ expand_home() {
   esac
 }
 
+channel_target() {
+  local channel="$1" target=""
+  if [[ -f "${CHANNELS_CONFIG}" ]]; then
+    target="$(jq -r --arg ch "${channel}" '.channels[$ch] // empty' "${CHANNELS_CONFIG}")"
+  fi
+  if [[ -z "${target}" ]]; then
+    target="$(jq -r --arg ch "${channel}" '.channels[$ch] // empty' "${CONFIG_FILE}")"
+  fi
+  printf '%s' "${target}"
+}
+
 run_hermes() {
   local output status
 
@@ -77,18 +94,37 @@ run_hermes() {
 created_count=0
 existing_count=0
 updated_count=0
+disabled_count=0
+removed_count=0
 
 while IFS= read -r job; do
   name="$(jq -r '.name' <<< "${job}")"
+  enabled="$(jq -r 'if has("enabled") then .enabled else true end' <<< "${job}")"
   schedule="$(jq -r '.schedule' <<< "${job}")"
   channel="$(jq -r '.channel' <<< "${job}")"
-  deliver="$(jq -r --arg ch "${channel}" '.channels[$ch] // empty' "${CONFIG_FILE}")"
+  deliver="$(channel_target "${channel}")"
   mode="$(jq -r '.mode' <<< "${job}")"
   prompt="$(jq -r '.prompt' <<< "${job}")"
 
   if [[ -z "${deliver}" ]]; then
     echo "Unknown channel '${channel}' for job '${name}'." >&2
     exit 1
+  fi
+
+  if [[ "${enabled}" != "true" ]]; then
+    disabled_count=$((disabled_count + 1))
+    if existing_id="$(existing_job_id "${name}")"; then
+      if [[ "${HERMES_CRONJOBS_REMOVE_DISABLED:-1}" == "1" ]]; then
+        run_hermes cron remove "${existing_id}"
+        removed_count=$((removed_count + 1))
+        echo "Removed disabled cron job: ${name}"
+      else
+        echo "Disabled cron job still registered: ${name}"
+      fi
+    else
+      echo "Skipped disabled cron job: ${name}"
+    fi
+    continue
   fi
 
   if existing_id="$(existing_job_id "${name}")"; then
@@ -147,4 +183,4 @@ while IFS= read -r job; do
   created_count=$((created_count + 1))
 done < <(jq -c '.jobs[]' "${CONFIG_FILE}")
 
-echo "Cron registration complete: ${created_count} created, ${updated_count} updated, ${existing_count} already existed."
+echo "Cron registration complete: ${created_count} created, ${updated_count} updated, ${existing_count} already existed, ${disabled_count} disabled, ${removed_count} removed."
