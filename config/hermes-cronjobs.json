@@ -2,6 +2,10 @@
   "version": 1,
   "channels": {
     "tech-digest": "discord:1510425425971515503",
+    "x-buzz-info": "discord:1514063902529556491",
+    "zenn-dev-info": "discord:1513332081806147724",
+    "wbsb-dev-info": "discord:1514063970368229447",
+    "tech-signals": "discord:1514063816093335653",
     "morning-brief": "discord:1510425534436212817",
     "weekly-review": "discord:1510425635745435648",
     "daily-review": "discord:1513665059723808878",
@@ -11,7 +15,7 @@
     {
       "id": "tech-digest-0800",
       "name": "tech-digest 08:00",
-      "enabled": false,
+      "enabled": true,
       "schedule": "0 8 * * *",
       "channel": "tech-digest",
       "mode": "script",
@@ -22,7 +26,7 @@
     {
       "id": "tech-digest-1230",
       "name": "tech-digest 12:30",
-      "enabled": false,
+      "enabled": true,
       "schedule": "30 12 * * *",
       "channel": "tech-digest",
       "mode": "script",
@@ -33,7 +37,7 @@
     {
       "id": "tech-digest-1800",
       "name": "tech-digest 18:00",
-      "enabled": false,
+      "enabled": true,
       "schedule": "0 18 * * *",
       "channel": "tech-digest",
       "mode": "script",
@@ -47,8 +51,10 @@
       "enabled": true,
       "schedule": "50 9 * * 1-5",
       "channel": "morning-brief",
-      "mode": "prompt",
-      "prompt": "平日朝9:50のmorning briefをDiscordに投稿してください。日本語で、エルメスちゃんらしく明るくかわいく、でも情報は実用的に簡潔にしてください。構成は必ず、1) もうすぐ仕事だよーという短いリマインダー、2) 今日の一般ニュース、3) 今日のTech/AI/開発ニュース、4) 今日の優先順位確認の一言、の順にしてください。一般ニュースとTechニュースは見出しを分け、各セクションは3-5項目までに絞ってください。必要に応じて利用可能なニュース検索・Web検索・X検索ツールを使い、当日の新しい情報を優先してください。各ニュース項目には必ず `出典: <直接URL>` を付けてください。Google/Web検索で見つけた情報はGoogle検索結果URLではなく、元記事・公式発表・ドキュメントなど参照したページの直接URLを残してください。X由来の情報は https://x.com/ または https://twitter.com/ の投稿URLを残してください。URLを確認できない話題は投稿しないでください。未確認の噂は断定せず、重要度が低い話題は省いてください。長文にしすぎず、Discordで読みやすい箇条書きにしてください。絵文字は控えめに1-3個まで。"
+      "mode": "script",
+      "script": "hermes-morning-brief-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the morning brief script."
     },
     {
       "id": "nightly-0230-dreaming",

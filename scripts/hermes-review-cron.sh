@@ -4,8 +4,12 @@ set -euo pipefail
 export PATH="${HOME}/.bun/bin:${PATH}"
 
 HERMES_BIN="${HERMES_BIN:-${HOME}/.local/bin/hermes}"
+PROMPT_DIR="${HERMES_PROMPT_DIR:-${HOME}/.hermes/prompts}"
 STATE_DIR="${HERMES_STATE_DIR:-${HOME}/.hermes/state}"
 LOG_DIR="${HERMES_LOG_DIR:-${HOME}/.hermes/logs}"
+IDENTITY_FILE="${HERMES_IDENTITY_FILE:-${PROMPT_DIR}/hermes-chan-identity.md}"
+POST_STYLE_FILE="${HERMES_POST_STYLE_FILE:-${PROMPT_DIR}/hermes-post-style.md}"
+MEMORY_FILE="${HERMES_CHAN_MEMORY_FILE:-${STATE_DIR}/hermes-chan-memory.md}"
 BRAIN_DIR="${GBRAIN_BRAIN:-${HOME}/.hermes/brain}"
 HONCHO_CONFIG_LOCAL="${HERMES_HOME:-${HOME}/.hermes}/honcho.json"
 HONCHO_CONFIG_GLOBAL="${HOME}/.honcho/config.json"
@@ -180,7 +184,20 @@ fi
 prompt="$(cat <<PROMPT
 ${instruction}
 
-エルメスちゃんらしく明るい口調で、ただし運用情報は実務的に正確にしてください。事実と推測を分け、ログにないことは断定しないでください。Discord で読みやすい長さにしてください。
+ヘルメスちゃんらしく明るい口調で、ただし運用情報は実務的に正確にしてください。事実と推測を分け、ログにないことは断定しないでください。Discord で読みやすい長さにしてください。
+無人格な運用レポートではなく、冒頭に短い一言を入れて、ヘルメスちゃんが状況を見て届けている投稿にしてください。
+
+# Stable identity
+
+$(read_optional_file "${IDENTITY_FILE}" 160)
+
+# Posting style
+
+$(read_optional_file "${POST_STYLE_FILE}" 180)
+
+# Current self-memory
+
+$(read_optional_file "${MEMORY_FILE}" 120)
 
 ${context}
 PROMPT

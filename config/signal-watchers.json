@@ -26,9 +26,14 @@
     "aiエージェント": 30,
     "エージェント": 24,
     "codex": 28,
+    "anthropic": 24,
+    "claude": 24,
     "claude code": 26,
     "grok": 22,
     "openai": 22,
+    "cloudflare": 16,
+    "workers": 16,
+    "hacker news": 10,
     "ai": 14,
     "生成ai": 16,
     "copilot": 18,
@@ -67,7 +72,7 @@
       "description": "Zenn trending RSS feed.",
       "base_score": 42,
       "min_score": 52,
-      "route": "signal-catchup",
+      "route": "zenn-dev-trigger",
       "tags": ["zenn", "ja-tech"]
     },
     {
@@ -78,7 +83,7 @@
       "description": "wbsb.dev Atom feed for new Japanese technical articles.",
       "base_score": 38,
       "min_score": 50,
-      "route": "signal-catchup",
+      "route": "wbsb-trigger",
       "tags": ["wbsb", "ja-tech"]
     },
     {
@@ -89,7 +94,7 @@
       "description": "wbsb.dev new page fallback when feed shape changes.",
       "base_score": 30,
       "min_score": 50,
-      "route": "signal-catchup",
+      "route": "wbsb-trigger",
       "include_url_patterns": ["/articles/"],
       "exclude_url_patterns": ["/api/", "/info/", "/user/"],
       "tags": ["wbsb", "ja-tech", "fallback"]
@@ -104,6 +109,111 @@
       "min_score": 70,
       "route": "signal-catchup",
       "tags": ["hermes", "release"]
+    },
+    {
+      "id": "github-changelog",
+      "enabled": true,
+      "type": "feed",
+      "url": "https://github.blog/changelog/feed/",
+      "description": "GitHub Changelog feed for GitHub, Copilot, Actions, and platform updates.",
+      "base_score": 46,
+      "min_score": 62,
+      "route": "signal-catchup",
+      "tags": ["github", "changelog", "developer-tools"]
+    },
+    {
+      "id": "openai-news",
+      "enabled": true,
+      "type": "feed",
+      "url": "https://openai.com/news/rss.xml",
+      "description": "OpenAI official news feed.",
+      "base_score": 54,
+      "min_score": 64,
+      "route": "signal-catchup",
+      "tags": ["openai", "ai", "official"]
+    },
+    {
+      "id": "cloudflare-changelog",
+      "enabled": true,
+      "type": "feed",
+      "url": "https://developers.cloudflare.com/changelog/rss/index.xml",
+      "description": "Cloudflare official changelog feed for platform, Workers, security, and networking updates.",
+      "base_score": 48,
+      "min_score": 62,
+      "route": "signal-catchup",
+      "tags": ["cloudflare", "changelog", "infrastructure", "security"]
+    },
+    {
+      "id": "hn-frontpage",
+      "enabled": true,
+      "type": "feed",
+      "url": "https://hnrss.org/frontpage",
+      "description": "Hacker News front page feed for developer community signals.",
+      "base_score": 40,
+      "min_score": 58,
+      "route": "signal-catchup",
+      "tags": ["hacker-news", "community"]
+    },
+    {
+      "id": "hn-best",
+      "enabled": true,
+      "type": "feed",
+      "url": "https://hnrss.org/best",
+      "description": "Hacker News best feed for high-traction developer community signals.",
+      "base_score": 44,
+      "min_score": 58,
+      "route": "signal-catchup",
+      "tags": ["hacker-news", "community"]
+    },
+    {
+      "id": "publickey",
+      "enabled": true,
+      "type": "feed",
+      "url": "https://www.publickey1.jp/atom.xml",
+      "description": "Publickey Japanese enterprise IT and developer news feed.",
+      "base_score": 44,
+      "min_score": 56,
+      "route": "signal-catchup",
+      "tags": ["publickey", "ja-tech", "it-news"]
+    },
+    {
+      "id": "anthropic-news",
+      "enabled": true,
+      "type": "html_links",
+      "url": "https://www.anthropic.com/news",
+      "description": "Anthropic official news and product announcements.",
+      "base_score": 48,
+      "min_score": 58,
+      "route": "signal-catchup",
+      "include_url_patterns": ["/news/"],
+      "exclude_url_patterns": [],
+      "tags": ["anthropic", "ai", "official"]
+    },
+    {
+      "id": "anthropic-engineering",
+      "enabled": true,
+      "type": "html_links",
+      "url": "https://www.anthropic.com/engineering",
+      "description": "Anthropic engineering articles, including Claude and agent engineering notes.",
+      "base_score": 60,
+      "min_score": 58,
+      "route": "signal-catchup",
+      "include_url_patterns": ["/engineering/"],
+      "exclude_url_patterns": [],
+      "tags": ["anthropic", "claude", "engineering", "ai-agent"]
+    },
+    {
+      "id": "anthropic-research",
+      "enabled": true,
+      "type": "html_links",
+      "url": "https://www.anthropic.com/research",
+      "description": "Anthropic research articles relevant to AI systems, agents, safety, and evaluation.",
+      "base_score": 54,
+      "min_score": 58,
+      "route": "signal-catchup",
+      "include_url_patterns": ["/research/"],
+      "exclude_url_patterns": ["/research/team/"],
+      "tags": ["anthropic", "claude", "research", "ai"]
     }
   ]
 }

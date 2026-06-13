@@ -18,8 +18,8 @@ Hermesから参照するときは Jina Reader MCP の `read_url` でページを
 - ダイジェストや調査回答で使う場合は、必ず記事の直接URLを出す。
 - wbsb.devはAIを主題にした記事を禁止しているため、AIニュース源としては扱わない。
 - 開発、Web、言語、インフラ、セキュリティ、開発手法などの技術記事ソースとして扱う。
-- `config/signal-watchers.json` の `wbsb-feed` / `wbsb-new-html` が新着の
-  キャッチアップ trigger source として使う。
+- `config/signal-watchers.json` の `wbsb-feed` / `wbsb-new-html` が
+  `wbsb-trigger` route に送る新着キャッチアップ trigger source として使う。
 
 ## Example Prompt
 

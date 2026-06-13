@@ -154,8 +154,8 @@ The script installs or refreshes Hermes' built-in Gateway LaunchAgent:
 
 It also syncs the explicit Hermes cron jobs and removes disabled legacy jobs
 when they are present. Hermes Gateway stays responsible for process runtime;
-signal-driven tech posts are triggered by webhook subscriptions, while
-morning/review posts remain intentional wall-clock jobs.
+signal-driven tech posts are triggered by webhook subscriptions, while full X
+tech digest, morning, and review posts remain intentional wall-clock jobs.
 Older repo-managed Gateway and heartbeat LaunchAgents are removed by the
 installer.
 
@@ -166,17 +166,30 @@ watcher code or source thresholds.
 
 The X pulse watcher uses the same runtime directory and runs every 30 minutes
 through `com.shiraoku.grok-signal-agent.x-pulse-watcher`. It samples recent
-`x_search` results and triggers `tech-digest-trigger` only when enough new
-direct X/Twitter URLs appear.
+`x_search` results and triggers `x-buzz-trigger` only when new direct X/Twitter
+posts pass the engagement filter. The watcher prioritizes the latest 120
+minutes, can look back up to 240 minutes, and qualifies candidates by likes,
+reposts, replies/quotes, views/impressions when available, official or notable
+accounts with visible traction, or independent same-topic posts that also have
+enough direct engagement. URL count alone is not treated as buzz. The full X
+tech digest is still posted by cron at 08:00, 12:30, and 18:00.
 
 By default, event-triggered posts route to:
 
-- `tech-digest-trigger` and `signal-catchup` post to `#tech-digest`.
+- `tech-digest-trigger` posts to `#tech-digest`.
+- `x-buzz-trigger` posts to `#x-buzz-info`.
+- `zenn-dev-trigger` posts to `#zenn-dev-info`.
+- `wbsb-trigger` posts to `#wbsb-dev-info`.
+- `signal-catchup` posts to `#tech-signals`.
 - `nightly-dreaming-trigger` posts to `#ask-hermes`.
 
 The active cron posts route to:
 
-- `平日9:50リマインダー` posts to `#morning-brief`.
+- `tech-digest 08:00`, `tech-digest 12:30`, and `tech-digest 18:00` post to
+  `#tech-digest`.
+- `平日9:50リマインダー` posts to `#morning-brief`, including today's Google
+  Workspace Calendar events. Monday posts also include the current week's
+  schedule.
 - `金曜17時gbrainサマリー` posts gbrain/honcho status to `#weekly-review`.
 - `毎晩23:30 gbrain/honcho daily review` posts to `#daily-review`.
 
@@ -196,10 +209,15 @@ launchctl print gui/$(id -u)/ai.hermes.gateway
 launchctl print gui/$(id -u)/com.shiraoku.grok-signal-agent.x-pulse-watcher
 ```
 
+If this checkout is reused for another Discord server, copy
+`config/hermes-channels.example.json` to `config/hermes-channels.local.json`
+and replace the channel IDs before running the registration scripts. The local
+file is ignored by git and overrides only the channels it contains.
+
 The Gateway service starts immediately. Cron jobs wait for their next scheduled
 time; webhook jobs wait for the next matching signed POST.
 
-The installer also installs エルメスちゃん's self-growth loop:
+The installer also installs ヘルメスちゃん's self-growth loop:
 
 - Each digest is saved under `~/.hermes/state/digests/`.
 - Each digest quality report is saved under
@@ -232,6 +250,18 @@ scripts/hermes-obsidian-mcp-setup.sh --vault "$HOME/Documents/Notes" --read-only
 
 After the restart, ask Hermes from Discord or the CLI to search/read/update a
 specific note in the Obsidian vault. Details are in [obsidian.md](obsidian.md).
+
+Optional Google Calendar access:
+
+```bash
+# Requires Google Calendar API and Google Calendar MCP API enabled in Google Cloud.
+# Store GOOGLE_CALENDAR_MCP_CLIENT_ID and GOOGLE_CALENDAR_MCP_CLIENT_SECRET in ~/.hermes/.env.
+scripts/hermes-google-calendar-mcp-setup.sh --login --restart-gateway
+```
+
+After the restart, ask Hermes from Discord: `今日の予定は？`. The default setup is
+read-only and exposes only calendar listing, event lookup, and availability
+tools. Details are in [google-calendar.md](google-calendar.md).
 
 The installer also registers and approves Gateway hooks for memory and
 feedback:
@@ -273,14 +303,17 @@ hermes gateway restart
 ```
 
 The default `signal-catchup` subscription listens at
-`/webhooks/signal-catchup` and posts to the `tech-digest` Discord channel when
+`/webhooks/signal-catchup` and posts to the `tech-signals` Discord channel when
 an external service POSTs a signed event. This is for event-driven sources such
 as GitHub, release monitors, uptime alerts, RSS-to-webhook bridges, or custom
-watchers. X/news services that do not provide push events still need an
+watchers. Zenn and wbsb.dev feed signals use dedicated `/webhooks/zenn-dev-trigger`
+and `/webhooks/wbsb-trigger` routes that post to `#zenn-dev-info` and
+`#wbsb-dev-info`. X/news services that do not provide push events still need an
 upstream watcher; Hermes should receive the watcher's event, not poll on a cron.
-The former tech digest time slots are replaced by `/webhooks/tech-digest-trigger`.
-Morning brief and gbrain/honcho review posts are registered as Hermes cron jobs
-because they are intentionally time-based.
+The full X tech digest, morning brief, and gbrain/honcho review posts are
+registered as Hermes cron jobs because they are intentionally time-based. X
+pulse events use `/webhooks/x-buzz-trigger` for short buzzing-post
+introductions.
 
 ## 7. Operate the Service
 

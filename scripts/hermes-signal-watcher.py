@@ -16,6 +16,7 @@ import html
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -24,6 +25,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -115,6 +117,37 @@ def fetch_text(url: str, timeout: int, user_agent: str) -> str:
         return raw.decode(charset, errors="replace")
 
 
+class LinkCollector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.links: list[tuple[str, str]] = []
+        self._current_href: str | None = None
+        self._current_text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "a" or self._current_href is not None:
+            return
+        href = ""
+        for name, value in attrs:
+            if name.lower() == "href" and value:
+                href = value
+                break
+        if href:
+            self._current_href = href
+            self._current_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._current_href is not None:
+            self._current_text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() != "a" or self._current_href is None:
+            return
+        self.links.append((self._current_href, "".join(self._current_text)))
+        self._current_href = None
+        self._current_text = []
+
+
 def child_text(node: ET.Element, names: tuple[str, ...]) -> str:
     for child in list(node):
         local = child.tag.rsplit("}", 1)[-1].lower()
@@ -189,11 +222,9 @@ def parse_html_links(source: dict[str, Any], text: str) -> list[SignalItem]:
     exclude = source.get("exclude_url_patterns", [])
     seen: set[str] = set()
     items: list[SignalItem] = []
-    pattern = re.compile(
-        r"<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>",
-        re.IGNORECASE | re.DOTALL,
-    )
-    for href, inner in pattern.findall(text):
+    collector = LinkCollector()
+    collector.feed(text)
+    for href, inner in collector.links:
         url = urllib.parse.urljoin(base_url, html.unescape(href))
         parsed = urllib.parse.urlparse(url)
         path = parsed.path
@@ -203,7 +234,7 @@ def parse_html_links(source: dict[str, Any], text: str) -> list[SignalItem]:
             continue
         if url in seen:
             continue
-        title = normalize_space(re.sub(r"<[^>]+>", " ", inner))
+        title = normalize_space(inner)
         if not title:
             title = path.rsplit("/", 1)[-1]
         seen.add(url)
@@ -298,6 +329,27 @@ def log_line(path: Path, message: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(f"{now_iso()} {message}\n")
+
+
+def send_alert(settings: dict[str, Any], title: str, body: str, log_path: Path) -> None:
+    script_value = os.environ.get("HERMES_ALERT_SCRIPT") or settings.get("alert_script", "~/.hermes/bin/hermes-alert.sh")
+    if not script_value:
+        return
+    script = expand_path(str(script_value))
+    if not script.exists():
+        return
+    try:
+        subprocess.run(
+            [str(script), title],
+            input=body,
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=int(settings.get("alert_timeout_seconds", 10)),
+            check=False,
+        )
+    except Exception as exc:
+        log_line(log_path, f"alert failed title={title!r} error={exc}")
 
 
 def build_payload(route: str, candidates: list[dict[str, Any]]) -> dict[str, Any]:
@@ -402,26 +454,40 @@ def main() -> int:
             if item.stable_key not in candidate_keys:
                 mark_seen_item(state, item)
 
+        default_route = settings.get("default_route", "signal-catchup")
+        candidates_by_route: dict[str, list[dict[str, Any]]] = {}
+        for candidate in candidates:
+            candidates_by_route.setdefault(candidate["route"], []).append(candidate)
+
+        default_route_candidates = candidates_by_route.pop(default_route, [])
         batch_min_items = int(settings.get("batch_min_items", 4))
         batch_min_score = int(settings.get("batch_min_score", 220))
-        total_score = sum(c["score"] for c in candidates)
-        if len(candidates) >= batch_min_items and total_score >= batch_min_score:
-            batch_route = settings.get("batch_route", "tech-digest-trigger")
-            sent = send_candidates(batch_route, candidates, config, settings, env_file_values, args.dry_run, timeout, state, log_path)
+        total_score = sum(c["score"] for c in default_route_candidates)
+        if default_route_candidates:
+            if len(default_route_candidates) >= batch_min_items and total_score >= batch_min_score:
+                batch_route = settings.get("batch_route", "tech-digest-trigger")
+                sent = send_candidates(batch_route, default_route_candidates, config, settings, env_file_values, args.dry_run, timeout, state, log_path)
+            else:
+                sent = send_candidates(default_route, default_route_candidates, config, settings, env_file_values, args.dry_run, timeout, state, log_path)
             sent_count += sent
             if sent:
-                for candidate in candidates:
+                for candidate in default_route_candidates:
                     mark_seen_candidate(state, candidate)
-        else:
-            candidates_by_route: dict[str, list[dict[str, Any]]] = {}
-            for candidate in candidates:
-                candidates_by_route.setdefault(candidate["route"], []).append(candidate)
-            for route, route_candidates in candidates_by_route.items():
-                sent = send_candidates(route, route_candidates, config, settings, env_file_values, args.dry_run, timeout, state, log_path)
-                sent_count += sent
-                if sent:
-                    for candidate in route_candidates:
-                        mark_seen_candidate(state, candidate)
+
+        for route, route_candidates in candidates_by_route.items():
+            sent = send_candidates(route, route_candidates, config, settings, env_file_values, args.dry_run, timeout, state, log_path)
+            sent_count += sent
+            if sent:
+                for candidate in route_candidates:
+                    mark_seen_candidate(state, candidate)
+
+    if errors and not observed:
+        send_alert(
+            settings,
+            "Hermes signal watcher source failures",
+            "\n".join(errors[:10]),
+            log_path,
+        )
 
     state["initialized"] = True
     state.setdefault("runs", []).append({
@@ -474,6 +540,12 @@ def send_candidates(
         return 0
     if not secret:
         log_line(log_path, f"missing secret env for route={route} env={secret_env}")
+        send_alert(
+            settings,
+            "Hermes signal watcher missing webhook secret",
+            f"route={route}\nenv={secret_env}\ncandidates={len(candidates)}",
+            log_path,
+        )
         return 0
     try:
         status, body = post_webhook(url, secret, payload, timeout)
@@ -488,6 +560,12 @@ def send_candidates(
         return len(candidates)
     except Exception as exc:
         log_line(log_path, f"send failed route={route} candidates={len(candidates)} error={exc}")
+        send_alert(
+            settings,
+            "Hermes signal watcher webhook send failed",
+            f"route={route}\ncandidates={len(candidates)}\nerror={exc}",
+            log_path,
+        )
         return 0
 
 

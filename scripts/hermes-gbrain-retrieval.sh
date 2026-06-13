@@ -90,7 +90,7 @@ fi
 topic_hits="$(hits_for "${HINT}" 'digest-')"
 
 # user_notes: the most recent direct user guidance pages — things the user
-# explicitly asked エルメスちゃん to remember, feedback on past posts, or topics
+# explicitly asked ヘルメスちゃん to remember, feedback on past posts, or topics
 # to track/deep-dive. These rank above the auto-derived guidance below. The page
 # title is the note text, which `list` exposes in column 4.
 user_notes="$(

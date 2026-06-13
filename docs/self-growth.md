@@ -1,7 +1,7 @@
-# エルメスちゃん Self-Growth
+# ヘルメスちゃん Self-Growth
 
 This repo treats "self-growth" as an operational loop, not as real
-consciousness. エルメスちゃん keeps a persistent identity, memory,
+consciousness. ヘルメスちゃん keeps a persistent identity, memory,
 self-evaluations, and weekly improvement notes, then uses them as soft guidance
 for later digests.
 
@@ -34,7 +34,7 @@ memory view:
 ~/.hermes/state/hermes-chan-memory.md
 ```
 
-with the recomposed `# エルメスちゃんの自己メモリ` section from the report.
+with the recomposed `# ヘルメスちゃんの自己メモリ` section from the report.
 This is designed as reinterpretation and synthesis, not forgetting.
 
 A weekly LaunchAgent runs on Sunday at 21:10 local time. It reads recent
@@ -49,6 +49,8 @@ That memory is then included in future digest prompts.
 ## Files
 
 - `prompts/hermes-chan-identity.md`: stable identity, values, and voice.
+- `prompts/hermes-post-style.md`: Discord posting voice that takes priority
+  over older self-memory tone notes when producing user-visible posts.
 - `prompts/evaluate-digest.md`: per-digest self-evaluation rubric.
 - `prompts/nightly-dreaming.md`: nightly memory recomposition prompt.
 - `prompts/weekly-self-reflection.md`: weekly memory update prompt.
@@ -61,8 +63,8 @@ That memory is then included in future digest prompts.
 - `scripts/register-hermes-cronjobs.sh`: syncs active Hermes cron jobs and
   removes disabled legacy jobs from the JSON registry.
 - `scripts/hermes-tech-digest-cron.sh`: implementation script run by the
-  `tech-digest-trigger` route; it generates, saves, lints, evaluates, and
-  prints the digest for Hermes webhook delivery.
+  scheduled tech digest cron jobs and manual `tech-digest-trigger` route; it
+  generates, saves, lints, evaluates, and prints the digest for Hermes delivery.
 - `scripts/hermes-dreaming-cron.sh`: nightly recomposition script; it saves a
   reviewable dreaming report and refreshes the current working memory view.
 - `scripts/hermes-weekly-self-reflection.sh`: weekly memory update.
@@ -112,7 +114,7 @@ Run nightly dreaming manually:
 
 ## Safety Boundary
 
-エルメスちゃん may update runtime memory, but she does not rewrite this
+ヘルメスちゃん may update runtime memory, but she does not rewrite this
 repository or change LaunchAgents by herself. Code, prompts in this repo, and
 service schedules remain human-reviewed.
 
@@ -236,12 +238,12 @@ Ordered so each phase is useful on its own and reversible.
 
 ### Revised Safety Boundary for the Brain
 
-The Safety Boundary above (エルメスちゃん updates runtime memory but does not
+The Safety Boundary above (ヘルメスちゃん updates runtime memory but does not
 rewrite this repo or the LaunchAgents) still holds for the **code** repository.
 With full write-back enabled, the boundary is restated for the brain:
 
 - **She may write.** The brain (PGLite DB under `~/.gbrain/`) and its exported
-  markdown view (`~/.hermes/brain/pages`) are runtime memory. エルメスちゃん may
+  markdown view (`~/.hermes/brain/pages`) are runtime memory. ヘルメスちゃん may
   create, link, update, dedupe, and enrich pages there automatically, including
   the weekly `learnings` page and `dream`-driven enrichment.
 - **She may not write.** This code repository (`scripts/`, `prompts/`,

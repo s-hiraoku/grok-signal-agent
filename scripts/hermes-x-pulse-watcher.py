@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Detect X/Twitter discussion pulses and trigger the Hermes tech digest."""
+"""Detect X/Twitter discussion pulses and trigger lightweight Hermes buzz posts."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from typing import Any
 
 
 X_URL_RE = re.compile(r"https?://(?:x\.com|twitter\.com)/[^\s<>()\"']+", re.IGNORECASE)
+NUM_RE = re.compile(r"-?\d+")
 
 
 def expand_path(value: str) -> Path:
@@ -80,6 +81,27 @@ def log_line(path: Path, message: str) -> None:
         f.write(f"{now_iso()} {message}\n")
 
 
+def send_alert(settings: dict[str, Any], title: str, body: str, log_path: Path) -> None:
+    script_value = os.environ.get("HERMES_ALERT_SCRIPT") or settings.get("alert_script", "~/.hermes/bin/hermes-alert.sh")
+    if not script_value:
+        return
+    script = expand_path(str(script_value))
+    if not script.exists():
+        return
+    try:
+        subprocess.run(
+            [str(script), title],
+            input=body,
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=int(settings.get("alert_timeout_seconds", 10)),
+            check=False,
+        )
+    except Exception as exc:
+        log_line(log_path, f"alert failed title={title!r} error={exc}")
+
+
 def canonical_x_url(url: str) -> str:
     cleaned = url.rstrip(".,;:!?)]}")
     parsed = urllib.parse.urlparse(cleaned)
@@ -99,6 +121,118 @@ def extract_x_urls(text: str) -> list[str]:
         seen.add(url)
         urls.append(url)
     return urls
+
+
+def parse_int(value: str, default: int = 0) -> int:
+    match = NUM_RE.search(str(value))
+    if not match:
+        return default
+    return int(match.group(0))
+
+
+def field_value(body: str, name: str) -> str:
+    pattern = re.compile(rf"(?im)^\s*{re.escape(name)}\s*:\s*(.+?)\s*$")
+    match = pattern.search(body)
+    return match.group(1).strip() if match else ""
+
+
+def parse_candidate_blocks(text: str) -> list[dict[str, Any]]:
+    blocks = re.split(r"(?im)^\s*CANDIDATE\s*:?\s*$", text)
+    candidates: list[dict[str, Any]] = []
+    for block in blocks[1:]:
+        urls = extract_x_urls(block)
+        if not urls:
+            continue
+        likes = parse_int(field_value(block, "likes"))
+        reposts = parse_int(field_value(block, "reposts"))
+        replies = parse_int(field_value(block, "replies"))
+        quotes = parse_int(field_value(block, "quotes"))
+        views = max(parse_int(field_value(block, "views")), parse_int(field_value(block, "impressions")))
+        independent_posts = parse_int(field_value(block, "independent_posts"), 1)
+        posted_minutes_ago = parse_int(field_value(block, "posted_minutes_ago"), 9999)
+        account_type = (field_value(block, "account_type") or "unknown").lower()
+        candidates.append({
+            "url": urls[0],
+            "topic": field_value(block, "topic"),
+            "posted_minutes_ago": posted_minutes_ago,
+            "likes": likes,
+            "reposts": reposts,
+            "replies": replies,
+            "quotes": quotes,
+            "views": views,
+            "independent_posts": independent_posts,
+            "account_type": account_type,
+            "reason": field_value(block, "reason"),
+        })
+    return candidates
+
+
+def candidate_raw_engagement(candidate: dict[str, Any]) -> int:
+    return (
+        int(candidate.get("likes", 0))
+        + int(candidate.get("reposts", 0)) * 4
+        + int(candidate.get("replies", 0)) * 2
+        + int(candidate.get("quotes", 0)) * 3
+        + min(int(candidate.get("views", 0)) // 100, 300)
+    )
+
+
+def candidate_engagement(candidate: dict[str, Any]) -> int:
+    return (
+        candidate_raw_engagement(candidate)
+        + max(0, int(candidate.get("independent_posts", 1)) - 1) * 10
+    )
+
+
+def is_qualified_candidate(candidate: dict[str, Any], settings: dict[str, Any]) -> tuple[bool, str]:
+    minutes = int(candidate.get("posted_minutes_ago", 9999))
+    likes = int(candidate.get("likes", 0))
+    reposts = int(candidate.get("reposts", 0))
+    replies_quotes = int(candidate.get("replies", 0)) + int(candidate.get("quotes", 0))
+    views = int(candidate.get("views", 0))
+    independent_posts = int(candidate.get("independent_posts", 1))
+    account_type = str(candidate.get("account_type", "unknown")).lower()
+    raw_engagement = candidate_raw_engagement(candidate)
+
+    if account_type in {"bot", "aggregator", "spam"}:
+        return False, "low-quality-account"
+
+    early_window = int(settings.get("early_window_minutes", 120))
+    max_window = int(settings.get("max_window_minutes", 240))
+    if minutes > max_window:
+        return False, "too-old"
+
+    if account_type in {"official", "notable"} and (
+        likes >= int(settings.get("min_likes_notable", 60))
+        or reposts >= int(settings.get("min_reposts_notable", 8))
+        or replies_quotes >= int(settings.get("min_replies_quotes_notable", 12))
+        or views >= int(settings.get("min_views_notable", 5000))
+    ):
+        return True, "notable-account"
+
+    if minutes <= early_window and (
+        likes >= int(settings.get("min_likes_early", 100))
+        or reposts >= int(settings.get("min_reposts_early", 15))
+        or replies_quotes >= int(settings.get("min_replies_quotes_early", 20))
+        or views >= int(settings.get("min_views_early", 10000))
+    ):
+        return True, "early-engagement"
+
+    if (
+        likes >= int(settings.get("min_likes_followup", 250))
+        or reposts >= int(settings.get("min_reposts_followup", 35))
+        or replies_quotes >= int(settings.get("min_replies_quotes_followup", 35))
+        or views >= int(settings.get("min_views_followup", 30000))
+    ):
+        return True, "followup-engagement"
+
+    if (
+        independent_posts >= int(settings.get("min_cluster_posts", 5))
+        and raw_engagement >= int(settings.get("min_cluster_engagement", 160))
+    ):
+        return True, "topic-cluster"
+
+    return False, "weak-engagement"
 
 
 def route_url(base_url: str, route: str) -> str:
@@ -124,24 +258,57 @@ def post_webhook(url: str, secret: str, payload: dict[str, Any], timeout: int) -
 
 def build_prompt(config: dict[str, Any]) -> str:
     queries = "\n".join(f"- {query}" for query in config.get("queries", []))
-    return f"""必ず x_search を使って、直近90分から最大3時間くらいの X/Twitter 上の developer/AI/Web/IT の盛り上がりを軽く確認してください。
+    settings = config.get("settings", {})
+    early_window = int(settings.get("early_window_minutes", 120))
+    max_window = int(settings.get("max_window_minutes", 240))
+    min_likes_early = int(settings.get("min_likes_early", 100))
+    min_reposts_early = int(settings.get("min_reposts_early", 15))
+    min_replies_quotes_early = int(settings.get("min_replies_quotes_early", 20))
+    min_views_early = int(settings.get("min_views_early", 10000))
+    min_likes_notable = int(settings.get("min_likes_notable", 60))
+    min_reposts_notable = int(settings.get("min_reposts_notable", 8))
+    min_replies_quotes_notable = int(settings.get("min_replies_quotes_notable", 12))
+    min_views_notable = int(settings.get("min_views_notable", 5000))
+    min_likes_followup = int(settings.get("min_likes_followup", 250))
+    min_reposts_followup = int(settings.get("min_reposts_followup", 35))
+    min_replies_quotes_followup = int(settings.get("min_replies_quotes_followup", 35))
+    min_views_followup = int(settings.get("min_views_followup", 30000))
+    min_cluster_posts = int(settings.get("min_cluster_posts", 5))
+    min_cluster_engagement = int(settings.get("min_cluster_engagement", 160))
+    return f"""必ず x_search を使って、直近{early_window}分を優先し、反応確認のため最大{max_window}分までの X/Twitter 上の developer/AI/Web/IT の盛り上がりを軽く確認してください。
 
-目的は投稿本文の作成ではなく、tech digest を発火する価値がある X の動きがあるかを判定することです。
+目的は投稿本文の作成ではなく、軽量な X バズ紹介を投稿する価値がある動きがあるかを判定することです。朝/昼/晩の full tech digest は別の cronjob が担当します。
 
 重点クエリ:
 {queries}
 
 条件:
-- X/Twitter の直接 URL をできるだけ多く残す。
-- 各 URL は https://x.com/<handle>/status/<id> または https://twitter.com/<handle>/status/<id> の完全な直接 URL として独立行に出す。
+- X/Twitter の直接 URL を、反応が確認できる候補だけ残す。
+- 各 URL は https://x.com/<handle>/status/<id> または https://twitter.com/<handle>/status/<id> の完全な直接 URL にする。
+- 各候補に likes / reposts / replies / quotes / views / posted_minutes_ago / account_type / independent_posts を必ず付ける。views が見えない場合は 0 にする。
+- 採用候補は、直近{early_window}分で likes>={min_likes_early}、reposts>={min_reposts_early}、replies+quotes>={min_replies_quotes_early}、views>={min_views_early} のいずれかを満たすものに絞る。
+- 公式/著名アカウントでも likes>={min_likes_notable}、reposts>={min_reposts_notable}、replies+quotes>={min_replies_quotes_notable}、views>={min_views_notable} のいずれかが確認できないものは採用しない。
+- {early_window}分を超えて最大{max_window}分まで見る場合は likes>={min_likes_followup}、reposts>={min_reposts_followup}、replies+quotes>={min_replies_quotes_followup}、views>={min_views_followup} のいずれかを満たすものに絞る。
+- 同一topicの独立投稿クラスタは、独立投稿が{min_cluster_posts}件以上あり、かつ対象投稿単体にも raw engagement score>={min_cluster_engagement} 相当の反応がある場合だけ採用する。独立投稿数だけでは採用しない。
 - 開発者、AI agent builder、Web engineer、IT watcher に意味がある話題を優先する。
 - 同じ話題の重複や薄い感想は落とす。
-- URL が確認できない話題は出さない。
+- engagement 数値が不明な投稿、反応が薄い投稿、単なるリンク転載、自動投稿/botっぽい投稿、URL が確認できない話題は出さない。
 - web_search や browser では代替しない。
 
-出力は簡潔に:
-1. pulse summary
-2. high-signal X URLs with one-line reason
+出力は必ず次の候補ブロックだけにしてください。候補がなければ `NO_QUALIFIED_PULSE` とだけ返してください。
+
+CANDIDATE
+topic: <短い話題名>
+url: <direct X URL>
+posted_minutes_ago: <number>
+likes: <number>
+reposts: <number>
+replies: <number>
+quotes: <number>
+views: <number, 0 if unavailable>
+account_type: official|notable|general|bot|aggregator|unknown
+independent_posts: <same-topic independent post count>
+reason: <why this matters in Japanese>
 """
 
 
@@ -211,50 +378,74 @@ def main() -> int:
         errors.extend(run_errors)
     except Exception as exc:
         log_line(log_path, f"x_search failed error={exc}")
+        send_alert(
+            settings,
+            "Hermes X pulse watcher x_search failed",
+            str(exc),
+            log_path,
+        )
         print(json.dumps({"total_urls": 0, "new_urls": 0, "sent": 0, "errors": [str(exc)], "dry_run": args.dry_run}, ensure_ascii=False))
-        return 1
+        return 0
 
     urls = extract_x_urls(curation)
+    parsed_candidates = parse_candidate_blocks(curation)
     seen_urls = state.setdefault("seen_urls", {})
-    new_urls = [url for url in urls if url not in seen_urls]
-    score = len(new_urls) * 25 + len(urls) * 3
-    min_new_urls = int(settings.get("min_new_urls", 4))
-    min_total_urls = int(settings.get("min_total_urls", 6))
-    min_score = int(settings.get("min_score", 120))
+    qualified_candidates = []
+    rejected_candidates = []
+    for candidate in parsed_candidates:
+        qualified, reason = is_qualified_candidate(candidate, settings)
+        candidate["qualification"] = reason
+        if qualified and candidate["url"] not in seen_urls:
+            qualified_candidates.append(candidate)
+        else:
+            rejected_candidates.append(candidate)
+    new_urls = [candidate["url"] for candidate in qualified_candidates]
+    score = sum(candidate_engagement(candidate) for candidate in qualified_candidates)
+    min_qualified_urls = int(settings.get("min_qualified_urls", 1))
+    min_qualified_score = int(settings.get("min_qualified_score", 40))
     should_prime_only = (
         first_run
         and settings.get("prime_only_on_first_run", True)
         and not args.allow_first_run_send
     )
-    should_trigger = len(new_urls) >= min_new_urls and len(urls) >= min_total_urls and score >= min_score
+    should_trigger = len(new_urls) >= min_qualified_urls and score >= min_qualified_score
     sent_count = 0
 
     if should_prime_only:
         mark_seen_urls(state, urls)
-        log_line(log_path, f"primed total_urls={len(urls)}; no webhook sent")
+        log_line(log_path, f"primed total_urls={len(urls)} qualified={len(qualified_candidates)}; no webhook sent")
     elif should_trigger:
-        route = settings.get("route", "tech-digest-trigger")
+        route = settings.get("route", "x-buzz-trigger")
         cooldown_minutes = int(settings.get("cooldown_minutes", 90))
         last_sent = state.setdefault("last_sent_routes", {}).get(route, 0)
         now_ts = time.time()
         if last_sent and now_ts - float(last_sent) < cooldown_minutes * 60:
             log_line(log_path, f"cooldown route={route} new_urls={len(new_urls)} minutes={cooldown_minutes}")
         elif args.dry_run:
-            log_line(log_path, f"dry-run route={route} new_urls={len(new_urls)} score={score}")
+            log_line(log_path, f"dry-run route={route} qualified_urls={len(new_urls)} score={score}")
         else:
             base_url = env_value(settings.get("webhook_base_url_env", ""), env_file_values) or settings.get("default_webhook_base_url", "http://127.0.0.1:8644")
             secret = env_value(settings.get("post_trigger_secret_env", ""), env_file_values)
             if not secret:
                 log_line(log_path, "missing post trigger secret")
+                send_alert(
+                    settings,
+                    "Hermes X pulse watcher missing webhook secret",
+                    f"route={route}\nqualified_urls={len(new_urls)}\nsecret_env={settings.get('post_trigger_secret_env', '')}",
+                    log_path,
+                )
             else:
                 payload = {
                     "event_type": "x.pulse",
                     "route": route,
+                    "summary_kind": "x_buzz_posts",
                     "created_at": now_iso(),
                     "score": score,
                     "total_url_count": len(urls),
                     "new_url_count": len(new_urls),
                     "new_urls": new_urls,
+                    "buzz_urls": new_urls,
+                    "qualified_candidates": qualified_candidates,
                     "curation": curation[: int(settings.get("max_curation_chars", 6000))],
                 }
                 try:
@@ -268,11 +459,17 @@ def main() -> int:
                     }
                     mark_seen_urls(state, urls)
                     sent_count = len(new_urls)
-                    log_line(log_path, f"sent route={route} new_urls={len(new_urls)} status={status} body={body[:200]}")
+                    log_line(log_path, f"sent route={route} qualified_urls={len(new_urls)} score={score} status={status} body={body[:200]}")
                 except Exception as exc:
-                    log_line(log_path, f"send failed route={route} new_urls={len(new_urls)} error={exc}")
+                    log_line(log_path, f"send failed route={route} qualified_urls={len(new_urls)} error={exc}")
+                    send_alert(
+                        settings,
+                        "Hermes X pulse watcher webhook send failed",
+                        f"route={route}\nqualified_urls={len(new_urls)}\nerror={exc}",
+                        log_path,
+                    )
     else:
-        log_line(log_path, f"below-threshold total_urls={len(urls)} new_urls={len(new_urls)} score={score}")
+        log_line(log_path, f"below-threshold total_urls={len(urls)} candidates={len(parsed_candidates)} qualified_urls={len(new_urls)} score={score}")
 
     state["initialized"] = True
     trim_seen_urls(state, int(settings.get("max_seen_urls", 400)))
@@ -280,6 +477,8 @@ def main() -> int:
         "at": now_iso(),
         "total_urls": len(urls),
         "new_urls": len(new_urls),
+        "candidate_count": len(parsed_candidates),
+        "qualified_count": len(qualified_candidates),
         "score": score,
         "should_trigger": should_trigger,
         "sent": sent_count,
@@ -293,6 +492,8 @@ def main() -> int:
     print(json.dumps({
         "total_urls": len(urls),
         "new_urls": len(new_urls),
+        "candidate_count": len(parsed_candidates),
+        "qualified_count": len(qualified_candidates),
         "score": score,
         "should_trigger": should_trigger,
         "sent": sent_count,

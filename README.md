@@ -35,6 +35,7 @@ scripts/install-macos-launchagent.sh
 scripts/uninstall-macos-launchagent.sh
 scripts/register-hermes-cronjobs.sh
 scripts/register-hermes-webhooks.sh
+scripts/hermes-morning-brief-cron.sh
 scripts/hermes-tech-digest-cron.sh
 scripts/hermes-dreaming-cron.sh
 scripts/hermes-review-cron.sh
@@ -51,6 +52,7 @@ scripts/hermes-digest-lint.sh
 scripts/hermes-alert.sh
 scripts/hermes-obsidian-mcp-setup.sh
 scripts/hermes-jina-mcp-setup.sh
+scripts/hermes-google-calendar-mcp-setup.sh
 prompts/x-daily-summary.md
 prompts/tech-digest.md
 prompts/hermes-chan-identity.md
@@ -111,12 +113,14 @@ chmod +x scripts/install-macos-launchagent.sh scripts/uninstall-macos-launchagen
 ```
 
 Full Mac-local details are in [docs/mac-local.md](docs/mac-local.md).
-The self-growth loop for エルメスちゃん is in
+The self-growth loop for ヘルメスちゃん is in
 [docs/self-growth.md](docs/self-growth.md).
 The optional Obsidian vault connection is in
 [docs/obsidian.md](docs/obsidian.md).
 The optional Jina Reader connection is in
 [docs/jina-reader.md](docs/jina-reader.md).
+The optional Google Calendar connection is in
+[docs/google-calendar.md](docs/google-calendar.md).
 The wbsb.dev source note is in
 [docs/wbsb-dev.md](docs/wbsb-dev.md).
 The Zenn source note is in
@@ -143,17 +147,48 @@ The webhook registration script reads
 [config/hermes-webhooks.json](config/hermes-webhooks.json) and creates trigger
 routes:
 
-- `signal-catchup` and `tech-digest-trigger` to `#tech-digest`
+- `tech-digest-trigger` to `#tech-digest`
+- `x-buzz-trigger` to `#x-buzz-info`
+- `zenn-dev-trigger` to `#zenn-dev-info`
+- `wbsb-trigger` to `#wbsb-dev-info`
+- `signal-catchup` to `#tech-signals`
 - `nightly-dreaming-trigger` to `#ask-hermes`
+
+Channel IDs can be overridden locally without committing personal Discord
+targets. Copy [config/hermes-channels.example.json](config/hermes-channels.example.json)
+to `config/hermes-channels.local.json`, replace the channel IDs, and rerun the
+registration or installer script. The local override file is ignored by git.
 
 The active cron jobs are:
 
-- `平日9:50リマインダー` to `#morning-brief`
+- `平日9:50リマインダー` to `#morning-brief`, using direct RSS/Atom feeds
+  plus Google Workspace Calendar events
 - `金曜17時gbrainサマリー` to `#weekly-review`, using gbrain/honcho status
 - `毎晩23:30 gbrain/honcho daily review` to `#daily-review`
 
 The older `discord-heartbeat` LaunchAgent is treated as legacy and removed by
 the macOS installer.
+
+### Channel Design
+
+Hermes channel routing is organized by what readers expect to find in each
+channel, not by whether the post was started by cron or a webhook.
+
+| Channel | Purpose |
+| --- | --- |
+| `#tech-digest` | Scheduled full tech digests and manually triggered full digests. |
+| `#x-buzz-info` | Short X/Twitter discussion spikes from `x-buzz-trigger`. |
+| `#zenn-dev-info` | Zenn article signals from `zenn-dev-trigger`. |
+| `#wbsb-dev-info` | wbsb.dev article signals from `wbsb-trigger`. |
+| `#tech-signals` | Generic external technical signals from `signal-catchup`. |
+| `#morning-brief` | Weekday morning work brief. |
+| `#weekly-review` | Weekly gbrain/honcho review. |
+| `#daily-review` | Daily gbrain/honcho operations review. |
+| `#ask-hermes` | Hermes memory, internal maintenance, and direct interaction. |
+
+Keep `#tech-digest` focused on full digest posts. Source-specific automatic
+notifications should use their source channels, and broad webhook catch-up
+items should use `#tech-signals`.
 
 External movement must come from an upstream event source such as GitHub,
 release monitors, uptime alerts, RSS-to-webhook bridges, or a custom watcher.
@@ -161,10 +196,11 @@ Hermes receives those signed webhook POSTs and posts the result to Discord. The
 intended split is:
 
 - Hermes built-in service: keep Hermes Gateway running.
-- Signal watcher: monitor Zenn, wbsb.dev, release feeds, and other sources;
-  score/dedupe/cooldown changes before any Discord post is triggered.
-- X pulse watcher: sample recent X discussion with `x_search`; trigger the
-  tech digest only when enough new direct X URLs appear.
+- Signal watcher: monitor Zenn, wbsb.dev, Anthropic, GitHub Changelog, OpenAI
+  News, Cloudflare Changelog, Hacker News, Publickey, release feeds, and other
+  sources; score/dedupe/cooldown changes before any Discord post is triggered.
+- X pulse watcher: sample recent X discussion with `x_search`; trigger a short
+  `x-buzz-trigger` post only when engagement-qualified X posts appear.
 - Hermes webhook platform: event ingress and delivery targets.
 - Handler scripts: job implementation details such as tech digest generation,
   digest/evaluation persistence, digest quality linting/metadata, alerts, and
@@ -178,17 +214,23 @@ trigger-driven behavior.
 
 The watcher configuration is in
 [config/signal-watchers.json](config/signal-watchers.json). It currently
-monitors Zenn, wbsb.dev, and Hermes Agent releases. First run primes state only
-so old articles are not posted in bulk; later runs post only threshold-crossing
-new signals. The macOS installer copies the watcher runtime to
+monitors Zenn, wbsb.dev, Anthropic News/Engineering/Research, GitHub Changelog,
+OpenAI News, Cloudflare Changelog, Hacker News frontpage/best, Publickey, and
+Hermes Agent releases. First run primes state only so old articles are not
+posted in bulk; later runs post only threshold-crossing new signals. The macOS
+installer copies the watcher runtime to
 `~/.hermes/runtime/grok-signal-agent/`; re-run the installer after changing the
 watcher code or config.
 
 The X pulse configuration is in
 [config/x-pulse-watchers.json](config/x-pulse-watchers.json). It runs every 30
 minutes, primes existing X URLs on the first run, and triggers
-`tech-digest-trigger` only when recent `x_search` results contain enough new
-direct X/Twitter URLs.
+`x-buzz-trigger` only when recent `x_search` results contain new direct
+X/Twitter posts that pass the engagement filter. The watcher prioritizes the
+latest 120 minutes, can look back up to 240 minutes, and qualifies candidates by
+likes, reposts, replies/quotes, views/impressions when available, official or
+notable accounts with visible traction, or independent same-topic posts that
+also have enough direct engagement. URL count alone is not treated as buzz.
 
 ## Digest Quality And Feedback
 
@@ -215,6 +257,9 @@ alerts somewhere else, set one of:
 HERMES_ALERT_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 HERMES_ALERT_COMMAND='your-command-that-reads-stdin'
 ```
+
+The signal and X pulse watchers call the same alert helper when webhook
+delivery fails, required webhook secrets are missing, or X search cannot run.
 
 Explicit Discord feedback and follow-up requests can be captured with the
 Gateway hook `~/.hermes/bin/hermes-discord-feedback.sh`. Supported message
@@ -257,7 +302,7 @@ The file [systemd/hermes-gateway.service](systemd/hermes-gateway.service) is a c
 
 ## Obsidian Vault Access (Optional)
 
-エルメスちゃん can access an Obsidian vault through Hermes' MCP support and
+ヘルメスちゃん can access an Obsidian vault through Hermes' MCP support and
 the official filesystem MCP server. Access is limited to the vault directory
 you pass to the setup script.
 
@@ -284,6 +329,20 @@ For higher limits, set `JINA_API_KEY` in `~/.hermes/.env` and rerun with
 `--api-key-env JINA_API_KEY`. Details are in
 [docs/jina-reader.md](docs/jina-reader.md).
 
+## Google Calendar Access (Optional)
+
+Hermes can use Google's official remote Calendar MCP server to answer schedule
+questions from Discord, such as `今日の予定は？`. The repository helper registers
+the Calendar MCP server as read-only by default.
+
+```bash
+scripts/hermes-google-calendar-mcp-setup.sh --login --restart-gateway
+```
+
+Set `GOOGLE_CALENDAR_MCP_CLIENT_ID` and
+`GOOGLE_CALENDAR_MCP_CLIENT_SECRET` in `~/.hermes/.env` before login. Details
+are in [docs/google-calendar.md](docs/google-calendar.md).
+
 ## Tests
 
 Run the shell regression tests:
@@ -294,7 +353,7 @@ tests/run.sh
 
 ## gbrain Memory Backend (Optional)
 
-エルメスちゃん's self-growth loop can use [`garrytan/gbrain`](https://github.com/garrytan/gbrain)
+ヘルメスちゃん's self-growth loop can use [`garrytan/gbrain`](https://github.com/garrytan/gbrain)
 as a searchable memory backend: it stores each digest and self-evaluation as a
 page, lets digest triggers recall what was recently covered, and runs an
 enrichment cycle during the weekly reflection. The full design and storage
@@ -335,7 +394,7 @@ repository helper scripts prepend `~/.bun/bin` to `PATH` before invoking
 
 ### Remember things from Discord (optional)
 
-You can tell エルメスちゃん to remember something straight from Discord. A
+You can tell ヘルメスちゃん to remember something straight from Discord. A
 `pre_gateway_dispatch` shell hook (`scripts/hermes-gbrain-remember.sh`) watches
 incoming messages and, when one starts with a remember-prefix, saves the rest
 as a `note` page in the brain. Digest retrieval then surfaces recent

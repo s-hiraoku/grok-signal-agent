@@ -6,6 +6,7 @@ REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 HERMES_BIN="${HERMES_BIN:-${HOME}/.local/bin/hermes}"
 CONFIG_FILE="${HERMES_WEBHOOKS_CONFIG:-${REPO_DIR}/config/hermes-webhooks.json}"
 CRON_CONFIG_FILE="${HERMES_CRONJOBS_CONFIG:-${REPO_DIR}/config/hermes-cronjobs.json}"
+CHANNELS_CONFIG="${HERMES_CHANNELS_CONFIG:-${REPO_DIR}/config/hermes-channels.local.json}"
 HERMES_HOME_DIR="${HERMES_HOME:-${HOME}/.hermes}"
 SUBSCRIPTIONS_FILE="${HERMES_WEBHOOK_SUBSCRIPTIONS_FILE:-${HERMES_HOME_DIR}/webhook_subscriptions.json}"
 ENV_FILE="${HERMES_ENV_FILE:-${HERMES_HOME_DIR}/.env}"
@@ -47,6 +48,10 @@ jq -e '
 
 jq -e '.version == 1 and (.channels | type == "object")' "${CRON_CONFIG_FILE}" >/dev/null
 
+if [[ -f "${CHANNELS_CONFIG}" ]]; then
+  jq -e '.version == 1 and (.channels | type == "object")' "${CHANNELS_CONFIG}" >/dev/null
+fi
+
 normalize_name() {
   local name="$1"
   printf '%s' "${name// /-}" | tr '[:upper:]' '[:lower:]'
@@ -58,6 +63,17 @@ expand_home() {
     "~/"*) printf '%s/%s' "${HOME}" "${value:2}" ;;
     *) printf '%s' "${value}" ;;
   esac
+}
+
+channel_target() {
+  local channel="$1" target=""
+  if [[ -f "${CHANNELS_CONFIG}" ]]; then
+    target="$(jq -r --arg ch "${channel}" '.channels[$ch] // empty' "${CHANNELS_CONFIG}")"
+  fi
+  if [[ -z "${target}" ]]; then
+    target="$(jq -r --arg ch "${channel}" '.channels[$ch] // empty' "${CRON_CONFIG_FILE}")"
+  fi
+  printf '%s' "${target}"
 }
 
 existing_secret() {
@@ -100,8 +116,10 @@ env_value() {
 script_prompt() {
   local script="$1"
   local workdir="$2"
-  local script_path="\${HOME}/.hermes/scripts/${script}"
+  local script_path
   local cd_line=""
+
+  script_path="$(expand_home "~/.hermes/scripts/${script}")"
 
   if [[ -n "${workdir}" ]]; then
     cd_line="cd \"$(expand_home "${workdir}")\" && "
@@ -119,10 +137,16 @@ script_prompt() {
 terminal/shell が利用可能なら、次のコマンドを実行してください。
 
 \`\`\`bash
-${cd_line}bash "${script_path}"
+set -euo pipefail
+script_path="${script_path}"
+if [[ ! -f "\${script_path}" ]]; then
+  echo "SCRIPT_UNAVAILABLE: \${script_path} が見つかりません。scripts/install-macos-launchagent.sh または hermes-posting-admin.sh sync を実行して runtime scripts を同期してください。" >&2
+  exit 66
+fi
+${cd_line}bash "\${script_path}"
 \`\`\`
 
-script の標準出力が Discord 投稿本文です。成功した場合は、その標準出力を最終回答としてそのまま返してください。失敗した場合は、失敗したコマンド、終了コード、重要な stderr を短く報告してください。
+この shell コマンドを実行せずに本文を推測しないでください。script の標準出力が Discord 投稿本文です。成功した場合は、その標準出力を最終回答としてそのまま返してください。失敗した場合は、失敗したコマンド、終了コード、重要な stderr を短く報告してください。
 EOF
 }
 
@@ -149,7 +173,7 @@ while IFS= read -r subscription; do
   name="$(normalize_name "$(jq -r '.name' <<< "${subscription}")")"
   enabled="$(jq -r 'if has("enabled") then .enabled else true end' <<< "${subscription}")"
   channel="$(jq -r '.channel' <<< "${subscription}")"
-  target="$(jq -r --arg ch "${channel}" '.channels[$ch] // empty' "${CRON_CONFIG_FILE}")"
+  target="$(channel_target "${channel}")"
   mode="$(jq -r '.mode' <<< "${subscription}")"
   description="$(jq -r '.description // empty' <<< "${subscription}")"
 
@@ -172,6 +196,10 @@ while IFS= read -r subscription; do
   if [[ "${mode}" == "script" ]]; then
     script="$(jq -r '.script' <<< "${subscription}")"
     workdir="$(jq -r '.workdir // empty' <<< "${subscription}")"
+    if [[ ! -f "${REPO_DIR}/scripts/${script}" ]]; then
+      echo "Script-mode webhook '${name}' references missing script: scripts/${script}" >&2
+      exit 1
+    fi
     prompt="$(script_prompt "${script}" "${workdir}")"
   else
     prompt="$(jq -r '.prompt' <<< "${subscription}")"

@@ -1,6 +1,6 @@
 # Obsidian Vault Access
 
-エルメスちゃん can access one Obsidian vault through Hermes MCP support and
+ヘルメスちゃん can access one Obsidian vault through Hermes MCP support and
 the official filesystem MCP server. Obsidian notes are Markdown files, so this
 does not require the Obsidian app to be running.
 

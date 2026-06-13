@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Nightly memory recomposition for エルメスちゃん.
+# Nightly memory recomposition for ヘルメスちゃん.
 #
 # This is intentionally "recomposition", not forgetting:
 # - raw sessions, digests, evaluations, and feedback stay untouched;
@@ -88,7 +88,7 @@ SQL
 
 extract_recomposed_memory() {
   awk '
-    /^# エルメスちゃんの自己メモリ[[:space:]]*$/ { capture=1 }
+    /^# ヘルメスちゃんの自己メモリ[[:space:]]*$/ { capture=1 }
     capture { print }
   ' "$1"
 }
@@ -209,7 +209,7 @@ if dreaming_output="$("${HERMES_BIN}" -z "${prompt}" 2>>"${LOG_FILE}")"; then
   printf '%s\n' "${dreaming_output}" > "${report_file}"
   extract_recomposed_memory "${report_file}" > "${memory_tmp}"
 
-  if [[ ! -s "${memory_tmp}" ]] || ! grep -q '^# エルメスちゃんの自己メモリ' "${memory_tmp}"; then
+  if [[ ! -s "${memory_tmp}" ]] || ! grep -q '^# ヘルメスちゃんの自己メモリ' "${memory_tmp}"; then
     log "dreaming output did not contain recomposed memory section: ${report_file}"
     rm -f "${memory_tmp}"
     exit 1

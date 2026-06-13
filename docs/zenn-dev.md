@@ -18,8 +18,8 @@ Hermesから参照するときは Jina Reader MCP の `read_url` でページを
 - Tech記事と公式/一次情報に近い記事を優先する。
 - 個人記事は一次情報ではなく、個人の知見・実装記録・調査記録として扱う。
 - Books、Scraps、Ideasは有用な場合だけ補助情報として扱う。
-- `config/signal-watchers.json` の `zenn-trending` がキャッチアップ trigger
-  source として使う。
+- `config/signal-watchers.json` の `zenn-trending` が `zenn-dev-trigger`
+  route に送るキャッチアップ trigger source として使う。
 
 ## Example Prompt
 

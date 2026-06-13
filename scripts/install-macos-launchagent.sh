@@ -23,6 +23,7 @@ mkdir -p \
   "${HOME}/.hermes/bin" \
   "${HOME}/.hermes/logs" \
   "${HOME}/.hermes/prompts" \
+  "${HOME}/.hermes/skills/devops/hermes-posting-admin" \
   "${HOME}/.hermes/scripts" \
   "${HOME}/.hermes/state/digests" \
   "${HOME}/.hermes/state/evaluations" \
@@ -60,6 +61,12 @@ install -m 755 \
   "${REPO_DIR}/scripts/hermes-jina-mcp-setup.sh" \
   "${HOME}/.hermes/bin/hermes-jina-mcp-setup.sh"
 install -m 755 \
+  "${REPO_DIR}/scripts/hermes-google-calendar-mcp-setup.sh" \
+  "${HOME}/.hermes/bin/hermes-google-calendar-mcp-setup.sh"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-posting-admin.sh" \
+  "${HOME}/.hermes/bin/hermes-posting-admin.sh"
+install -m 755 \
   "${REPO_DIR}/scripts/register-hermes-webhooks.sh" \
   "${HOME}/.hermes/bin/register-hermes-webhooks.sh"
 install -m 755 \
@@ -80,6 +87,7 @@ install -m 644 \
 install -m 644 \
   "${REPO_DIR}/config/x-pulse-watchers.json" \
   "${RUNTIME_DIR}/config/x-pulse-watchers.json"
+printf '%s\n' "${REPO_DIR}" > "${RUNTIME_DIR}/repo-path"
 for cron_script in "${REPO_DIR}"/scripts/*-cron.sh; do
   [[ -e "${cron_script}" ]] || continue
   install -m 755 "${cron_script}" "${HOME}/.hermes/scripts/"
@@ -87,10 +95,14 @@ done
 install -m 644 \
   "${REPO_DIR}/prompts/hermes-chan-identity.md" \
   "${REPO_DIR}/prompts/evaluate-digest.md" \
+  "${REPO_DIR}/prompts/hermes-post-style.md" \
   "${REPO_DIR}/prompts/tech-digest.md" \
   "${REPO_DIR}/prompts/nightly-dreaming.md" \
   "${REPO_DIR}/prompts/weekly-self-reflection.md" \
   "${HOME}/.hermes/prompts/"
+install -m 644 \
+  "${REPO_DIR}/.agents/skills/hermes-posting-admin/SKILL.md" \
+  "${HOME}/.hermes/skills/devops/hermes-posting-admin/SKILL.md"
 
 "${HERMES_BIN}" config set cron.script_timeout_seconds 300 >/dev/null
 
@@ -227,8 +239,9 @@ echo "Installed and restarted Hermes built-in gateway service"
 echo "Removed legacy ${HEARTBEAT_LABEL}, ${LEGACY_GATEWAY_LABEL}, and ${LEGACY_HEALTHCHECK_LABEL}"
 echo "Installed ${WEEKLY_REFLECTION_LABEL}; it will update self-memory weekly"
 echo "Installed ${SIGNAL_WATCHER_LABEL}; it will catch up source changes via webhook thresholds"
-echo "Installed ${X_PULSE_WATCHER_LABEL}; it will trigger X tech digest on X discussion pulses"
+echo "Installed ${X_PULSE_WATCHER_LABEL}; it will trigger lightweight X buzz posts on X discussion pulses"
 echo "Installed and approved Gateway memory/feedback hooks"
+echo "Installed Hermes posting admin helper and skill"
 echo "Installed watcher runtime under ${RUNTIME_DIR}"
 echo "Status:"
 launchctl print "${GUI_DOMAIN}/ai.hermes.gateway" | sed -n '1,80p'

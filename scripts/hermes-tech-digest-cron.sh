@@ -10,6 +10,7 @@ LOG_DIR="${HERMES_LOG_DIR:-${HOME}/.hermes/logs}"
 LOG_FILE="${LOG_DIR}/hermes-tech-digest-cron.log"
 PROMPT_FILE="${HERMES_TECH_DIGEST_PROMPT_FILE:-${PROMPT_DIR}/tech-digest.md}"
 IDENTITY_FILE="${HERMES_IDENTITY_FILE:-${PROMPT_DIR}/hermes-chan-identity.md}"
+POST_STYLE_FILE="${HERMES_POST_STYLE_FILE:-${PROMPT_DIR}/hermes-post-style.md}"
 MEMORY_FILE="${HERMES_CHAN_MEMORY_FILE:-${STATE_DIR}/hermes-chan-memory.md}"
 EVALUATION_PROMPT_FILE="${HERMES_EVALUATION_PROMPT_FILE:-${PROMPT_DIR}/evaluate-digest.md}"
 DIGEST_DIR="${STATE_DIR}/digests"
@@ -129,6 +130,10 @@ When an example includes <digest_prefix>, replace it with "${digest_prefix}".
 # Persistent identity
 
 $(read_optional_file "${IDENTITY_FILE}" 220)
+
+# Posting style for Discord
+
+$(read_optional_file "${POST_STYLE_FILE}" 220)
 
 # Current self-memory and preferences
 

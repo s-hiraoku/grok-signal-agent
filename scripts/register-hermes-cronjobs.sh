@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 HERMES_BIN="${HERMES_BIN:-${HOME}/.local/bin/hermes}"
 CONFIG_FILE="${HERMES_CRONJOBS_CONFIG:-${REPO_DIR}/config/hermes-cronjobs.json}"
+CHANNELS_CONFIG="${HERMES_CHANNELS_CONFIG:-${REPO_DIR}/config/hermes-channels.local.json}"
 
 if [[ ! -x "${HERMES_BIN}" ]]; then
   echo "Hermes is not installed at ${HERMES_BIN}." >&2
@@ -36,6 +37,10 @@ jq -e '
   )
 ' "${CONFIG_FILE}" >/dev/null
 
+if [[ -f "${CHANNELS_CONFIG}" ]]; then
+  jq -e '.version == 1 and (.channels | type == "object")' "${CHANNELS_CONFIG}" >/dev/null
+fi
+
 existing_job_id() {
   local name="$1"
   local line current_id=""
@@ -59,6 +64,17 @@ expand_home() {
     "~/"*) printf '%s/%s' "${HOME}" "${value:2}" ;;
     *) printf '%s' "${value}" ;;
   esac
+}
+
+channel_target() {
+  local channel="$1" target=""
+  if [[ -f "${CHANNELS_CONFIG}" ]]; then
+    target="$(jq -r --arg ch "${channel}" '.channels[$ch] // empty' "${CHANNELS_CONFIG}")"
+  fi
+  if [[ -z "${target}" ]]; then
+    target="$(jq -r --arg ch "${channel}" '.channels[$ch] // empty' "${CONFIG_FILE}")"
+  fi
+  printf '%s' "${target}"
 }
 
 run_hermes() {
@@ -86,7 +102,7 @@ while IFS= read -r job; do
   enabled="$(jq -r 'if has("enabled") then .enabled else true end' <<< "${job}")"
   schedule="$(jq -r '.schedule' <<< "${job}")"
   channel="$(jq -r '.channel' <<< "${job}")"
-  deliver="$(jq -r --arg ch "${channel}" '.channels[$ch] // empty' "${CONFIG_FILE}")"
+  deliver="$(channel_target "${channel}")"
   mode="$(jq -r '.mode' <<< "${job}")"
   prompt="$(jq -r '.prompt' <<< "${job}")"
 
