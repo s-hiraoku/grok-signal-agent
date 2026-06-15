@@ -1912,6 +1912,69 @@ STUB
   assert_file_contains "${capture_log}" "event string safe memory"
 }
 
+test_tech_digest_cron_falls_back_to_jina_reader_when_x_search_fails() {
+  local tmp_home hermes_stub output digest_file log_file
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/.local/bin"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$*" == *"-t x_search"* ]]; then
+  echo "x_search credits exhausted" >&2
+  exit 42
+fi
+
+if [[ "$*" == *"-t jina_reader"* ]]; then
+  cat <<'DIGEST'
+Jina Reader fallback digest
+
+### Browser platform update
+Jina Readerで公開ページを確認した代替トピック。
+参照ページ: https://web.dev/blog/
+
+### Developer tools update
+GitHub Changelogから確認した開発者向け更新。
+参照ページ: https://github.blog/changelog/
+
+### AI engineering update
+OpenAI Newsから確認したAI開発者向け更新。
+参照ページ: https://openai.com/news/
+
+### Japanese dev source update
+Zenn Exploreから確認した国内開発者向け更新。
+参照ページ: https://zenn.dev/articles/explore
+DIGEST
+  exit 0
+fi
+
+cat <<'EVAL'
+## スコア
+- 総合: 4
+EVAL
+STUB
+  chmod +x "${hermes_stub}"
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${hermes_stub}" \
+    HERMES_PROMPT_DIR="${REPO_DIR}/prompts" \
+    HERMES_TECH_DIGEST_JINA_FALLBACK=1 \
+    "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh"
+  )"
+
+  assert_contains "${output}" "Jina Reader fallback digest"
+  assert_contains "${output}" "参照ページ: https://web.dev/blog/"
+  digest_file="$(find "${tmp_home}/.hermes/state/digests" -type f -name '*.md' -print -quit)"
+  [[ -n "${digest_file}" ]] || fail "expected Jina fallback digest"
+  assert_file_contains "${digest_file}" 'curation_source: "jina_reader"'
+  assert_file_contains "${digest_file}" "https://github.blog/changelog/"
+  log_file="${tmp_home}/.hermes/logs/hermes-tech-digest-cron.log"
+  assert_file_contains "${log_file}" "x_search curation failed exit=42"
+  assert_file_contains "${log_file}" "jina_reader fallback curation succeeded after x_search failure"
+}
+
 test_tech_digest_cron_runs_lint_and_low_score_alert() {
   local tmp_home hermes_stub output metadata_file alert_log
   tmp_home="$(mktemp -d)"
@@ -2053,6 +2116,7 @@ main() {
     test_digest_linter_rejects_missing_section_urls
     test_discord_feedback_hook_writes_fallback_artifact
     test_discord_feedback_and_remember_hooks_accept_string_event_payloads
+    test_tech_digest_cron_falls_back_to_jina_reader_when_x_search_fails
     test_tech_digest_cron_runs_lint_and_low_score_alert
   )
   local test_name
