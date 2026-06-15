@@ -22,6 +22,8 @@ LINT_SCRIPT="${HERMES_DIGEST_LINT_SCRIPT:-${HOME}/.hermes/bin/hermes-digest-lint
 ALERT_SCRIPT="${HERMES_ALERT_SCRIPT:-${HOME}/.hermes/bin/hermes-alert.sh}"
 JINA_FALLBACK_ENABLED="${HERMES_TECH_DIGEST_JINA_FALLBACK:-1}"
 JINA_FALLBACK_URLS="${HERMES_TECH_DIGEST_JINA_URLS:-OpenAI News|https://openai.com/news/;GitHub Changelog|https://github.blog/changelog/;web.dev Blog|https://web.dev/blog/;Chrome Developers Blog|https://developer.chrome.com/blog/;Zenn Explore|https://zenn.dev/articles/explore;wbsb.dev New|https://wbsb.dev/?tab=new}"
+JINA_READER_BASE_URL="${HERMES_TECH_DIGEST_JINA_READER_BASE_URL:-https://r.jina.ai/http://r.jina.ai/http://}"
+CURL_BIN="${CURL_BIN:-curl}"
 X_POST_URL_REGEX='https?://(x\.com|twitter\.com)/([^/?#[:space:]]+/status|i/web/status)/[0-9][0-9]*[^[:space:])>]*'
 
 mkdir -p "${LOG_DIR}" "${DIGEST_DIR}" "${EVAL_DIR}" "${METADATA_DIR}" "${QUALITY_DIR}"
@@ -50,10 +52,62 @@ has_source_links() {
   grep -Eqi "${X_POST_URL_REGEX}" <<< "$1"
 }
 
+has_reference_sections() {
+  local text="$1" section_count reference_count
+  section_count="$(grep -Ec '^###[[:space:]]+' <<< "${text}" || true)"
+  reference_count="$(grep -Ec '^参照ページ:[[:space:]]*https?://' <<< "${text}" || true)"
+  (( section_count >= 4 && reference_count >= section_count ))
+}
+
+reader_url_for() {
+  printf '%s%s' "${JINA_READER_BASE_URL}" "$1"
+}
+
+run_jina_direct_fallback() {
+  command -v "${CURL_BIN}" >/dev/null 2>&1 || return 1
+
+  local fallback_sources source label url page title links output sections reader_url
+  fallback_sources="${JINA_FALLBACK_URLS//;/$'\n'}"
+  output="Jina Reader direct fallback digest"
+  sections=0
+  while IFS= read -r source; do
+    [[ -n "${source}" ]] || continue
+    label="${source%%|*}"
+    url="${source#*|}"
+    [[ "${label}" != "${url}" && "${url}" == http* ]] || continue
+
+    reader_url="$(reader_url_for "${url}")"
+    if ! page="$("${CURL_BIN}" -L --max-time 20 -sS "${reader_url}" 2>>"${LOG_FILE}")"; then
+      log "jina_reader direct fetch failed for ${label}"
+      continue
+    fi
+    [[ -n "${page//[[:space:]]/}" ]] || continue
+
+    title="$(awk -F ': ' '/^Title: / { print $2; exit }' <<< "${page}")"
+    [[ -n "${title}" ]] || title="${label}"
+    links="$(grep -Eo '\[[^][]+\]\(https?://[^) ]+\)' <<< "${page}" \
+      | sed -E 's/^\[([^]]+)\]\(([^)]+)\)$/  - \1: \2/' \
+      | awk '!seen[$0]++' \
+      | sed -n '1,3p' || true)"
+
+    output+=$'\n\n'"### ${label}"$'\n'
+    output+="${title} をJina Readerの公開エンドポイントで確認しました。X/Twitterの反応指標は使えないため、一次情報ページを優先してください。"$'\n'
+    if [[ -n "${links}" ]]; then
+      output+="関連リンク:"$'\n'"${links}"$'\n'
+    fi
+    output+="参照ページ: ${url}"$'\n'
+    sections=$((sections + 1))
+    (( sections >= 4 )) && break
+  done <<< "${fallback_sources}"
+
+  (( sections >= 4 )) || return 1
+  printf '%s\n' "${output}"
+}
+
 run_jina_fallback() {
   [[ "${JINA_FALLBACK_ENABLED}" == "1" ]] || return 1
 
-  local fallback_prompt fallback_sources
+  local fallback_prompt fallback_sources mcp_output
   fallback_sources="${JINA_FALLBACK_URLS//;/$'\n'}"
   fallback_prompt="$(cat <<PROMPT
 $(read_optional_file "${PROMPT_FILE}" 260)
@@ -101,7 +155,14 @@ ${gbrain_context}
 PROMPT
 )"
 
-  "${HERMES_BIN}" -t jina_reader -z "${fallback_prompt}" 2>>"${LOG_FILE}"
+  if mcp_output="$("${HERMES_BIN}" -t jina_reader -z "${fallback_prompt}" 2>>"${LOG_FILE}")" \
+      && has_reference_sections "${mcp_output}"; then
+    printf '%s\n' "${mcp_output}"
+    return 0
+  fi
+
+  log "jina_reader MCP fallback did not return a valid digest; trying direct Reader fallback"
+  run_jina_direct_fallback
 }
 
 resolve_gbrain_bin() {
