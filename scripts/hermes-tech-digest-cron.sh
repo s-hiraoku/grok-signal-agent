@@ -22,6 +22,7 @@ LINT_SCRIPT="${HERMES_DIGEST_LINT_SCRIPT:-${HOME}/.hermes/bin/hermes-digest-lint
 ALERT_SCRIPT="${HERMES_ALERT_SCRIPT:-${HOME}/.hermes/bin/hermes-alert.sh}"
 JINA_FALLBACK_ENABLED="${HERMES_TECH_DIGEST_JINA_FALLBACK:-1}"
 JINA_FALLBACK_URLS="${HERMES_TECH_DIGEST_JINA_URLS:-OpenAI News|https://openai.com/news/;GitHub Changelog|https://github.blog/changelog/;web.dev Blog|https://web.dev/blog/;Chrome Developers Blog|https://developer.chrome.com/blog/;Zenn Explore|https://zenn.dev/articles/explore;wbsb.dev New|https://wbsb.dev/?tab=new}"
+X_POST_URL_REGEX='https?://(x\.com|twitter\.com)/([^/?#[:space:]]+/status|i/web/status)/[0-9][0-9]*[^[:space:])>]*'
 
 mkdir -p "${LOG_DIR}" "${DIGEST_DIR}" "${EVAL_DIR}" "${METADATA_DIR}" "${QUALITY_DIR}"
 
@@ -46,7 +47,7 @@ digest_prefix_for_hour() {
 }
 
 has_source_links() {
-  grep -Eqi 'https?://(x\.com|twitter\.com)/[^[:space:])>]+' <<< "$1"
+  grep -Eqi "${X_POST_URL_REGEX}" <<< "$1"
 }
 
 run_jina_fallback() {

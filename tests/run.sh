@@ -1852,7 +1852,7 @@ https://x.com/example/status/1
 
 ---
 ### Bad section
-This section has no direct source URL.
+This section only mentions the required placeholder https://x.com/ URL format.
 DIGEST
 
   set +e
@@ -1863,6 +1863,31 @@ DIGEST
   [[ "${status}" -ne 0 ]] || fail "expected digest linter to fail"
   assert_contains "${output}" "section count 2 is outside expected range"
   assert_contains "${output}" "Bad section"
+}
+
+test_digest_linter_ignores_placeholder_x_urls_without_arithmetic_error() {
+  local tmp_home digest output status
+  tmp_home="$(mktemp -d)"
+  digest="${tmp_home}/placeholder-digest.md"
+  cat > "${digest}" <<'DIGEST'
+---
+created_at: "2026-06-15 18:00:00 +0900"
+digest_prefix: "夕方の"
+---
+
+生成中止:
+直接ソースURLとして https://x.com/ または https://twitter.com/ が必要です。
+DIGEST
+
+  set +e
+  output="$("${REPO_DIR}/scripts/hermes-digest-lint.sh" "${digest}" 2>&1)"
+  status=$?
+  set -e
+
+  [[ "${status}" -ne 0 ]] || fail "expected placeholder-only digest to fail"
+  assert_contains "${output}" "section count 0 is outside expected range"
+  assert_contains "${output}" "digest has no direct X/Twitter source URLs"
+  [[ "${output}" != *"division by 0"* ]] || fail "expected no arithmetic error"
 }
 
 test_discord_feedback_hook_writes_fallback_artifact() {
@@ -1998,6 +2023,7 @@ Digest without direct X links
 
 ### Browser platform update
 The browser platform shipped a practical update.
+The prompt requires a direct https://x.com/ or https://twitter.com/ URL.
 
 ### Developer tools update
 A developer tool shipped a workflow improvement.
@@ -2176,6 +2202,7 @@ main() {
     test_x_pulse_watcher_treats_search_failure_as_nonfatal
     test_digest_linter_writes_metadata
     test_digest_linter_rejects_missing_section_urls
+    test_digest_linter_ignores_placeholder_x_urls_without_arithmetic_error
     test_discord_feedback_hook_writes_fallback_artifact
     test_discord_feedback_and_remember_hooks_accept_string_event_payloads
     test_tech_digest_cron_falls_back_to_jina_reader_when_x_search_fails
