@@ -20,6 +20,8 @@ QUALITY_DIR="${STATE_DIR}/digest-quality"
 GBRAIN_BRAIN="${GBRAIN_BRAIN:-${HOME}/.hermes/brain}"
 LINT_SCRIPT="${HERMES_DIGEST_LINT_SCRIPT:-${HOME}/.hermes/bin/hermes-digest-lint.sh}"
 ALERT_SCRIPT="${HERMES_ALERT_SCRIPT:-${HOME}/.hermes/bin/hermes-alert.sh}"
+JINA_FALLBACK_ENABLED="${HERMES_TECH_DIGEST_JINA_FALLBACK:-1}"
+JINA_FALLBACK_URLS="${HERMES_TECH_DIGEST_JINA_URLS:-OpenAI News|https://openai.com/news/;GitHub Changelog|https://github.blog/changelog/;web.dev Blog|https://web.dev/blog/;Chrome Developers Blog|https://developer.chrome.com/blog/;Zenn Explore|https://zenn.dev/articles/explore;wbsb.dev New|https://wbsb.dev/?tab=new}"
 
 mkdir -p "${LOG_DIR}" "${DIGEST_DIR}" "${EVAL_DIR}" "${METADATA_DIR}" "${QUALITY_DIR}"
 
@@ -45,6 +47,60 @@ digest_prefix_for_hour() {
 
 has_source_links() {
   grep -Eqi 'https?://(x\.com|twitter\.com)/[^[:space:])>]+' <<< "$1"
+}
+
+run_jina_fallback() {
+  [[ "${JINA_FALLBACK_ENABLED}" == "1" ]] || return 1
+
+  local fallback_prompt fallback_sources
+  fallback_sources="${JINA_FALLBACK_URLS//;/$'\n'}"
+  fallback_prompt="$(cat <<PROMPT
+$(read_optional_file "${PROMPT_FILE}" 260)
+
+# Runtime context
+
+Current local time is ${now}.
+This is the ${digest_prefix} digest.
+x_search is currently unavailable. Use the Jina Reader MCP tools instead.
+
+# Jina Reader fallback sources
+
+Read these public pages with Jina Reader. Prefer recent, direct source pages and
+do not invent X/Twitter URLs or engagement metrics.
+
+${fallback_sources}
+
+# Output requirements
+
+- Write a Japanese Discord-ready digest with 4 to 8 sections.
+- Use headings in the form "### <topic>".
+- Every section must include a direct source line in this exact form:
+  参照ページ: <direct URL>
+- Prefer AI engineering, developer tools, web platform, infrastructure, and
+  security topics.
+- Mention that this is a Jina Reader fallback only if needed to explain missing
+  X/Twitter reaction metrics.
+
+# Persistent identity
+
+$(read_optional_file "${IDENTITY_FILE}" 180)
+
+# Posting style for Discord
+
+$(read_optional_file "${POST_STYLE_FILE}" 180)
+
+# Current self-memory and preferences
+
+$(read_optional_file "${MEMORY_FILE}" 160)
+${gbrain_context:+
+# Retrieved gbrain guidance
+
+${gbrain_context}
+}
+PROMPT
+)"
+
+  "${HERMES_BIN}" -t jina_reader -z "${fallback_prompt}" 2>>"${LOG_FILE}"
 }
 
 resolve_gbrain_bin() {
@@ -151,15 +207,48 @@ retry_prompt="${prompt}
 Previous attempts sometimes omitted links. This time, every detailed section must include at least one visible direct https://x.com/ or https://twitter.com/ URL directly under a related post entry. Return only sections with direct source URLs."
 
 log "starting tech digest cron"
-if ! curation="$("${HERMES_BIN}" -t x_search -z "${prompt}" 2>>"${LOG_FILE}")"; then
-  code=$?
+set +e
+curation="$("${HERMES_BIN}" -t x_search -z "${prompt}" 2>>"${LOG_FILE}")"
+code=$?
+set -e
+if [[ "${code}" -ne 0 ]]; then
   log "x_search curation failed exit=${code}"
-  exit "${code}"
+  if curation="$(run_jina_fallback)"; then
+    log "jina_reader fallback curation succeeded after x_search failure"
+    curation_source="jina_reader"
+  else
+    log "jina_reader fallback curation failed after x_search failure"
+    exit "${code}"
+  fi
+else
+  curation_source="x_search"
 fi
 
-if ! has_source_links "${curation}"; then
+if [[ "${curation_source}" == "x_search" ]] && ! has_source_links "${curation}"; then
   log "curation had no direct X links; retrying"
+  set +e
   curation="$("${HERMES_BIN}" -t x_search -z "${retry_prompt}" 2>>"${LOG_FILE}")"
+  code=$?
+  set -e
+  if [[ "${code}" -ne 0 ]]; then
+    log "x_search retry failed; trying jina_reader fallback"
+    if curation="$(run_jina_fallback)"; then
+      log "jina_reader fallback curation succeeded after x_search retry failure"
+      curation_source="jina_reader"
+    else
+      log "jina_reader fallback curation failed after x_search retry failure"
+      exit 1
+    fi
+  elif ! has_source_links "${curation}"; then
+    log "x_search retry still had no direct X links; trying jina_reader fallback"
+    if fallback_curation="$(run_jina_fallback)"; then
+      curation="${fallback_curation}"
+      log "jina_reader fallback curation succeeded after missing X links"
+      curation_source="jina_reader"
+    else
+      log "warning: jina_reader fallback failed after missing X links; proceeding with linkless x_search curation"
+    fi
+  fi
 fi
 
 [[ -n "${curation//[[:space:]]/}" ]] || { log "curation returned empty output"; exit 1; }
@@ -169,6 +258,7 @@ digest_file="${DIGEST_DIR}/${timestamp}.md"
   printf -- '---\n'
   printf 'created_at: "%s"\n' "${now}"
   printf 'digest_prefix: "%s"\n' "${digest_prefix}"
+  printf 'curation_source: "%s"\n' "${curation_source}"
   printf -- '---\n\n'
   printf '%s\n' "${curation}"
 } > "${digest_file}"
