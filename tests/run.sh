@@ -1852,7 +1852,7 @@ https://x.com/example/status/1
 
 ---
 ### Bad section
-This section has no direct source URL.
+This section only mentions the required placeholder https://x.com/ URL format.
 DIGEST
 
   set +e
@@ -1863,6 +1863,31 @@ DIGEST
   [[ "${status}" -ne 0 ]] || fail "expected digest linter to fail"
   assert_contains "${output}" "section count 2 is outside expected range"
   assert_contains "${output}" "Bad section"
+}
+
+test_digest_linter_ignores_placeholder_x_urls_without_arithmetic_error() {
+  local tmp_home digest output status
+  tmp_home="$(mktemp -d)"
+  digest="${tmp_home}/placeholder-digest.md"
+  cat > "${digest}" <<'DIGEST'
+---
+created_at: "2026-06-15 18:00:00 +0900"
+digest_prefix: "夕方の"
+---
+
+生成中止:
+直接ソースURLとして https://x.com/ または https://twitter.com/ が必要です。
+DIGEST
+
+  set +e
+  output="$("${REPO_DIR}/scripts/hermes-digest-lint.sh" "${digest}" 2>&1)"
+  status=$?
+  set -e
+
+  [[ "${status}" -ne 0 ]] || fail "expected placeholder-only digest to fail"
+  assert_contains "${output}" "section count 0 is outside expected range"
+  assert_contains "${output}" "digest has no direct X/Twitter source URLs"
+  [[ "${output}" != *"division by 0"* ]] || fail "expected no arithmetic error"
 }
 
 test_discord_feedback_hook_writes_fallback_artifact() {
@@ -1983,6 +2008,83 @@ STUB
   assert_file_contains "${log_file}" "jina_reader fallback curation succeeded after x_search failure"
 }
 
+test_tech_digest_cron_uses_direct_jina_reader_when_mcp_returns_invalid_digest() {
+  local tmp_home hermes_stub curl_stub output metadata_file log_file
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/.local/bin"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  curl_stub="${tmp_home}/.local/bin/curl"
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$*" == *"-t x_search"* ]]; then
+  echo "x_search credits exhausted" >&2
+  exit 42
+fi
+
+if [[ "$*" == *"-t jina_reader"* ]]; then
+  cat <<'DIGEST'
+実行結果: ダイジェスト生成を中止しました
+
+Jina Reader MCP returned HTTP 401 Unauthorized.
+DIGEST
+  exit 0
+fi
+
+cat <<'EVAL'
+## スコア
+- 総合: 4
+EVAL
+STUB
+  chmod +x "${hermes_stub}"
+
+  cat > "${curl_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+
+url="${*: -1}"
+case "${url}" in
+  *openai.com*) title="OpenAI News"; link="https://openai.com/news/example" ;;
+  *github.blog*) title="GitHub Changelog"; link="https://github.blog/changelog/example" ;;
+  *web.dev*) title="web.dev Blog"; link="https://web.dev/blog/example" ;;
+  *developer.chrome.com*) title="Chrome Developers Blog"; link="https://developer.chrome.com/blog/example" ;;
+  *) title="Fallback Source"; link="https://example.com/source" ;;
+esac
+
+cat <<EOF
+Title: ${title}
+
+# ${title}
+
+[Latest item](${link})
+EOF
+STUB
+  chmod +x "${curl_stub}"
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${hermes_stub}" \
+    CURL_BIN="${curl_stub}" \
+    HERMES_PROMPT_DIR="${REPO_DIR}/prompts" \
+    HERMES_TECH_DIGEST_JINA_FALLBACK=1 \
+    HERMES_DIGEST_LINT_SCRIPT="${REPO_DIR}/scripts/hermes-digest-lint.sh" \
+    HERMES_DIGEST_LINT_STRICT=1 \
+    "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh"
+  )"
+
+  assert_contains "${output}" "Jina Reader direct fallback digest"
+  assert_contains "${output}" "参照ページ: https://web.dev/blog/"
+  metadata_file="$(find "${tmp_home}/.hermes/state/digest-metadata" -type f -name '*.json' -print -quit)"
+  [[ -n "${metadata_file}" ]] || fail "expected direct Jina fallback metadata"
+  assert_eq "$(jq -r '.status' "${metadata_file}")" "pass" "direct Jina fallback digest status"
+  assert_eq "$(jq -r '.curation_source' "${metadata_file}")" "jina_reader" "direct Jina fallback curation source"
+  assert_eq "$(jq -r '.section_count' "${metadata_file}")" "4" "direct Jina fallback section count"
+  log_file="${tmp_home}/.hermes/logs/hermes-tech-digest-cron.log"
+  assert_file_contains "${log_file}" "jina_reader MCP fallback did not return a valid digest; trying direct Reader fallback"
+  assert_file_contains "${log_file}" "jina_reader fallback curation succeeded after x_search failure"
+}
+
 test_tech_digest_cron_logs_when_jina_reader_fallback_fails_after_linkless_retry() {
   local tmp_home hermes_stub output log_file
   tmp_home="$(mktemp -d)"
@@ -1998,6 +2100,7 @@ Digest without direct X links
 
 ### Browser platform update
 The browser platform shipped a practical update.
+The prompt requires a direct https://x.com/ or https://twitter.com/ URL.
 
 ### Developer tools update
 A developer tool shipped a workflow improvement.
@@ -2026,6 +2129,7 @@ STUB
   output="$(
     HOME="${tmp_home}" \
     HERMES_BIN="${hermes_stub}" \
+    CURL_BIN="${tmp_home}/missing-curl" \
     HERMES_PROMPT_DIR="${REPO_DIR}/prompts" \
     HERMES_TECH_DIGEST_JINA_FALLBACK=1 \
     "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh"
@@ -2176,9 +2280,11 @@ main() {
     test_x_pulse_watcher_treats_search_failure_as_nonfatal
     test_digest_linter_writes_metadata
     test_digest_linter_rejects_missing_section_urls
+    test_digest_linter_ignores_placeholder_x_urls_without_arithmetic_error
     test_discord_feedback_hook_writes_fallback_artifact
     test_discord_feedback_and_remember_hooks_accept_string_event_payloads
     test_tech_digest_cron_falls_back_to_jina_reader_when_x_search_fails
+    test_tech_digest_cron_uses_direct_jina_reader_when_mcp_returns_invalid_digest
     test_tech_digest_cron_logs_when_jina_reader_fallback_fails_after_linkless_retry
     test_tech_digest_cron_runs_lint_and_low_score_alert
   )
