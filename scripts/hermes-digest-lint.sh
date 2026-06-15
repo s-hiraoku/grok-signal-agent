@@ -53,6 +53,13 @@ created_at="$(
 digest_prefix="$(
   awk -F '"' '/^digest_prefix:/ { print $2; exit }' "${DIGEST_FILE}" 2>/dev/null || true
 )"
+curation_source="$(
+  awk -F '"' '/^curation_source:/ { print $2; exit }' "${DIGEST_FILE}" 2>/dev/null || true
+)"
+requires_x_urls=1
+if [[ "${curation_source}" == "jina_reader" ]]; then
+  requires_x_urls=0
+fi
 
 if [[ ! -s "${DIGEST_FILE}" ]]; then
   add_error "digest file is empty"
@@ -84,8 +91,10 @@ grep -Eoi 'https?://(x\.com|twitter\.com)/[^[:space:])>]+' "${DIGEST_FILE}" \
 total_x_urls="$(wc -l < "${urls_file}" | tr -d ' ')"
 unique_x_urls="$(sort -u "${urls_file}" | wc -l | tr -d ' ')"
 
-if (( total_x_urls == 0 )); then
+if (( total_x_urls == 0 && requires_x_urls == 1 )); then
   add_error "digest has no direct X/Twitter source URLs"
+elif (( total_x_urls == 0 )); then
+  add_warning "digest has no direct X/Twitter source URLs because it used jina_reader fallback"
 fi
 
 if (( total_x_urls > unique_x_urls )); then
@@ -137,14 +146,16 @@ for section_file in "${tmpdir}"/section-[0-9][0-9][0-9]; do
     | sed 's/[.,]$//' \
     | sort -u || true)"
   section_url_count="$(printf '%s\n' "${section_urls}" | sed '/^$/d' | wc -l | tr -d ' ')"
-  if (( section_url_count == 0 )); then
-    add_error "section '${title}' has no direct X/Twitter source URL"
-  fi
-
   reference_urls="$(printf '%s\n' "${body}" \
     | grep -Eoi '参照ページ:[[:space:]]*https?://[^[:space:])>]+' \
     | sed -E 's/^参照ページ:[[:space:]]*//' \
     | sort -u || true)"
+  reference_url_count="$(printf '%s\n' "${reference_urls}" | sed '/^$/d' | wc -l | tr -d ' ')"
+  if (( section_url_count == 0 && requires_x_urls == 1 )); then
+    add_error "section '${title}' has no direct X/Twitter source URL"
+  elif (( section_url_count == 0 && reference_url_count == 0 )); then
+    add_error "section '${title}' has no direct reference URL"
+  fi
 
   if matches_category "${lower}" '(^|[^[:alnum:]_])(security|cve|vulnerability|incident|auth|supply chain)([^[:alnum:]_]|$)'; then
     category="security"
@@ -217,6 +228,7 @@ metadata="$(
     --arg digest_file "${DIGEST_FILE}" \
     --arg created_at "${created_at}" \
     --arg digest_prefix "${digest_prefix}" \
+    --arg curation_source "${curation_source}" \
     --argjson section_count "${section_count}" \
     --argjson total_x_urls "${total_x_urls}" \
     --argjson unique_x_urls "${unique_x_urls}" \
@@ -237,6 +249,7 @@ metadata="$(
       digest_file: $digest_file,
       created_at: $created_at,
       digest_prefix: $digest_prefix,
+      curation_source: $curation_source,
       section_count: $section_count,
       total_x_urls: $total_x_urls,
       unique_x_urls: $unique_x_urls,

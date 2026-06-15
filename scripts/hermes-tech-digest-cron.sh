@@ -241,9 +241,12 @@ if [[ "${curation_source}" == "x_search" ]] && ! has_source_links "${curation}";
     fi
   elif ! has_source_links "${curation}"; then
     log "x_search retry still had no direct X links; trying jina_reader fallback"
-    if curation="$(run_jina_fallback)"; then
+    if fallback_curation="$(run_jina_fallback)"; then
+      curation="${fallback_curation}"
       log "jina_reader fallback curation succeeded after missing X links"
       curation_source="jina_reader"
+    else
+      log "warning: jina_reader fallback failed after missing X links; proceeding with linkless x_search curation"
     fi
   fi
 fi
