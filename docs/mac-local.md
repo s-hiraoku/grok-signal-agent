@@ -155,7 +155,7 @@ The script installs or refreshes Hermes' built-in Gateway LaunchAgent:
 It also syncs the explicit Hermes cron jobs and removes disabled legacy jobs
 when they are present. Hermes Gateway stays responsible for process runtime;
 signal-driven tech posts are triggered by webhook subscriptions, while full X
-tech digest, morning, and review posts remain intentional wall-clock jobs.
+tech digest, morning, and weekly review posts remain intentional wall-clock jobs.
 Older repo-managed Gateway and heartbeat LaunchAgents are removed by the
 installer.
 
@@ -172,26 +172,29 @@ minutes, can look back up to 240 minutes, and qualifies candidates by likes,
 reposts, replies/quotes, views/impressions when available, official or notable
 accounts with visible traction, or independent same-topic posts that also have
 enough direct engagement. URL count alone is not treated as buzz. The full X
-tech digest is still posted by cron at 08:00, 12:30, and 18:00.
+tech digest is posted by cron on weekdays at 18:00.
 
 By default, event-triggered posts route to:
 
 - `tech-digest-trigger` posts to `#tech-digest`.
-- `x-buzz-trigger` posts to `#x-buzz-info`.
-- `zenn-dev-trigger` posts to `#zenn-dev-info`.
-- `wbsb-trigger` posts to `#wbsb-dev-info`.
+- `ai-latest-trigger` posts to `#ai-latest`.
+- `x-buzz-trigger` posts to `#tech-signals`.
 - `signal-catchup` posts to `#tech-signals`.
-- `nightly-dreaming-trigger` posts to `#ask-hermes`.
+- `nightly-dreaming-trigger` posts to `#hermes-chat`.
+
+The legacy `zenn-dev-trigger` and `wbsb-trigger` subscriptions are disabled by
+default. Zenn watcher signals now route through `signal-catchup` so
+source-specific article notifications do not create extra channel noise.
+wbsb.dev is no longer monitored.
 
 The active cron posts route to:
 
-- `tech-digest 08:00`, `tech-digest 12:30`, and `tech-digest 18:00` post to
-  `#tech-digest`.
-- `平日9:50リマインダー` posts to `#morning-brief`, including today's Google
+- `tech-digest 18:00` posts to `#tech-digest` on weekdays.
+- `平日8:00リマインダー` posts to `#morning-brief`, including today's Google
   Workspace Calendar events. Monday posts also include the current week's
   schedule.
+- `Hermes health check` posts to `#hermes-info` only when attention is needed.
 - `金曜17時gbrainサマリー` posts gbrain/honcho status to `#weekly-review`.
-- `毎晩23:30 gbrain/honcho daily review` posts to `#daily-review`.
 
 Webhook subscription definitions live in `config/hermes-webhooks.json`; the
 registration script reads that file and creates or updates Hermes webhook
@@ -224,7 +227,8 @@ The installer also installs ヘルメスちゃん's self-growth loop:
   `~/.hermes/state/digest-quality/`.
 - Each digest metadata file is saved under
   `~/.hermes/state/digest-metadata/`.
-- Each digest is evaluated under `~/.hermes/state/evaluations/`.
+- Each digest is evaluated by the delayed `tech-digest evaluation 18:20` job
+  under `~/.hermes/state/evaluations/`.
 - Explicit Discord feedback/follow-up captures are saved under
   `~/.hermes/state/user-feedback/`.
 - A nightly dreaming job saves recomposition reports under
@@ -233,7 +237,8 @@ The installer also installs ヘルメスちゃん's self-growth loop:
 - A weekly reflection job updates `~/.hermes/state/hermes-chan-memory.md` on
   Sunday at 21:10 local time.
 - Hermes cron script timeout is set to 300 seconds so the tech digest script can
-  finish X curation plus self-evaluation without being marked as failed.
+  finish X curation and delivery. Self-evaluation and optional gbrain write-back
+  run in the delayed evaluation job so they do not block the Discord post.
 
 Details are in [self-growth.md](self-growth.md).
 
@@ -306,14 +311,12 @@ The default `signal-catchup` subscription listens at
 `/webhooks/signal-catchup` and posts to the `tech-signals` Discord channel when
 an external service POSTs a signed event. This is for event-driven sources such
 as GitHub, release monitors, uptime alerts, RSS-to-webhook bridges, or custom
-watchers. Zenn and wbsb.dev feed signals use dedicated `/webhooks/zenn-dev-trigger`
-and `/webhooks/wbsb-trigger` routes that post to `#zenn-dev-info` and
-`#wbsb-dev-info`. X/news services that do not provide push events still need an
-upstream watcher; Hermes should receive the watcher's event, not poll on a cron.
-The full X tech digest, morning brief, and gbrain/honcho review posts are
-registered as Hermes cron jobs because they are intentionally time-based. X
-pulse events use `/webhooks/x-buzz-trigger` for short buzzing-post
-introductions.
+watchers. Zenn feed signals use the same consolidated route. X/news services
+that do not provide push events still need an upstream watcher; Hermes should
+receive the watcher's event, not poll on a cron. The full X tech digest,
+morning brief, and weekly gbrain/honcho review posts are registered as Hermes
+cron jobs because they are intentionally time-based. X pulse events use
+`/webhooks/x-buzz-trigger` for short buzzing-post introductions.
 
 ## 7. Operate the Service
 

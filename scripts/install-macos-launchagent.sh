@@ -23,6 +23,7 @@ mkdir -p \
   "${HOME}/.hermes/bin" \
   "${HOME}/.hermes/logs" \
   "${HOME}/.hermes/prompts" \
+  "${HOME}/.hermes/prompts/webhooks" \
   "${HOME}/.hermes/skills/devops/hermes-posting-admin" \
   "${HOME}/.hermes/scripts" \
   "${HOME}/.hermes/state/digests" \
@@ -100,6 +101,11 @@ install -m 644 \
   "${REPO_DIR}/prompts/nightly-dreaming.md" \
   "${REPO_DIR}/prompts/weekly-self-reflection.md" \
   "${HOME}/.hermes/prompts/"
+if compgen -G "${REPO_DIR}/prompts/webhooks/*.md" >/dev/null; then
+  for prompt_file in "${REPO_DIR}"/prompts/webhooks/*.md; do
+    install -m 644 "${prompt_file}" "${HOME}/.hermes/prompts/webhooks/"
+  done
+fi
 install -m 644 \
   "${REPO_DIR}/.agents/skills/hermes-posting-admin/SKILL.md" \
   "${HOME}/.hermes/skills/devops/hermes-posting-admin/SKILL.md"

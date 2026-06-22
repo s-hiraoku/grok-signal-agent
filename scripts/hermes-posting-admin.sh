@@ -150,6 +150,12 @@ cmd_sync() {
     [[ -e "${prompt_file}" ]] || continue
     install -m 644 "${prompt_file}" "${HERMES_HOME_DIR}/prompts/"
   done
+  if compgen -G "${repo_dir}/prompts/webhooks/*.md" >/dev/null; then
+    mkdir -p "${HERMES_HOME_DIR}/prompts/webhooks"
+    for prompt_file in "${repo_dir}"/prompts/webhooks/*.md; do
+      install -m 644 "${prompt_file}" "${HERMES_HOME_DIR}/prompts/webhooks/"
+    done
+  fi
   install_skill
 
   "${repo_dir}/scripts/register-hermes-cronjobs.sh"
@@ -167,7 +173,7 @@ cmd_test_webhooks() {
   local routes=("$@")
   local route payload
   if [[ "${#routes[@]}" -eq 0 ]]; then
-    routes=(signal-catchup zenn-dev-trigger wbsb-trigger)
+    routes=(signal-catchup ai-latest-trigger x-buzz-trigger)
   fi
   need_jq
   for route in "${routes[@]}"; do

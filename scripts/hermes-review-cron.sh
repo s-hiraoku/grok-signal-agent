@@ -178,7 +178,7 @@ CONTEXT
 if [[ "${MODE}" == "weekly" ]]; then
   instruction="weekly-review チャンネル向けに、この1週間の gbrain と honcho の更新情報・稼働状況を日本語で要約してください。構成は 1) gbrain の更新状況, 2) honcho の設定/稼働状況, 3) 今週蓄積された重要な学び, 4) 来週の運用TODO。honcho が未設定なら未設定とはっきり書いてください。"
 else
-  instruction="daily-review チャンネル向けに、今日の gbrain と honcho の状態を日本語で短く要約してください。構成は 1) 今日の更新, 2) gbrain 状況, 3) honcho 状況, 4) 明日の確認ポイント。honcho が未設定なら未設定とはっきり書いてください。"
+  instruction="hermes-info チャンネル向けに、今日の gbrain と honcho の状態を日本語で短く要約してください。構成は 1) 今日の更新, 2) gbrain 状況, 3) honcho 状況, 4) 明日の確認ポイント。honcho が未設定なら未設定とはっきり書いてください。"
 fi
 
 prompt="$(cat <<PROMPT

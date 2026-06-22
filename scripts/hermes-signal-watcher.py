@@ -218,6 +218,8 @@ def parse_date(value: str) -> str:
 
 def parse_html_links(source: dict[str, Any], text: str) -> list[SignalItem]:
     base_url = source["url"]
+    base_parsed = urllib.parse.urlparse(base_url)
+    base_path = base_parsed.path.rstrip("/")
     include = source.get("include_url_patterns", [])
     exclude = source.get("exclude_url_patterns", [])
     seen: set[str] = set()
@@ -225,9 +227,13 @@ def parse_html_links(source: dict[str, Any], text: str) -> list[SignalItem]:
     collector = LinkCollector()
     collector.feed(text)
     for href, inner in collector.links:
+        if href.strip().startswith("#"):
+            continue
         url = urllib.parse.urljoin(base_url, html.unescape(href))
         parsed = urllib.parse.urlparse(url)
         path = parsed.path
+        if path.rstrip("/") == base_path:
+            continue
         if include and not any(p in path for p in include):
             continue
         if exclude and any(p in path for p in exclude):
@@ -407,12 +413,20 @@ def main() -> int:
             errors.append(f"{source.get('id')}: {exc}")
             continue
 
-        for item in items[:max_items]:
+        source_max_items = int(source.get("max_items", max_items))
+        prime_existing = (
+            source.get("prime_existing", False)
+            and source.get("id") not in state.get("source_initialized", {})
+        )
+        for item in items[:source_max_items]:
             url_key = canonical_url_key(item.url)
             if url_key in observed_url_keys:
                 continue
             observed_url_keys.add(url_key)
             observed.append(item)
+            if prime_existing:
+                mark_seen_item(state, item)
+                continue
             key = item.stable_key
             if key in state.get("seen", {}):
                 continue
@@ -435,6 +449,7 @@ def main() -> int:
                     "route": source.get("route") or settings.get("default_route", "signal-catchup"),
                     "cooldown_minutes": int(source.get("cooldown_minutes", settings.get("default_cooldown_minutes", 90))),
                 })
+        state.setdefault("source_initialized", {})[source["id"]] = now_iso()
 
     candidates.sort(key=lambda c: c["score"], reverse=True)
     candidate_keys = {c["stable_key"] for c in candidates}

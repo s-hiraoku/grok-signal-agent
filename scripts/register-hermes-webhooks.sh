@@ -39,7 +39,11 @@ jq -e '
     and (.channel | type == "string" and length > 0)
     and ((if has("enabled") then .enabled else true end) | type == "boolean")
     and (.mode == "prompt" or .mode == "script" or .mode == "agent" or .mode == "deliver-only")
-    and (if .mode == "script" then (.script | type == "string" and length > 0) else (.prompt | type == "string") end)
+    and (if .mode == "script" then
+      (.script | type == "string" and length > 0)
+    else
+      ((.prompt | type == "string") or (.prompt_file | type == "string" and length > 0))
+    end)
     and ((.events // []) | type == "array")
     and ((.skills // []) | type == "array")
     and ((.secret_env // "") | type == "string")
@@ -62,6 +66,14 @@ expand_home() {
   case "${value}" in
     "~/"*) printf '%s/%s' "${HOME}" "${value:2}" ;;
     *) printf '%s' "${value}" ;;
+  esac
+}
+
+repo_file() {
+  local value="$1"
+  case "${value}" in
+    "~/"*|/*) expand_home "${value}" ;;
+    *) printf '%s/%s' "${REPO_DIR}" "${value}" ;;
   esac
 }
 
@@ -155,6 +167,32 @@ ${cd_line}bash "\${script_path}"
 EOF
 }
 
+load_prompt() {
+  local subscription="$1" prompt_file include_style prompt_path prompt_text style_file
+  prompt_file="$(jq -r '.prompt_file // empty' <<< "${subscription}")"
+  if [[ -n "${prompt_file}" ]]; then
+    prompt_path="$(repo_file "${prompt_file}")"
+    [[ -f "${prompt_path}" ]] || {
+      echo "Webhook prompt_file not found: ${prompt_file}" >&2
+      exit 1
+    }
+    prompt_text="$(cat "${prompt_path}")"
+  else
+    prompt_text="$(jq -r '.prompt' <<< "${subscription}")"
+  fi
+
+  include_style="$(jq -r '.include_post_style // false' <<< "${subscription}")"
+  if [[ "${include_style}" == "true" ]]; then
+    style_file="$(repo_file "prompts/hermes-post-style.md")"
+    [[ -f "${style_file}" ]] || {
+      echo "Posting style prompt not found: prompts/hermes-post-style.md" >&2
+      exit 1
+    }
+    prompt_text="${prompt_text}"$'\n\n'"# Posting Style"$'\n\n'"$(cat "${style_file}")"
+  fi
+  printf '%s' "${prompt_text}"
+}
+
 run_hermes() {
   local output status
 
@@ -211,7 +249,7 @@ while IFS= read -r subscription; do
     fi
     prompt="$(script_prompt "${script}" "${workdir}")"
   else
-    prompt="$(jq -r '.prompt' <<< "${subscription}")"
+    prompt="$(load_prompt "${subscription}")"
   fi
 
   if [[ "${enabled}" != "true" ]]; then
