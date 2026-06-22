@@ -272,6 +272,119 @@ XML
   [[ "${output}" != *"大きな動きは見つからなかった"* ]] || fail "morning brief should not emit generic no-news filler"
 }
 
+test_morning_brief_time_label_comes_from_cron_config() {
+  local tmp_home feed config output
+  tmp_home="$(mktemp -d)"
+  feed="${tmp_home}/feed.xml"
+  config="${tmp_home}/cronjobs.json"
+  cat > "${feed}" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Brief Test</title>
+    <item>
+      <title>設定時刻テストニュース</title>
+      <link>https://example.com/configured-time</link>
+      <pubDate>Fri, 12 Jun 2026 08:10:00 +0900</pubDate>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${config}" <<'JSON'
+{
+  "version": 1,
+  "channels": {
+    "morning-brief": "discord:example"
+  },
+  "jobs": [
+    {
+      "name": "平日8:00リマインダー",
+      "enabled": false,
+      "schedule": "0 8 * * 1-5",
+      "channel": "morning-brief",
+      "mode": "script",
+      "script": "hermes-morning-brief-cron.sh",
+      "prompt": "Run the morning brief script."
+    },
+    {
+      "name": "平日9:50リマインダー",
+      "enabled": true,
+      "schedule": "50 9 * * 1-5",
+      "channel": "morning-brief",
+      "mode": "script",
+      "script": "hermes-morning-brief-cron.sh",
+      "prompt": "Run the morning brief script."
+    }
+  ]
+}
+JSON
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_CRONJOBS_CONFIG="${config}" \
+    HERMES_MORNING_CALENDAR_ENABLED=0 \
+    HERMES_MORNING_GENERAL_FEEDS="Brief Test|file://${feed}" \
+    HERMES_MORNING_TECH_FEEDS="Brief Test|file://${feed}" \
+    "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh"
+  )"
+
+  assert_contains "${output}" "9:50 の morning brief"
+  [[ "${output}" != *"8:00 の morning brief"* ]] || fail "morning brief should not use hard-coded 8:00"
+}
+
+test_runtime_morning_brief_time_label_comes_from_runtime_config() {
+  local tmp_home runtime_dir feed config output
+  tmp_home="$(mktemp -d)"
+  runtime_dir="${tmp_home}/.hermes/runtime/grok-signal-agent"
+  feed="${tmp_home}/feed.xml"
+  config="${runtime_dir}/config/hermes-cronjobs.json"
+  mkdir -p "${tmp_home}/.hermes/scripts" "${runtime_dir}/config"
+  install -m 755 "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "${tmp_home}/.hermes/scripts/hermes-morning-brief-cron.sh"
+  cat > "${feed}" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Runtime Brief Test</title>
+    <item>
+      <title>runtime 設定時刻テストニュース</title>
+      <link>https://example.com/runtime-configured-time</link>
+      <pubDate>Fri, 12 Jun 2026 08:10:00 +0900</pubDate>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${config}" <<'JSON'
+{
+  "version": 1,
+  "channels": {
+    "morning-brief": "discord:example"
+  },
+  "jobs": [
+    {
+      "name": "平日9:50リマインダー",
+      "enabled": true,
+      "schedule": "50 9 * * 1-5",
+      "channel": "morning-brief",
+      "mode": "script",
+      "script": "hermes-morning-brief-cron.sh",
+      "prompt": "Run the morning brief script."
+    }
+  ]
+}
+JSON
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_POSTING_RUNTIME="${runtime_dir}" \
+    HERMES_MORNING_CALENDAR_ENABLED=0 \
+    HERMES_MORNING_GENERAL_FEEDS="Runtime Brief Test|file://${feed}" \
+    HERMES_MORNING_TECH_FEEDS="Runtime Brief Test|file://${feed}" \
+    "${tmp_home}/.hermes/scripts/hermes-morning-brief-cron.sh"
+  )"
+
+  assert_contains "${output}" "9:50 の morning brief"
+}
+
 test_morning_brief_includes_today_calendar_events() {
   local tmp_home feed google_api output
   tmp_home="$(mktemp -d)"
@@ -457,6 +570,7 @@ STUB
   [[ -x "${tmp_home}/.hermes/bin/hermes-x-pulse-watcher.sh" ]] || fail "x pulse watcher helper should be installed"
   [[ -x "${tmp_home}/.hermes/runtime/grok-signal-agent/scripts/hermes-signal-watcher.py" ]] || fail "signal watcher runtime script should be installed"
   [[ -x "${tmp_home}/.hermes/runtime/grok-signal-agent/scripts/hermes-x-pulse-watcher.py" ]] || fail "x pulse watcher runtime script should be installed"
+  [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/hermes-cronjobs.json" ]] || fail "cronjobs runtime config should be installed"
   [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/signal-watchers.json" ]] || fail "signal watcher runtime config should be installed"
   [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/x-pulse-watchers.json" ]] || fail "x pulse watcher runtime config should be installed"
   [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/repo-path" ]] || fail "posting admin repo hint should be installed"
@@ -2517,6 +2631,8 @@ main() {
     test_register_cronjobs_rejects_unknown_channel
     test_register_cronjobs_uses_local_channel_overrides
     test_morning_brief_cron_reads_direct_feeds
+    test_morning_brief_time_label_comes_from_cron_config
+    test_runtime_morning_brief_time_label_comes_from_runtime_config
     test_morning_brief_includes_today_calendar_events
     test_monday_morning_brief_includes_weekly_calendar_events
     test_installer_uses_builtin_gateway_only

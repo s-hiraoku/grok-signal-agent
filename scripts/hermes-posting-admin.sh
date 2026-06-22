@@ -134,6 +134,7 @@ cmd_sync() {
   install -m 755 "${repo_dir}/scripts/hermes-x-pulse-watcher.sh" "${HERMES_HOME_DIR}/bin/hermes-x-pulse-watcher.sh"
   install -m 755 "${repo_dir}/scripts/hermes-signal-watcher.py" "${RUNTIME_DIR}/scripts/hermes-signal-watcher.py"
   install -m 755 "${repo_dir}/scripts/hermes-x-pulse-watcher.py" "${RUNTIME_DIR}/scripts/hermes-x-pulse-watcher.py"
+  install -m 644 "${repo_dir}/config/hermes-cronjobs.json" "${RUNTIME_DIR}/config/hermes-cronjobs.json"
   install -m 644 "${repo_dir}/config/signal-watchers.json" "${RUNTIME_DIR}/config/signal-watchers.json"
   install -m 644 "${repo_dir}/config/x-pulse-watchers.json" "${RUNTIME_DIR}/config/x-pulse-watchers.json"
   for cron_script in "${repo_dir}"/scripts/*-cron.sh; do

@@ -83,6 +83,9 @@ install -m 755 \
   "${REPO_DIR}/scripts/hermes-x-pulse-watcher.py" \
   "${RUNTIME_DIR}/scripts/hermes-x-pulse-watcher.py"
 install -m 644 \
+  "${REPO_DIR}/config/hermes-cronjobs.json" \
+  "${RUNTIME_DIR}/config/hermes-cronjobs.json"
+install -m 644 \
   "${REPO_DIR}/config/signal-watchers.json" \
   "${RUNTIME_DIR}/config/signal-watchers.json"
 install -m 644 \
