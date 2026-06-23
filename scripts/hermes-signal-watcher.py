@@ -1292,11 +1292,21 @@ def feature_visual_plan(fact: dict[str, Any]) -> dict[str, Any]:
     return plan
 
 
+def feature_card_accent(provider: str, fallback: str) -> str:
+    normalized = provider.strip().lower()
+    if normalized == "openai":
+        return "#2563eb"
+    if normalized == "anthropic":
+        return "#8b2f3a"
+    return fallback
+
+
 def render_infographic_html(route: str, fact: dict[str, Any]) -> str:
     feature = str(fact["feature"])
     card_title = str(fact.get("title") or feature)
     plan = feature_visual_plan(fact)
-    accent = str(plan["accent"])
+    provider = str(fact.get("provider") or "")
+    accent = feature_card_accent(provider, str(plan["accent"]))
     what_it_is = str(fact["what_it_is"])
     detail = str(fact["detail"])
     use_case = str(fact["use_case"])
@@ -1305,7 +1315,6 @@ def render_infographic_html(route: str, fact: dict[str, Any]) -> str:
     entry = str(steps[0][1]) if steps else "対象の画面やコマンドを開く"
     action = str(steps[1][1]) if len(steps) > 1 else "小さく試す"
     result = str(steps[2][1]) if len(steps) > 2 else "使える場面を決める"
-    provider = str(fact.get("provider") or "")
     kind = str(fact.get("kind") or "新機能")
     return f"""<!doctype html>
 <html lang="ja">
