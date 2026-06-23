@@ -1917,6 +1917,8 @@ JSON
   assert_file_contains "${artifact_dir}/factcheck.md" "Evidence:"
   assert_file_contains "${artifact_dir}/infographic-01.svg" "操作手順をスキル化"
   assert_file_contains "${artifact_dir}/infographic-02.svg" "自動化履歴を一括操作"
+  assert_file_contains "${artifact_dir}/infographic-01.svg" "反復作業をスキル化"
+  assert_file_contains "${artifact_dir}/infographic-02.svg" "実行履歴"
   assert_file_not_contains "${artifact_dir}/infographic-01.svg" "1/2"
   assert_file_not_contains "${artifact_dir}/infographic-02.svg" "2/2"
 }

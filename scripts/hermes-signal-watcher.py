@@ -933,10 +933,20 @@ def describe_feature(candidate: dict[str, Any], feature: str) -> str:
     text = feature_context(candidate, feature)
     if "record" in text and "replay" in text:
         return "操作した手順を記録し、あとから再利用できるワークフローとして扱う機能です。"
+    if "status filtering" in text and "workflows" in text:
+        return "/workflows の詳細画面で、表示項目をステータス別に絞り込む機能です。"
+    if "skills" in text and "/plugin" in text:
+        return "/plugin の Installed タブで、インストール済みプラグインが持つ Skills を見られる機能です。"
+    if "teammatemode" in text and "iterm2" in text:
+        return "teammateMode で iTerm2 を明示し、必要な CLI が見つからない時は警告する設定です。"
+    if "refresh credentials" in text and "aws" in text:
+        return "/log から Claude Platform on AWS の認証情報を更新できる操作です。"
     if "mcp" in text:
         return "外部ツールやデータソースとの接続・管理を広げるための機能です。"
     if "browser" in text or "chrome" in text:
         return "ブラウザ上の作業や確認をエージェントの流れに組み込むための機能です。"
+    if "automation run history" in text and "bulk action" in text:
+        return "自動化の実行履歴に対して、既読化やアーカイブ対象の整理をまとめて行う機能です。"
     if "automation" in text or "bulk action" in text:
         return "繰り返し実行や履歴管理をまとめて扱いやすくする運用向けの機能です。"
     if "usage" in text and ("credit" in text or "limit" in text):
@@ -952,10 +962,20 @@ def feature_use_case(candidate: dict[str, Any], feature: str) -> str:
     text = feature_context(candidate, feature)
     if "record" in text and "replay" in text:
         return "定型操作、検証手順、社内ツールの反復作業をスキル化したい場面で使えます。"
+    if "status filtering" in text and "workflows" in text:
+        return "実行が増えた時に、失敗・待機・完了などを切り分けて確認できます。"
+    if "skills" in text and "/plugin" in text:
+        return "入れたプラグインで何ができるかを確認し、使う Skills を探す場面で使えます。"
+    if "teammatemode" in text and "iterm2" in text:
+        return "iTerm2 を前提に teammate 作業を動かしたい環境で、起動先を安定させるために使えます。"
+    if "refresh credentials" in text and "aws" in text:
+        return "AWS 上の Claude Platform 認証が切れた時に、作業中のログ画面から復旧する場面で使えます。"
     if "mcp" in text:
         return "GitHub、DB、社内API、ドキュメントなどをエージェント作業に接続したい場面で使えます。"
     if "browser" in text or "chrome" in text:
         return "ログイン済み画面の確認、管理画面操作、UIの再現確認が必要な場面で使えます。"
+    if "automation run history" in text and "bulk action" in text:
+        return "大量の自動化実行結果を読み終えた後、履歴をまとめて片付けたい場面で使えます。"
     if "automation" in text or "bulk action" in text:
         return "複数の実行履歴や定期処理をまとめて整理したい場面で使えます。"
     if "usage" in text and ("credit" in text or "limit" in text):
@@ -973,12 +993,22 @@ def feature_check_first(candidate: dict[str, Any], feature: str) -> str:
         return "有効化ヘッダー、対象モデル、利用可能な組織・地域を確認します。"
     if "record" in text or "computer use" in text:
         return "利用可能地域、権限設定、記録してよい操作範囲を確認します。"
+    if "status filtering" in text and "workflows" in text:
+        return "対象画面、ショートカットキー、絞り込み後に見えるステータス種別を確認します。"
+    if "skills" in text and "/plugin" in text:
+        return "Installed タブで表示される Skills 名と、実際に呼べる機能の対応を確認します。"
+    if "teammatemode" in text and "iterm2" in text:
+        return "iTerm2 と it2 CLI の有無、設定値、auto mode の警告表示を確認します。"
+    if "refresh credentials" in text and "aws" in text:
+        return "AWS プロファイル、権限、更新後に作業が再開できるかを確認します。"
     if "mcp" in text:
         return "接続先の権限、読み書き範囲、失敗時の戻し方を確認します。"
     if "api" in text or "model" in text:
         return "対象モデル名、料金、rate limit、移行期限を確認します。"
     if "usage" in text and ("credit" in text or "limit" in text):
         return "対象プラン、利用可能なクレジット、実行前の確認表示を見ます。"
+    if "automation run history" in text and "bulk action" in text:
+        return "既読化とアーカイブの対象条件、戻せる操作かどうかを確認します。"
     return "対象環境、利用条件、既存ワークフローに入れる位置を確認します。"
 
 
@@ -1168,68 +1198,133 @@ def wrap_text(value: str, limit: int) -> list[str]:
     return lines
 
 
-def render_svg_text(value: str, x: int, y: int, size: int, color: str, max_lines: int, width_chars: int) -> str:
+def render_svg_text(
+    value: str,
+    x: int,
+    y: int,
+    size: int,
+    color: str,
+    max_lines: int,
+    width_chars: int,
+    font_weight: int | str = 400,
+    line_gap: int = 8,
+) -> str:
     tspans = []
     for idx, line in enumerate(wrap_text(value, width_chars)[:max_lines]):
-        dy = 0 if idx == 0 else size + 8
+        dy = 0 if idx == 0 else size + line_gap
         tspans.append(f'<tspan x="{x}" dy="{dy}">{html.escape(line)}</tspan>')
-    return f'<text x="{x}" y="{y}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="{size}" fill="{color}">' + "".join(tspans) + "</text>"
+    return (
+        f'<text x="{x}" y="{y}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" '
+        f'font-size="{size}" font-weight="{font_weight}" fill="{color}">'
+        + "".join(tspans)
+        + "</text>"
+    )
+
+
+def source_domain(value: str) -> str:
+    parsed = urllib.parse.urlparse(value)
+    return parsed.netloc or value[:42]
+
+
+def infographic_status_label(status: str) -> tuple[str, str, str]:
+    if status == "official-source-confirmed":
+        return "公式ソース確認済み", "#0f766e", "#e0f2ef"
+    if status == "summary-confirmed":
+        return "要約内で確認", "#2563eb", "#e8f0ff"
+    return "追加確認が必要", "#b45309", "#fff0d8"
+
+
+def render_svg_chip(x: int, y: int, width: int, label: str, fill: str, color: str, stroke: str = "") -> str:
+    stroke_attr = f' stroke="{stroke}" stroke-width="1.5"' if stroke else ""
+    return (
+        f'<rect x="{x}" y="{y}" width="{width}" height="34" rx="17" fill="{fill}"{stroke_attr}/>'
+        f'<text x="{x + 18}" y="{y + 23}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" '
+        f'font-size="14" font-weight="800" fill="{color}">{html.escape(label)}</text>'
+    )
 
 
 def render_infographic_svg(route: str, fact: dict[str, Any], index: int, total: int) -> str:
     feature = str(fact["feature"])
     infographic_title = str(fact.get("title") or feature)
+    status_label, status_color, status_fill = infographic_status_label(str(fact.get("status", "")))
+    provider = str(fact.get("provider") or "Unknown")
+    kind = str(fact.get("kind") or "update")
+    score = int(fact.get("score") or 0)
+    score_width = max(18, min(154, int(154 * score / 100)))
+    evidence = [normalize_space(str(item)) for item in fact.get("evidence", []) if normalize_space(str(item))]
+    evidence_text = evidence[0] if evidence else "根拠行は未取得です。出典URLを開いて、日付・対象環境・有効化条件を確認してください。"
+    source_label = source_domain(str(fact.get("fetched_url") or fact.get("source_url") or fact.get("source_id") or ""))
 
-    panels = [
-        (
-            54,
-            "#2f7d46",
-            "どういう機能？",
-            str(fact["what_it_is"]),
-        ),
-        (
-            426,
-            "#245c9f",
-            "使える場面",
-            str(fact["use_case"]),
-        ),
-        (
-            798,
-            "#c96014",
-            "まず確認",
-            str(fact["check_first"]),
-        ),
-    ]
-    panel_svg = []
-    for x, color, panel_title, body in panels:
-        panel_svg.append(f'<rect x="{x}" y="246" width="348" height="218" rx="14" fill="#ffffff" stroke="{color}" stroke-width="2"/>')
-        panel_svg.append(f'<text x="{x + 24}" y="292" font-size="25" font-weight="900" fill="{color}">{html.escape(panel_title)}</text>')
-        panel_svg.append(render_svg_text(body, x + 24, 340, 17, "#202124", 4, 15))
+    evidence_svg = render_svg_text(evidence_text, 86, 575, 18, "#1f2937", 2, 54, 700, 6)
+    if len(evidence) > 1:
+        evidence_svg += render_svg_text(evidence[1], 86, 633, 14, "#5f6368", 1, 72, 500, 4)
 
-    flow_items = [
-        ("出典を開く", "日付と条件を見る"),
-        ("小さく試す", "CLI/API/UIで確認"),
-        ("使うか決める", "運用に入れるか判断"),
+    steps = [
+        ("1", "出典確認", "日付・対象プラン・地域"),
+        ("2", "小さく検証", "CLI/API/UIで再現"),
+        ("3", "採用判断", "運用に入れる価値"),
     ]
-    flow_svg = []
-    for idx, (label, caption) in enumerate(flow_items):
-        x = 122 + idx * 350
-        flow_svg.append(f'<circle cx="{x}" cy="558" r="28" fill="#ffffff" stroke="#245c9f" stroke-width="2"/>')
-        flow_svg.append(f'<text x="{x}" y="567" font-size="22" font-weight="900" text-anchor="middle" fill="#245c9f">{idx + 1}</text>')
-        flow_svg.append(f'<text x="{x + 48}" y="552" font-size="19" font-weight="900" fill="#202124">{html.escape(label)}</text>')
-        flow_svg.append(f'<text x="{x + 48}" y="580" font-size="14" fill="#5f6368">{html.escape(caption)}</text>')
-        if idx < len(flow_items) - 1:
-            flow_svg.append(f'<text x="{x + 230}" y="568" font-size="30" font-weight="900" fill="#245c9f">→</text>')
+    step_svg = []
+    for idx, (number, label, caption) in enumerate(steps):
+        x = 724 + idx * 140
+        step_svg.append(f'<circle cx="{x}" cy="565" r="23" fill="#15263a"/>')
+        step_svg.append(f'<text x="{x}" y="573" text-anchor="middle" font-size="18" font-weight="900" fill="#ffffff">{number}</text>')
+        step_svg.append(render_svg_text(label, x - 42, 613, 17, "#15263a", 1, 7, 900))
+        step_svg.append(render_svg_text(caption, x - 52, 638, 12, "#5f6368", 1, 11, 600))
+        if idx < len(steps) - 1:
+            step_svg.append(f'<path d="M{x + 30} 565 H{x + 105}" stroke="#d6a237" stroke-width="4" stroke-linecap="round"/>')
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
-  <rect width="1200" height="675" fill="#fffdf7"/>
-  <path d="M48 166 C250 157 478 175 708 162 C870 153 1016 166 1152 159" stroke="#f0ca3f" stroke-width="7" fill="none" stroke-linecap="round" opacity=".75"/>
-  {render_svg_text(infographic_title, 48, 64, 39, "#202124", 2, 21)}
-  <text x="48" y="190" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" fill="#3c4043">どういう機能か、どんな場面で使えるか</text>
+  <defs>
+    <linearGradient id="header" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#10263d"/>
+      <stop offset="1" stop-color="#184b55"/>
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#1f2937" flood-opacity=".14"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="675" fill="#f5f1e8"/>
+  <rect width="1200" height="182" fill="url(#header)"/>
+  <path d="M0 166 C170 186 310 142 482 166 C665 192 820 144 1002 164 C1085 173 1142 188 1200 180 V675 H0 Z" fill="#f5f1e8"/>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
-    {''.join(panel_svg)}
-    <rect x="54" y="502" width="1092" height="106" rx="16" fill="#ffffff" stroke="#8bb8dc" stroke-width="2"/>
-    {''.join(flow_svg)}
+    <text x="52" y="45" font-size="14" font-weight="800" fill="#b9c5d0">{html.escape(route)} · AI最新インフォグラフィック</text>
+    {render_svg_chip(52, 64, 142, provider, "#e7f5f2", "#0f766e")}
+    {render_svg_chip(206, 64, 178, status_label, status_fill, status_color)}
+    {render_svg_chip(396, 64, 108, kind, "#fff4dd", "#9a5b10")}
+    {render_svg_text(infographic_title, 52, 126, 36, "#ffffff", 2, 27, 900, 7)}
+    <text x="1046" y="46" font-size="13" font-weight="800" text-anchor="end" fill="#d7dee7">Signal score</text>
+    <rect x="968" y="62" width="154" height="10" rx="5" fill="#506376"/>
+    <rect x="968" y="62" width="{score_width}" height="10" rx="5" fill="#f4c542"/>
+    <text x="1122" y="104" font-size="42" font-weight="900" text-anchor="end" fill="#ffffff">{score}</text>
+  </g>
+  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" filter="url(#softShadow)">
+    <rect x="48" y="198" width="520" height="278" rx="8" fill="#ffffff"/>
+    <rect x="48" y="198" width="12" height="278" rx="6" fill="#d94f45"/>
+    <text x="86" y="246" font-size="16" font-weight="900" fill="#d94f45">NEW FEATURE</text>
+    {render_svg_text(feature, 86, 292, 28, "#172033", 3, 22, 900, 6)}
+    <path d="M86 380 H520" stroke="#e5e7eb" stroke-width="2"/>
+    <text x="86" y="420" font-size="18" font-weight="900" fill="#172033">何が変わったか</text>
+    {render_svg_text(str(fact["what_it_is"]), 86, 452, 18, "#3c4043", 3, 31, 500, 7)}
+
+    <rect x="596" y="198" width="556" height="132" rx="8" fill="#ffffff"/>
+    <rect x="596" y="198" width="556" height="10" rx="5" fill="#0f766e"/>
+    <text x="628" y="246" font-size="18" font-weight="900" fill="#0f766e">実用判断</text>
+    {render_svg_text(str(fact["use_case"]), 628, 282, 18, "#202124", 3, 42, 500, 6)}
+
+    <rect x="596" y="352" width="556" height="124" rx="8" fill="#ffffff"/>
+    <rect x="596" y="352" width="556" height="10" rx="5" fill="#b45309"/>
+    <text x="628" y="400" font-size="18" font-weight="900" fill="#b45309">導入前チェック</text>
+    {render_svg_text(str(fact["check_first"]), 628, 436, 18, "#202124", 2, 42, 500, 6)}
+  </g>
+  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
+    <rect x="48" y="506" width="650" height="136" rx="8" fill="#fffaf0" stroke="#e3cf9d" stroke-width="2"/>
+    <text x="86" y="548" font-size="17" font-weight="900" fill="#9a5b10">根拠</text>
+    {evidence_svg}
+    <text x="650" y="548" font-size="12" font-weight="800" text-anchor="end" fill="#8a6b32">{html.escape(source_label[:38])}</text>
+    <rect x="720" y="506" width="432" height="136" rx="8" fill="#ffffff" stroke="#d8dee6" stroke-width="2"/>
+    <text x="748" y="538" font-size="17" font-weight="900" fill="#15263a">次の確認フロー</text>
+    {''.join(step_svg)}
   </g>
 </svg>
 """
