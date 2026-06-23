@@ -272,13 +272,18 @@ Face, LangChain, GitHub Changelog, OpenAI News, OpenAI Codex/API changelog
 snapshot diffs, Cloudflare Changelog, Hacker News frontpage/best, Publickey,
 and release feeds. For `ai-latest-trigger`, the watcher writes local artifacts
 under `~/.hermes/state/ai-latest/`: `signals.json`, `analysis.md`,
-`summary.html`, and `index.html`. It mirrors the latest artifact to
-`~/.hermes/public/ai-latest/latest/` and archives every run under
-`~/.hermes/archive/ai-latest/`. New-feature signals also create a Japanese
-`infographic.png`; version-only release notes stay in the HTML and Markdown
-artifact without a separate summary image. Snapshot sources store the previous
-normalized page content in watcher state and emit a signal only when the fetched
-Markdown or HTML text changes.
+`summary.html`, and `index.html`. It splits `ai-latest-trigger` by provider, so
+OpenAI and Anthropic create separate Discord payloads and separate latest
+directories such as `~/.hermes/public/ai-latest/latest/openai/` and
+`~/.hermes/public/ai-latest/latest/anthropic/`. Every run is archived under
+`~/.hermes/archive/ai-latest/`. New-feature signals are split into one Japanese
+infographic per feature (`infographic-01.png`, `infographic-02.png`, ...), and
+the first image is copied to `infographic.png` for preview compatibility. Before
+rendering images, the watcher re-checks the official source URL and stores the
+evidence in `facts.json` and `factcheck.md`. Version-only release notes stay in
+the HTML and Markdown artifact without a separate summary image. Snapshot
+sources store the previous normalized page content in watcher state and emit a
+signal only when the fetched Markdown or HTML text changes.
 The batch trigger threshold is intentionally set out of normal reach so source
 movement does not automatically start a full tech digest. The macOS installer
 runs it through

@@ -478,14 +478,26 @@ def send_alert(settings: dict[str, Any], title: str, body: str, log_path: Path) 
         log_line(log_path, f"alert failed title={title!r} error={exc}")
 
 
-def build_payload(route: str, candidates: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
+def build_payload(
+    route: str,
+    candidates: list[dict[str, Any]],
+    group_slug: str | None = None,
+    group_label: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "event_type": "signal.batch" if len(candidates) > 1 else "signal.item",
         "route": route,
         "created_at": now_iso(),
         "candidate_count": len(candidates),
         "signals": candidates,
     }
+    if group_slug and group_label:
+        payload["group"] = {
+            "type": "provider",
+            "slug": group_slug,
+            "label": group_label,
+        }
+    return payload
 
 
 def enabled_summary_artifacts(route: str, settings: dict[str, Any]) -> bool:
@@ -495,12 +507,20 @@ def enabled_summary_artifacts(route: str, settings: dict[str, Any]) -> bool:
     return not routes or route in routes
 
 
-def write_summary_artifacts(route: str, candidates: list[dict[str, Any]], settings: dict[str, Any]) -> dict[str, str]:
+def write_summary_artifacts(
+    route: str,
+    candidates: list[dict[str, Any]],
+    settings: dict[str, Any],
+    group_slug: str | None = None,
+    group_label: str | None = None,
+) -> dict[str, str]:
     if not candidates or not enabled_summary_artifacts(route, settings):
         return {}
     base_dir = expand_path(settings.get("summary_artifact_dir", "~/.hermes/state/ai-latest"))
-    key_seed = route + "\n" + "\n".join(c["stable_key"] for c in candidates)
-    artifact_id = f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%SZ')}-{safe_slug(route)}-{slug_key(key_seed)}"
+    display_route = route if not group_label else f"{route} / {group_label}"
+    route_slug = safe_slug(route if not group_slug else f"{route}-{group_slug}")
+    key_seed = route + "\n" + (group_slug or "") + "\n" + "\n".join(c["stable_key"] for c in candidates)
+    artifact_id = f"{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%SZ')}-{route_slug}-{slug_key(key_seed)}"
     artifact_dir = base_dir / artifact_id
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
@@ -510,8 +530,8 @@ def write_summary_artifacts(route: str, candidates: list[dict[str, Any]], settin
     index_path = artifact_dir / "index.html"
 
     signals_path.write_text(json.dumps(candidates, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    analysis_path.write_text(render_summary_markdown(route, candidates), encoding="utf-8")
-    html = render_summary_html(route, candidates)
+    analysis_path.write_text(render_summary_markdown(display_route, candidates), encoding="utf-8")
+    html = render_summary_html(display_route, candidates)
     html_path.write_text(html, encoding="utf-8")
     index_path.write_text(html, encoding="utf-8")
 
@@ -522,24 +542,57 @@ def write_summary_artifacts(route: str, candidates: list[dict[str, Any]], settin
         "summary_html": str(html_path),
         "index_html": str(index_path),
     }
-    if should_write_infographic(candidates):
-        svg_path = artifact_dir / "infographic.svg"
-        png_path = artifact_dir / "infographic.png"
-        svg_path.write_text(render_infographic_svg(route, candidates), encoding="utf-8")
-        render_summary_png(svg_path, png_path, settings)
-        artifact["infographic_svg"] = str(svg_path)
-        artifact["infographic_png"] = str(png_path)
-    archive_dir = archive_artifact(artifact_dir, artifact_id, settings)
+    if group_slug and group_label:
+        artifact["group_type"] = "provider"
+        artifact["group_slug"] = group_slug
+        artifact["group_label"] = group_label
+    feature_facts = infographic_feature_facts(candidates, settings)
+    if feature_facts:
+        facts_path = artifact_dir / "facts.json"
+        factcheck_path = artifact_dir / "factcheck.md"
+        facts_path.write_text(json.dumps(feature_facts, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        factcheck_path.write_text(render_factcheck_markdown(display_route, feature_facts), encoding="utf-8")
+        artifact["facts_json"] = str(facts_path)
+        artifact["factcheck_md"] = str(factcheck_path)
+        infographics = []
+        for idx, fact in enumerate(feature_facts, 1):
+            svg_path = artifact_dir / f"infographic-{idx:02d}.svg"
+            png_path = artifact_dir / f"infographic-{idx:02d}.png"
+            svg_path.write_text(render_infographic_svg(display_route, fact, idx, len(feature_facts)), encoding="utf-8")
+            render_summary_png(svg_path, png_path, settings)
+            infographics.append({
+                "index": idx,
+                "feature": fact["feature"],
+                "source_id": fact["source_id"],
+                "fact_status": fact["status"],
+                "svg": str(svg_path),
+                "png": str(png_path),
+            })
+            if idx == 1:
+                alias_svg = artifact_dir / "infographic.svg"
+                alias_png = artifact_dir / "infographic.png"
+                shutil.copyfile(svg_path, alias_svg)
+                shutil.copyfile(png_path, alias_png)
+                artifact["infographic_svg"] = str(alias_svg)
+                artifact["infographic_png"] = str(alias_png)
+        artifact["infographics"] = infographics
+    archive_dir = archive_artifact(artifact_dir, artifact_id, settings, group_slug, group_label)
     if archive_dir:
         artifact["archive_dir"] = str(archive_dir)
-    latest_dir = publish_latest_artifact(artifact_dir, settings)
+    latest_dir = publish_latest_artifact(artifact_dir, settings, group_slug)
     if latest_dir:
         artifact["latest_dir"] = str(latest_dir)
         artifact["latest_index_html"] = str(latest_dir / "index.html")
     return artifact
 
 
-def archive_artifact(artifact_dir: Path, artifact_id: str, settings: dict[str, Any]) -> Path | None:
+def archive_artifact(
+    artifact_dir: Path,
+    artifact_id: str,
+    settings: dict[str, Any],
+    group_slug: str | None = None,
+    group_label: str | None = None,
+) -> Path | None:
     archive_root_value = settings.get("summary_archive_dir", "~/.hermes/archive/ai-latest")
     if not archive_root_value:
         return None
@@ -552,27 +605,41 @@ def archive_artifact(artifact_dir: Path, artifact_id: str, settings: dict[str, A
         shutil.rmtree(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(artifact_dir, target)
-    append_archive_index(archive_root, artifact_id, target)
+    append_archive_index(archive_root, artifact_id, target, group_slug, group_label)
     return target
 
 
-def append_archive_index(archive_root: Path, artifact_id: str, target: Path) -> None:
+def append_archive_index(
+    archive_root: Path,
+    artifact_id: str,
+    target: Path,
+    group_slug: str | None = None,
+    group_label: str | None = None,
+) -> None:
     index_path = archive_root / "index.jsonl"
     record = {
         "run_id": artifact_id,
         "created_at": now_iso(),
         "local_path": str(target),
     }
+    if group_slug and group_label:
+        record["group_type"] = "provider"
+        record["group_slug"] = group_slug
+        record["group_label"] = group_label
     index_path.parent.mkdir(parents=True, exist_ok=True)
     with index_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
-def publish_latest_artifact(artifact_dir: Path, settings: dict[str, Any]) -> Path | None:
+def publish_latest_artifact(artifact_dir: Path, settings: dict[str, Any], group_slug: str | None = None) -> Path | None:
     latest_dir_value = settings.get("summary_latest_dir", "~/.hermes/public/ai-latest/latest")
     if not latest_dir_value:
         return None
-    latest_dir = expand_path(str(latest_dir_value))
+    latest_root = expand_path(str(latest_dir_value))
+    latest_dir = latest_root
+    if group_slug:
+        cleanup_ungrouped_latest_files(latest_root)
+        latest_dir = latest_dir / group_slug
     tmp_dir = latest_dir.with_name(latest_dir.name + ".tmp")
     if tmp_dir.exists():
         shutil.rmtree(tmp_dir)
@@ -582,6 +649,24 @@ def publish_latest_artifact(artifact_dir: Path, settings: dict[str, Any]) -> Pat
         shutil.rmtree(latest_dir)
     tmp_dir.replace(latest_dir)
     return latest_dir
+
+
+def cleanup_ungrouped_latest_files(latest_root: Path) -> None:
+    if not latest_root.exists():
+        return
+    for name in [
+        "signals.json",
+        "analysis.md",
+        "summary.html",
+        "index.html",
+        "infographic.svg",
+        "infographic.png",
+        "summary.svg",
+        "summary.png",
+    ]:
+        path = latest_root / name
+        if path.exists() and path.is_file():
+            path.unlink()
 
 
 def safe_slug(value: str) -> str:
@@ -623,6 +708,7 @@ def is_new_feature_candidate(candidate: dict[str, Any]) -> bool:
     text = candidate_text(candidate)
     patterns = [
         r"\bnew features?\b",
+        r"\badd\b",
         r"\badded\b",
         r"\badds\b",
         r"\bcan now\b",
@@ -635,8 +721,276 @@ def is_new_feature_candidate(candidate: dict[str, Any]) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
 
 
+def infographic_feature_items(candidates: list[dict[str, Any]]) -> list[tuple[dict[str, Any], str]]:
+    items: list[tuple[dict[str, Any], str]] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        for feature in candidate_feature_lines(candidate):
+            key = normalize_space(feature).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append((candidate, feature))
+    return items
+
+
+def candidate_feature_lines(candidate: dict[str, Any]) -> list[str]:
+    features: list[str] = []
+    for raw_line in candidate.get("summary", "").splitlines():
+        line = raw_line.strip()
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        feature = clean_feature_line(line)
+        if feature and is_feature_statement(feature, candidate):
+            features.append(feature)
+    if not features:
+        summary = candidate.get("summary", "")
+        summary_text = snapshot_text({"snapshot_format": "html" if looks_like_html(summary) else "text"}, summary)
+        for raw_line in summary_text.splitlines():
+            feature = clean_feature_line(raw_line)
+            if feature and is_feature_statement(feature, candidate):
+                features.append(feature)
+    if not features:
+        title = normalize_space(candidate.get("title", ""))
+        if title and is_feature_statement(title, candidate):
+            features.append(title)
+    return features
+
+
+def clean_feature_line(line: str) -> str:
+    cleaned = html.unescape(normalize_space(line.lstrip("+").strip()))
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+    cleaned = normalize_space(cleaned)
+    cleaned = re.sub(r"^[-*#\s]+", "", cleaned).strip()
+    cleaned = re.sub(r"^\d+[.)]\s*", "", cleaned).strip()
+    return cleaned[:220]
+
+
+def is_feature_statement(value: str, candidate: dict[str, Any]) -> bool:
+    lowered = value.lower().strip(" :-")
+    if lowered in {
+        "new feature",
+        "new features",
+        "features",
+        "improvements",
+        "improvements and bug fixes",
+        "bug fixes",
+        "performance improvements and bug fixes",
+    }:
+        return False
+    if len(value) < 12:
+        return False
+    if re.fullmatch(r"v?\d+\.\d+(?:\.\d+)?(?:[-.][0-9a-z]+)*", lowered):
+        return False
+    return is_new_feature_candidate({"title": value, "summary": value, "tags": candidate.get("tags", [])})
+
+
 def should_write_infographic(candidates: list[dict[str, Any]]) -> bool:
-    return any(is_new_feature_candidate(candidate) for candidate in candidates)
+    return bool(infographic_feature_items(candidates))
+
+
+def infographic_feature_facts(candidates: list[dict[str, Any]], settings: dict[str, Any]) -> list[dict[str, Any]]:
+    facts = []
+    max_items = int(settings.get("summary_max_infographics", 8))
+    for idx, (candidate, feature) in enumerate(infographic_feature_items(candidates)[:max_items], 1):
+        facts.append(build_feature_fact(candidate, feature, idx, settings))
+    return facts
+
+
+def build_feature_fact(candidate: dict[str, Any], feature: str, index: int, settings: dict[str, Any]) -> dict[str, Any]:
+    source_url = candidate.get("url") or candidate.get("source_url", "")
+    evidence_lines = feature_evidence_from_summary(candidate, feature)
+    status = "summary-confirmed" if evidence_lines else "candidate-only"
+    fetched_url = ""
+    fetch_error = ""
+    source_title = candidate.get("title", "")
+    for url in unique_urls([candidate.get("url", ""), candidate.get("source_url", "")]):
+        try:
+            timeout = int(settings.get("source_timeout_seconds", 20))
+            user_agent = settings.get("user_agent", "grok-signal-agent/0.1")
+            fetched = fetch_text(url, timeout, user_agent)
+            fetched_url = url
+            source_text = snapshot_text({"snapshot_format": "html" if looks_like_html(fetched) else "text"}, fetched)
+            source_evidence = feature_evidence_from_text(source_text, feature)
+            if source_evidence:
+                evidence_lines = source_evidence
+                status = "official-source-confirmed"
+                break
+        except Exception as exc:
+            fetch_error = str(exc)
+
+    return {
+        "index": index,
+        "feature": feature,
+        "source_id": candidate["source_id"],
+        "source_url": source_url,
+        "fetched_url": fetched_url,
+        "source_title": source_title,
+        "provider": provider_label(candidate),
+        "kind": candidate_kind(candidate),
+        "score": candidate["score"],
+        "status": status,
+        "fetch_error": fetch_error,
+        "evidence": evidence_lines[:4],
+        "what_it_is": describe_feature(candidate, feature),
+        "use_case": feature_use_case(candidate, feature),
+        "check_first": feature_check_first(candidate, feature),
+    }
+
+
+def unique_urls(values: list[str]) -> list[str]:
+    urls = []
+    seen = set()
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        urls.append(value)
+    return urls
+
+
+def looks_like_html(value: str) -> bool:
+    return bool(re.search(r"<(?:html|body|h[1-6]|li|ul|ol|p|div|article|main)\b", value[:2000].lower()))
+
+
+def feature_evidence_from_summary(candidate: dict[str, Any], feature: str) -> list[str]:
+    evidence = []
+    feature_key = normalize_for_match(feature)
+    for raw_line in candidate.get("summary", "").splitlines():
+        cleaned = clean_feature_line(raw_line)
+        if cleaned and (normalize_for_match(cleaned) == feature_key or match_feature_phrase(cleaned, feature)):
+            evidence.append(cleaned)
+    return evidence
+
+
+def feature_evidence_from_text(text: str, feature: str) -> list[str]:
+    evidence = []
+    for raw_line in text.splitlines():
+        line = normalize_space(raw_line)
+        if not line:
+            continue
+        if match_feature_phrase(line, feature):
+            evidence.append(line[:240])
+        if len(evidence) >= 4:
+            break
+    if not evidence and match_feature_phrase(normalize_space(text), feature):
+        evidence.append(feature)
+    return evidence
+
+
+def normalize_for_match(value: str) -> str:
+    return re.sub(r"[^a-z0-9ぁ-んァ-ヶ一-龠]+", " ", value.lower()).strip()
+
+
+def match_feature_phrase(haystack: str, feature: str) -> bool:
+    haystack_norm = normalize_for_match(haystack)
+    feature_norm = normalize_for_match(feature)
+    if not feature_norm:
+        return False
+    if feature_norm in haystack_norm:
+        return True
+    words = [word for word in feature_norm.split() if len(word) >= 4]
+    if not words:
+        return False
+    matches = sum(1 for word in words[:10] if word in haystack_norm)
+    return matches >= min(4, max(2, len(words[:10]) // 2))
+
+
+def describe_feature(candidate: dict[str, Any], feature: str) -> str:
+    text = (feature + " " + candidate_text(candidate)).lower()
+    if "record" in text and "replay" in text:
+        return "操作した手順を記録し、あとから再利用できるワークフローとして扱う機能です。"
+    if "mcp" in text:
+        return "外部ツールやデータソースとの接続・管理を広げるための機能です。"
+    if "browser" in text or "chrome" in text:
+        return "ブラウザ上の作業や確認をエージェントの流れに組み込むための機能です。"
+    if "automation" in text or "bulk action" in text:
+        return "繰り返し実行や履歴管理をまとめて扱いやすくする運用向けの機能です。"
+    if "usage" in text and ("credit" in text or "limit" in text):
+        return "利用上限やリセットクレジットの状態確認・利用をコマンド内で扱う機能です。"
+    if "handoff" in text:
+        return "作業中のスレッドや状態を別の環境へ引き継ぎやすくする機能です。"
+    if "api" in text or "model" in text:
+        return "APIやモデル利用時の選択肢、指定方法、運用条件を広げる機能です。"
+    return "公式リリースで追加された新しい使い方です。既存の作業に組み込めるかを確認します。"
+
+
+def feature_use_case(candidate: dict[str, Any], feature: str) -> str:
+    text = (feature + " " + candidate_text(candidate)).lower()
+    if "record" in text and "replay" in text:
+        return "定型操作、検証手順、社内ツールの反復作業をスキル化したい場面で使えます。"
+    if "mcp" in text:
+        return "GitHub、DB、社内API、ドキュメントなどをエージェント作業に接続したい場面で使えます。"
+    if "browser" in text or "chrome" in text:
+        return "ログイン済み画面の確認、管理画面操作、UIの再現確認が必要な場面で使えます。"
+    if "automation" in text or "bulk action" in text:
+        return "複数の実行履歴や定期処理をまとめて整理したい場面で使えます。"
+    if "usage" in text and ("credit" in text or "limit" in text):
+        return "上限に近い作業中に、残量やリセット可否を確認して作業継続を判断する場面で使えます。"
+    if "handoff" in text:
+        return "ローカルとリモート、または別ホストへ作業を移す場面で使えます。"
+    if "api" in text or "model" in text:
+        return "プロダクトのモデル更新、API移行、検証環境での比較テストに使えます。"
+    return "日々の開発、検証、ドキュメント更新の中で作業を短くできるか試せます。"
+
+
+def feature_check_first(candidate: dict[str, Any], feature: str) -> str:
+    text = (feature + " " + candidate_text(candidate)).lower()
+    if "beta" in text or "header" in text:
+        return "有効化ヘッダー、対象モデル、利用可能な組織・地域を確認します。"
+    if "record" in text or "computer use" in text:
+        return "利用可能地域、権限設定、記録してよい操作範囲を確認します。"
+    if "mcp" in text:
+        return "接続先の権限、読み書き範囲、失敗時の戻し方を確認します。"
+    if "api" in text or "model" in text:
+        return "対象モデル名、料金、rate limit、移行期限を確認します。"
+    if "usage" in text and ("credit" in text or "limit" in text):
+        return "対象プラン、利用可能なクレジット、実行前の確認表示を見ます。"
+    return "対象環境、利用条件、既存ワークフローに入れる位置を確認します。"
+
+
+def render_factcheck_markdown(route: str, facts: list[dict[str, Any]]) -> str:
+    lines = [f"# AI latest fact check: {route}", "", f"Generated: {now_iso()}", ""]
+    for fact in facts:
+        lines.extend([
+            f"## {fact['index']}. {fact['feature']}",
+            "",
+            f"- Provider: {fact['provider']}",
+            f"- Source: `{fact['source_id']}`",
+            f"- URL: {fact['source_url']}",
+            f"- Status: `{fact['status']}`",
+        ])
+        if fact.get("fetch_error"):
+            lines.append(f"- Fetch error: `{fact['fetch_error']}`")
+        if fact.get("evidence"):
+            lines.extend(["", "Evidence:"])
+            for evidence in fact["evidence"]:
+                lines.append(f"- {evidence}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def provider_split_enabled(route: str, settings: dict[str, Any]) -> bool:
+    routes = settings.get("provider_split_routes", [])
+    return isinstance(routes, list) and route in routes
+
+
+def split_candidates_for_route(
+    route: str,
+    candidates: list[dict[str, Any]],
+    settings: dict[str, Any],
+) -> list[tuple[str | None, str | None, list[dict[str, Any]]]]:
+    if not provider_split_enabled(route, settings):
+        return [(None, None, candidates)]
+    grouped: dict[str, dict[str, Any]] = {}
+    for candidate in candidates:
+        label = provider_label(candidate)
+        slug = safe_slug(label)
+        grouped.setdefault(slug, {"label": label, "candidates": []})["candidates"].append(candidate)
+    return [
+        (slug, str(group["label"]), group["candidates"])
+        for slug, group in sorted(grouped.items(), key=lambda item: item[0])
+    ]
 
 
 def provider_label(candidate: dict[str, Any]) -> str:
@@ -745,7 +1099,7 @@ def render_summary_html(route: str, candidates: list[dict[str, Any]]) -> str:
   <main>
     <header>
       <h1>AI最新アップデート</h1>
-      <div class="subtitle">{html.escape(route)} · 重要な一次情報を要点化 · {html.escape(now_iso())}</div>
+      <div class="subtitle">{html.escape(route)} · 公式情報を要点化 · {html.escape(now_iso())}</div>
     </header>
     <section class="grid">
       {''.join(cards)}
@@ -789,51 +1143,88 @@ def render_svg_text(value: str, x: int, y: int, size: int, color: str, max_lines
     return f'<text x="{x}" y="{y}" font-size="{size}" fill="{color}">' + "".join(tspans) + "</text>"
 
 
-def render_infographic_svg(route: str, candidates: list[dict[str, Any]]) -> str:
-    top_candidates = candidates[:3]
-    providers = sorted({provider_label(candidate) for candidate in top_candidates})
-    kinds = sorted({candidate_kind(candidate) for candidate in top_candidates})
-    stat_cards = []
-    stats = [
-        ("検知候補", str(len(candidates)), "閾値を超えた更新"),
-        ("主要ソース", " / ".join(providers[:3]) or "-", "一次情報を優先"),
-        ("分類", " / ".join(kinds[:3]) or "-", "影響範囲の目安"),
-    ]
-    for idx, (label, value, caption) in enumerate(stats):
-        x = 44 + idx * 366
-        stat_cards.append(f'<rect x="{x}" y="124" width="334" height="76" rx="10" fill="#ffffff" stroke="#ded8ca"/>')
-        stat_cards.append(f'<text x="{x + 18}" y="151" font-size="15" font-weight="800" fill="#2f6f73">{html.escape(label)}</text>')
-        stat_cards.append(render_svg_text(value, x + 18, 177, 22, "#202124", 1, 20))
-        stat_cards.append(f'<text x="{x + 18}" y="193" font-size="12" fill="#5f6368">{html.escape(caption)}</text>')
+def render_infographic_svg(route: str, fact: dict[str, Any], index: int, total: int) -> str:
+    provider = str(fact["provider"])
+    feature = str(fact["feature"])
+    source = f"{fact['provider']} / {fact['kind']} / スコア {fact['score']}"
+    evidence_label = "公式ソース確認済み" if fact["status"] == "official-source-confirmed" else "差分本文で確認"
+    generated_at = now_iso()
 
-    rows = []
-    y = 270
-    for idx, candidate in enumerate(top_candidates, 1):
-        rows.append(f'<circle cx="74" cy="{y + 4}" r="18" fill="#2f6f73"/>')
-        rows.append(f'<text x="74" y="{y + 11}" font-size="18" font-weight="800" text-anchor="middle" fill="#ffffff">{idx}</text>')
-        rows.append(f'<text x="106" y="{y - 14}" font-size="15" font-weight="800" fill="#2f6f73">{html.escape(provider_label(candidate))} · {html.escape(candidate_kind(candidate))} · スコア {candidate["score"]}</text>')
-        rows.append(render_svg_text(candidate["title"], 106, y + 18, 23, "#202124", 1, 34))
-        rows.append(render_svg_text(explain_candidate(candidate), 106, y + 56, 15, "#3c4043", 1, 38))
-        rows.append(render_svg_text("次に見る: " + next_action(candidate), 106, y + 88, 15, "#7a4d16", 1, 38))
-        y += 126
+    panels = [
+        (
+            44,
+            "#2f7d46",
+            "1",
+            "どういう機能？",
+            str(fact["what_it_is"]),
+            "公式の新機能文を根拠に、機能の役割だけを短く整理しています。",
+        ),
+        (
+            414,
+            "#245c9f",
+            "2",
+            "使える場面",
+            str(fact["use_case"]),
+            "どの作業に入れると便利かを、検証前の仮説として置いています。",
+        ),
+        (
+            784,
+            "#c96014",
+            "3",
+            "まず確認",
+            str(fact["check_first"]),
+            "使う前に条件・権限・対象環境を確認してから小さく試します。",
+        ),
+    ]
+    panel_svg = []
+    for x, color, number, title, body, footer in panels:
+        panel_svg.append(f'<rect x="{x}" y="282" width="332" height="222" rx="14" fill="#ffffff" stroke="{color}" stroke-width="2"/>')
+        panel_svg.append(f'<circle cx="{x + 34}" cy="320" r="20" fill="#ffffff" stroke="{color}" stroke-width="4"/>')
+        panel_svg.append(f'<text x="{x + 34}" y="328" font-size="24" font-weight="900" text-anchor="middle" fill="{color}">{number}</text>')
+        panel_svg.append(f'<text x="{x + 66}" y="314" font-size="22" font-weight="900" fill="{color}">{html.escape(title)}</text>')
+        panel_svg.append(render_svg_text(body, x + 24, 360, 15, "#202124", 3, 22))
+        panel_svg.append(f'<rect x="{x + 22}" y="440" width="288" height="46" rx="10" fill="#f8f4e8" stroke="{color}" stroke-width="1"/>')
+        panel_svg.append(render_svg_text(footer, x + 38, 464, 12, color, 2, 22))
+
+    flow_items = [
+        ("出典を開く", "日付と条件を見る"),
+        ("小さく試す", "CLI/API/UIで確認"),
+        ("差分を記録", "設定と原稿へ反映"),
+        ("運用判断", "使う/待つを決める"),
+    ]
+    flow_svg = []
+    for idx, (label, caption) in enumerate(flow_items):
+        x = 78 + idx * 270
+        flow_svg.append(f'<circle cx="{x}" cy="596" r="26" fill="#ffffff" stroke="#245c9f" stroke-width="2"/>')
+        flow_svg.append(f'<text x="{x}" y="604" font-size="22" font-weight="900" text-anchor="middle" fill="#245c9f">{idx + 1}</text>')
+        flow_svg.append(f'<text x="{x + 42}" y="590" font-size="17" font-weight="900" fill="#202124">{html.escape(label)}</text>')
+        flow_svg.append(f'<text x="{x + 42}" y="616" font-size="13" fill="#5f6368">{html.escape(caption)}</text>')
+        if idx < len(flow_items) - 1:
+            flow_svg.append(f'<text x="{x + 188}" y="604" font-size="26" font-weight="900" fill="#245c9f">→</text>')
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
-  <rect width="1200" height="675" fill="#f6f3ea"/>
-  <rect x="0" y="0" width="1200" height="12" fill="#2f6f73"/>
-  <text x="44" y="66" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="43" font-weight="800" fill="#202124">AI最新アップデート</text>
-  <text x="44" y="102" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="17" fill="#5f6368">公式ソースの変化を、何が重要か・次に何を見るかで整理</text>
+  <rect width="1200" height="675" fill="#fffdf7"/>
+  <path d="M48 82 C250 73 478 91 708 78 C870 69 1016 82 1152 75" stroke="#f0ca3f" stroke-width="7" fill="none" stroke-linecap="round" opacity=".75"/>
+  <text x="44" y="66" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="42" font-weight="900" fill="#202124">新機能を1つ深掘り：{html.escape(provider)}</text>
+  <text x="44" y="110" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" fill="#3c4043">どういう機能か、どんな場面で使えるかを公式情報から整理</text>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
-    {''.join(stat_cards)}
-    <text x="44" y="232" font-size="18" font-weight="800" fill="#202124">注目ポイント（上位3件）</text>
-    {''.join(rows)}
-    <rect x="800" y="246" width="332" height="300" rx="12" fill="#ffffff" stroke="#ded8ca"/>
-    <text x="826" y="282" font-size="22" font-weight="800" fill="#202124">読み方</text>
-    <text x="826" y="322" font-size="16" fill="#3c4043">1. 新機能は小さく試す</text>
-    <text x="826" y="358" font-size="16" fill="#3c4043">2. API/モデル更新は移行期限を見る</text>
-    <text x="826" y="394" font-size="16" fill="#3c4043">3. リリース差分は設定と照合する</text>
-    <text x="826" y="446" font-size="14" fill="#5f6368">出典URLと差分本文は同じartifactの</text>
-    <text x="826" y="470" font-size="14" fill="#5f6368">signals.json / analysis.md に保存</text>
-    <text x="826" y="516" font-size="14" font-weight="800" fill="#2f6f73">{html.escape(route)} · {html.escape(now_iso())}</text>
+    <rect x="44" y="136" width="536" height="126" rx="14" fill="#ffffff" stroke="#202124" stroke-width="2"/>
+    <text x="70" y="170" font-size="18" font-weight="900" fill="#202124">新機能 {index}/{total}</text>
+    {render_svg_text(feature, 70, 202, 19, "#202124", 2, 31)}
+    <text x="70" y="246" font-size="13" font-weight="800" fill="#2f6f73">{html.escape(source)}</text>
+    <path d="M606 192 L660 192" stroke="#245c9f" stroke-width="8" stroke-linecap="round"/>
+    <path d="M650 174 L680 192 L650 210" fill="none" stroke="#245c9f" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="704" y="132" width="430" height="122" rx="14" fill="#ffffff" stroke="#245c9f" stroke-width="3"/>
+    <rect x="732" y="118" width="260" height="30" rx="6" fill="#245c9f"/>
+    <text x="748" y="140" font-size="16" font-weight="900" fill="#ffffff">ファクトチェック</text>
+    <text x="738" y="178" font-size="18" fill="#202124">1. {html.escape(evidence_label)}</text>
+    <text x="738" y="210" font-size="18" fill="#202124">2. 根拠は facts.json に保存</text>
+    <text x="738" y="242" font-size="18" fill="#202124">3. 画像は確認後に生成</text>
+    {''.join(panel_svg)}
+    <rect x="44" y="536" width="1090" height="102" rx="16" fill="#ffffff" stroke="#8bb8dc" stroke-width="2"/>
+    <text x="70" y="566" font-size="21" font-weight="900" fill="#245c9f">次にやること</text>
+    {''.join(flow_svg)}
+    <text x="44" y="660" font-size="12" fill="#5f6368">{html.escape(route)} · {html.escape(generated_at)} · 詳細は signals.json / analysis.md に保存</text>
   </g>
 </svg>
 """
@@ -1024,14 +1415,27 @@ def main() -> int:
                         apply_snapshot_update(state, update_item, snapshot_updates)
 
         for route, route_candidates in candidates_by_route.items():
-            sent = send_candidates(route, route_candidates, config, settings, env_file_values, args.dry_run, timeout, state, log_path)
-            sent_count += sent
-            if sent:
-                for candidate in route_candidates:
-                    mark_seen_candidate(state, candidate)
-                    update_item = next((item for item in observed if item.stable_key == candidate["stable_key"]), None)
-                    if update_item:
-                        apply_snapshot_update(state, update_item, snapshot_updates)
+            for group_slug, group_label, grouped_candidates in split_candidates_for_route(route, route_candidates, settings):
+                sent = send_candidates(
+                    route,
+                    grouped_candidates,
+                    config,
+                    settings,
+                    env_file_values,
+                    args.dry_run,
+                    timeout,
+                    state,
+                    log_path,
+                    group_slug,
+                    group_label,
+                )
+                sent_count += sent
+                if sent:
+                    for candidate in grouped_candidates:
+                        mark_seen_candidate(state, candidate)
+                        update_item = next((item for item in observed if item.stable_key == candidate["stable_key"]), None)
+                        if update_item:
+                            apply_snapshot_update(state, update_item, snapshot_updates)
 
     if errors and not observed:
         send_alert(
@@ -1075,24 +1479,28 @@ def send_candidates(
     timeout: int,
     state: dict[str, Any],
     log_path: Path,
+    group_slug: str | None = None,
+    group_label: str | None = None,
 ) -> int:
     base_url = env_value(settings.get("webhook_base_url_env", ""), env_file_values) or settings.get("default_webhook_base_url", "http://127.0.0.1:8644")
     secret_env = settings.get("post_trigger_secret_env") if route != settings.get("default_route", "signal-catchup") else settings.get("secret_env")
     secret = env_value(secret_env or "", env_file_values)
-    payload = build_payload(route, candidates)
+    payload = build_payload(route, candidates, group_slug, group_label)
     url = route_url(base_url, route)
     cooldown_minutes = max(int(c.get("cooldown_minutes", settings.get("default_cooldown_minutes", 90))) for c in candidates)
-    last_sent = state.setdefault("last_sent_routes", {}).get(route, 0)
+    delivery_key = route if not group_slug else f"{route}:{group_slug}"
+    log_group = f" group={group_label}" if group_label else ""
+    last_sent = state.setdefault("last_sent_routes", {}).get(delivery_key, 0)
     now_ts = time.time()
     if last_sent and now_ts - float(last_sent) < cooldown_minutes * 60:
-        log_line(log_path, f"cooldown route={route} candidates={len(candidates)} minutes={cooldown_minutes}")
+        log_line(log_path, f"cooldown route={route}{log_group} candidates={len(candidates)} minutes={cooldown_minutes}")
         return 0
-    artifact = write_summary_artifacts(route, candidates, settings)
+    artifact = write_summary_artifacts(route, candidates, settings, group_slug, group_label)
     if artifact:
         payload["artifact"] = artifact
-        log_line(log_path, f"summary artifacts route={route} dir={artifact['artifact_dir']}")
+        log_line(log_path, f"summary artifacts route={route}{log_group} dir={artifact['artifact_dir']}")
     if dry_run:
-        log_line(log_path, f"dry-run route={route} candidates={len(candidates)}")
+        log_line(log_path, f"dry-run route={route}{log_group} candidates={len(candidates)}")
         return 0
     if not secret:
         log_line(log_path, f"missing secret env for route={route} env={secret_env}")
@@ -1111,11 +1519,11 @@ def send_candidates(
                 "route": route,
                 "status": status,
             }
-        state.setdefault("last_sent_routes", {})[route] = now_ts
-        log_line(log_path, f"sent route={route} candidates={len(candidates)} status={status} body={body[:200]}")
+        state.setdefault("last_sent_routes", {})[delivery_key] = now_ts
+        log_line(log_path, f"sent route={route}{log_group} candidates={len(candidates)} status={status} body={body[:200]}")
         return len(candidates)
     except Exception as exc:
-        log_line(log_path, f"send failed route={route} candidates={len(candidates)} error={exc}")
+        log_line(log_path, f"send failed route={route}{log_group} candidates={len(candidates)} error={exc}")
         send_alert(
             settings,
             "Hermes signal watcher webhook send failed",

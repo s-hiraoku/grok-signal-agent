@@ -215,11 +215,17 @@ intended split is:
   Discord post is triggered.
 - AI latest artifacts: for `ai-latest-trigger`, the signal watcher also writes
   local run artifacts under `~/.hermes/state/ai-latest/`, including
-  `signals.json`, `analysis.md`, and `summary.html`. New-feature signals also
-  create `infographic.png`; version-only release notes stay in HTML/Markdown
-  without a separate summary image. The latest artifact is mirrored to
-  `~/.hermes/public/ai-latest/latest/` for static hosting, while every run is
-  archived under `~/.hermes/archive/ai-latest/`.
+  `signals.json`, `analysis.md`, and `summary.html`. New-feature signals are
+  split into one fact-checked infographic per feature
+  (`infographic-01.png`, `infographic-02.png`, ...), with the first image also
+  copied to `infographic.png` for previews. `facts.json` and `factcheck.md`
+  record the official-source evidence used before rendering. Version-only
+  release notes stay in HTML/Markdown without a separate summary image. The
+  route is split by provider, so OpenAI and Anthropic produce separate payloads
+  and latest directories such as
+  `~/.hermes/public/ai-latest/latest/openai/` and
+  `~/.hermes/public/ai-latest/latest/anthropic/`. Every run is archived under
+  `~/.hermes/archive/ai-latest/`.
   Anthropic and OpenAI changelog-style pages are watched as snapshots, so
   Markdown/HTML diffs can be preserved even when a source has no RSS feed.
 - X pulse watcher: sample recent X discussion with `x_search`; trigger a short

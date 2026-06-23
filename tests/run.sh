@@ -1815,6 +1815,8 @@ JSON
   assert_file_contains "${artifact_dir}/signals.json" "+- Added Claude Code MCP release tracking."
   assert_file_contains "${artifact_dir}/summary.html" "AI最新"
   assert_file_contains "${artifact_dir}/index.html" "AI最新"
+  assert_file_contains "${artifact_dir}/facts.json" "Claude Code MCP release tracking"
+  assert_file_contains "${artifact_dir}/factcheck.md" "Status:"
   [[ -n "${archive_dir}" ]] || fail "expected archived ai-latest artifact"
   assert_file_contains "${archive_dir}/analysis.md" "Local changelog changed"
   assert_file_contains "${tmp_home}/archive/index.jsonl" "local_path"
@@ -1822,6 +1824,95 @@ JSON
   [[ ! -e "${artifact_dir}/summary.png" ]] || fail "summary.png should not be generated"
   [[ ! -e "${latest_dir}/summary.png" ]] || fail "latest summary.png should not be generated"
   assert_eq "${infographic_signature}" "89504e470d0a1a0a" "infographic.png signature"
+}
+
+test_signal_watcher_writes_one_infographic_per_new_feature() {
+  local tmp_home snapshot config state log_file output artifact_dir infographic_count
+  tmp_home="$(mktemp -d)"
+  snapshot="${tmp_home}/changelog.md"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${snapshot}" <<'MD'
+# Changelog
+
+## 3.0.0
+- Added Record & Replay for reusable skills.
+- Added bulk actions to automation run history.
+- Fixed small UI issues.
+MD
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "snapshots": {
+    "local-multi-feature": {
+      "hash": "old",
+      "content": "# Changelog\n\n## 2.9.0\n- Previous release.",
+      "url": "https://example.com/changelog",
+      "title": "Local changelog",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    }
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": ""
+  },
+  "keyword_weights": {
+    "record": 20,
+    "automation": 20,
+    "release": 15
+  },
+  "sources": [
+    {
+      "id": "local-multi-feature",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${snapshot}",
+      "link_url": "file://${snapshot}",
+      "title": "Local multi-feature changelog changed",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["openai", "release"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+  infographic_count="$(find "${artifact_dir}" -maxdepth 1 -name 'infographic-[0-9][0-9].png' | wc -l | tr -d ' ')"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_eq "${infographic_count}" "2" "one infographic per new feature"
+  [[ -e "${artifact_dir}/infographic.png" ]] || fail "expected first infographic alias"
+  assert_file_contains "${artifact_dir}/facts.json" "Record & Replay"
+  assert_file_contains "${artifact_dir}/facts.json" "bulk actions"
+  assert_file_contains "${artifact_dir}/facts.json" "official-source-confirmed"
+  assert_file_contains "${artifact_dir}/factcheck.md" "Evidence:"
 }
 
 test_signal_watcher_skips_images_for_version_only_ai_latest_changes() {
@@ -1911,6 +2002,128 @@ JSON
   [[ ! -e "${artifact_dir}/infographic.png" ]] || fail "infographic.png should not be generated"
   [[ ! -e "${latest_dir}/summary.png" ]] || fail "latest summary.png should not be generated"
   [[ ! -e "${latest_dir}/infographic.png" ]] || fail "latest infographic.png should not be generated"
+}
+
+test_signal_watcher_splits_ai_latest_artifacts_by_provider() {
+  local tmp_home openai_snapshot anthropic_snapshot config state log_file output artifact_count openai_latest anthropic_latest
+  tmp_home="$(mktemp -d)"
+  openai_snapshot="${tmp_home}/openai.md"
+  anthropic_snapshot="${tmp_home}/anthropic.md"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${openai_snapshot}" <<'MD'
+# Codex changelog
+
+## 26.616
+- Added Record & Replay for reusable skills.
+MD
+  cat > "${anthropic_snapshot}" <<'MD'
+# Claude Code changelog
+
+## 2.0.0
+- Added Claude Code MCP release tracking.
+MD
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "snapshots": {
+    "openai-local": {
+      "hash": "old-openai",
+      "content": "# Codex changelog\n\n## 26.615\n- Previous release.",
+      "url": "https://example.com/openai",
+      "title": "OpenAI previous",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    },
+    "anthropic-local": {
+      "hash": "old-anthropic",
+      "content": "# Claude Code changelog\n\n## 1.0.0\n- Previous release.",
+      "url": "https://example.com/anthropic",
+      "title": "Anthropic previous",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    }
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": "",
+    "provider_split_routes": ["ai-latest-trigger"]
+  },
+  "keyword_weights": {
+    "codex": 30,
+    "claude code": 30,
+    "mcp": 20,
+    "release": 15,
+    "record": 20
+  },
+  "sources": [
+    {
+      "id": "openai-local",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${openai_snapshot}",
+      "link_url": "https://example.com/openai",
+      "title": "OpenAI changelog changed",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["openai", "codex", "release"]
+    },
+    {
+      "id": "anthropic-local",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${anthropic_snapshot}",
+      "link_url": "https://example.com/anthropic",
+      "title": "Anthropic changelog changed",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["anthropic", "claude code", "release"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_count="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+  openai_latest="${tmp_home}/public/latest/openai"
+  anthropic_latest="${tmp_home}/public/latest/anthropic"
+
+  assert_json_eq "${output}" ".candidates" "2"
+  assert_eq "${artifact_count}" "2" "provider-specific artifact count"
+  assert_file_contains "${log_file}" "summary artifacts route=ai-latest-trigger group=Anthropic"
+  assert_file_contains "${log_file}" "summary artifacts route=ai-latest-trigger group=OpenAI"
+  assert_file_contains "${openai_latest}/signals.json" "openai-local"
+  assert_file_contains "${openai_latest}/index.html" "ai-latest-trigger / OpenAI"
+  assert_file_contains "${anthropic_latest}/signals.json" "anthropic-local"
+  assert_file_contains "${anthropic_latest}/index.html" "ai-latest-trigger / Anthropic"
+  [[ -e "${openai_latest}/infographic.png" ]] || fail "expected OpenAI infographic"
+  [[ -e "${anthropic_latest}/infographic.png" ]] || fail "expected Anthropic infographic"
+  [[ ! -e "${tmp_home}/public/latest/infographic.png" ]] || fail "ungrouped latest infographic should not be written"
 }
 
 test_x_pulse_watcher_primes_sample_urls() {
@@ -2846,7 +3059,9 @@ main() {
     test_signal_watcher_retries_candidates_blocked_by_cooldown
     test_signal_watcher_keeps_custom_routes_out_of_batch
     test_signal_watcher_writes_ai_latest_summary_artifacts_for_snapshot_changes
+    test_signal_watcher_writes_one_infographic_per_new_feature
     test_signal_watcher_skips_images_for_version_only_ai_latest_changes
+    test_signal_watcher_splits_ai_latest_artifacts_by_provider
     test_x_pulse_watcher_primes_sample_urls
     test_x_pulse_watcher_detects_sample_pulse
     test_x_pulse_watcher_rejects_low_engagement_url_bundle
