@@ -218,7 +218,8 @@ intended split is:
   `signals.json`, `analysis.md`, and `summary.html`. New-feature signals are
   split into one fact-checked infographic per feature
   (`infographic-01.png`, `infographic-02.png`, ...), with the first image also
-  copied to `infographic.png` for previews. `facts.json` and `factcheck.md`
+  copied to `infographic.png` for previews. Discord posts attach all generated
+  feature infographic images. `facts.json` and `factcheck.md`
   record the official-source evidence used before rendering. Version-only
   release notes stay in HTML/Markdown without a separate summary image. The
   route is split by provider, so OpenAI and Anthropic produce separate payloads

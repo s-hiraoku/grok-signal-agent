@@ -1130,6 +1130,8 @@ test_scheduled_prompts_require_direct_source_links() {
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"channel": "tech-signals"'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "ai-latest-trigger"'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"channel": "ai-latest"'
+  assert_file_contains "${REPO_DIR}/prompts/webhooks/ai-latest-trigger.md" 'payload.artifact.infographics'
+  assert_file_contains "${REPO_DIR}/prompts/webhooks/ai-latest-trigger.md" 'MEDIA:<png>'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "tech-digest-trigger"'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "x-buzz-trigger"'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "github-pr-review-trigger"'
@@ -1913,6 +1915,10 @@ JSON
   assert_file_contains "${artifact_dir}/facts.json" "bulk actions"
   assert_file_contains "${artifact_dir}/facts.json" "official-source-confirmed"
   assert_file_contains "${artifact_dir}/factcheck.md" "Evidence:"
+  assert_file_contains "${artifact_dir}/infographic-01.svg" "操作手順をスキル化"
+  assert_file_contains "${artifact_dir}/infographic-02.svg" "自動化履歴を一括操作"
+  assert_file_not_contains "${artifact_dir}/infographic-01.svg" "1/2"
+  assert_file_not_contains "${artifact_dir}/infographic-02.svg" "2/2"
 }
 
 test_signal_watcher_skips_images_for_version_only_ai_latest_changes() {

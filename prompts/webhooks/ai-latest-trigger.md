@@ -6,9 +6,11 @@ AI latest watcher が、公式発表・研究/エンジニアリング記事・A
 {__raw__}
 ```
 
-payload.signals の項目だけを使い、AI 関連の最新情報として短く実用的に投稿してください。OpenAI、Anthropic、Google、Meta、Mistral、Hugging Face、LangChain などの一次情報・公式ブログ・技術記事を優先し、投資/株価/一般的なAI論は扱わないでください。
+本文は payload.signals の項目だけを使い、AI 関連の最新情報として短く実用的に投稿してください。OpenAI、Anthropic、Google、Meta、Mistral、Hugging Face、LangChain などの一次情報・公式ブログ・技術記事を優先し、投資/株価/一般的なAI論は扱わないでください。
 
 payload.artifact、facts.json、factcheck、archive、local path、ファクトチェック済みであること、内部の保存先は投稿本文に出さないでください。投稿に出すのはユーザーが読む価値のある更新内容だけです。
+
+payload.artifact.infographics がある場合は、各要素の `png` をすべて投稿末尾に `MEDIA:<png>` として1行ずつ付けてください。これは画像添付用です。本文で画像枚数、ファイル名、保存先、artifact について説明しないでください。
 
 構成:
 1. 何が出たか

@@ -853,7 +853,7 @@ def unique_urls(values: list[str]) -> list[str]:
 
 
 def feature_title(candidate: dict[str, Any], feature: str) -> str:
-    text = (feature + " " + candidate_text(candidate)).lower()
+    text = feature_context(candidate, feature)
     if "usage" in text and ("credit" in text or "limit" in text):
         return "/usageで利用上限リセットクレジットを確認・利用"
     if "claude mcp login" in text or "claude mcp logout" in text:
@@ -879,6 +879,11 @@ def feature_title(candidate: dict[str, Any], feature: str) -> str:
 
 def looks_like_html(value: str) -> bool:
     return bool(re.search(r"<(?:html|body|h[1-6]|li|ul|ol|p|div|article|main)\b", value[:2000].lower()))
+
+
+def feature_context(candidate: dict[str, Any], feature: str) -> str:
+    tags = " ".join(str(tag) for tag in candidate.get("tags", []))
+    return f"{feature} {candidate.get('source_id', '')} {tags}".lower()
 
 
 def feature_evidence_from_summary(candidate: dict[str, Any], feature: str) -> list[str]:
@@ -925,7 +930,7 @@ def match_feature_phrase(haystack: str, feature: str) -> bool:
 
 
 def describe_feature(candidate: dict[str, Any], feature: str) -> str:
-    text = (feature + " " + candidate_text(candidate)).lower()
+    text = feature_context(candidate, feature)
     if "record" in text and "replay" in text:
         return "操作した手順を記録し、あとから再利用できるワークフローとして扱う機能です。"
     if "mcp" in text:
@@ -944,7 +949,7 @@ def describe_feature(candidate: dict[str, Any], feature: str) -> str:
 
 
 def feature_use_case(candidate: dict[str, Any], feature: str) -> str:
-    text = (feature + " " + candidate_text(candidate)).lower()
+    text = feature_context(candidate, feature)
     if "record" in text and "replay" in text:
         return "定型操作、検証手順、社内ツールの反復作業をスキル化したい場面で使えます。"
     if "mcp" in text:
@@ -963,7 +968,7 @@ def feature_use_case(candidate: dict[str, Any], feature: str) -> str:
 
 
 def feature_check_first(candidate: dict[str, Any], feature: str) -> str:
-    text = (feature + " " + candidate_text(candidate)).lower()
+    text = feature_context(candidate, feature)
     if "beta" in text or "header" in text:
         return "有効化ヘッダー、対象モデル、利用可能な組織・地域を確認します。"
     if "record" in text or "computer use" in text:
@@ -1172,7 +1177,6 @@ def render_svg_text(value: str, x: int, y: int, size: int, color: str, max_lines
 
 
 def render_infographic_svg(route: str, fact: dict[str, Any], index: int, total: int) -> str:
-    provider = str(fact["provider"])
     feature = str(fact["feature"])
     infographic_title = str(fact.get("title") or feature)
 
@@ -1220,8 +1224,6 @@ def render_infographic_svg(route: str, fact: dict[str, Any], index: int, total: 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
   <rect width="1200" height="675" fill="#fffdf7"/>
   <path d="M48 166 C250 157 478 175 708 162 C870 153 1016 166 1152 159" stroke="#f0ca3f" stroke-width="7" fill="none" stroke-linecap="round" opacity=".75"/>
-  <rect x="910" y="30" width="224" height="52" rx="12" fill="#ffffff" stroke="#245c9f" stroke-width="2"/>
-  <text x="930" y="63" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="900" fill="#245c9f">{html.escape(provider)} · {index}/{total}</text>
   {render_svg_text(infographic_title, 48, 64, 39, "#202124", 2, 21)}
   <text x="48" y="190" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" fill="#3c4043">どういう機能か、どんな場面で使えるか</text>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
