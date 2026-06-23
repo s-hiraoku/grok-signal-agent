@@ -558,7 +558,7 @@ def write_summary_artifacts(
         for idx, fact in enumerate(feature_facts, 1):
             svg_path = artifact_dir / f"infographic-{idx:02d}.svg"
             png_path = artifact_dir / f"infographic-{idx:02d}.png"
-            svg_path.write_text(render_infographic_svg(display_route, fact, idx, len(feature_facts)), encoding="utf-8")
+            svg_path.write_text(render_infographic_svg(display_route, fact), encoding="utf-8")
             render_summary_png(svg_path, png_path, settings)
             infographics.append({
                 "index": idx,
@@ -1206,7 +1206,7 @@ def render_svg_text(
     color: str,
     max_lines: int,
     width_chars: int,
-    font_weight: int | str = 400,
+    font_weight: Any = 400,
     line_gap: int = 8,
 ) -> str:
     tspans = []
@@ -1223,107 +1223,76 @@ def render_svg_text(
 
 def source_domain(value: str) -> str:
     parsed = urllib.parse.urlparse(value)
-    return parsed.netloc or value[:42]
+    if parsed.scheme == "file":
+        return "local snapshot"
+    return parsed.netloc or value[:38]
 
 
-def infographic_status_label(status: str) -> tuple[str, str, str]:
-    if status == "official-source-confirmed":
-        return "公式ソース確認済み", "#0f766e", "#e0f2ef"
-    if status == "summary-confirmed":
-        return "要約内で確認", "#2563eb", "#e8f0ff"
-    return "追加確認が必要", "#b45309", "#fff0d8"
-
-
-def render_svg_chip(x: int, y: int, width: int, label: str, fill: str, color: str, stroke: str = "") -> str:
-    stroke_attr = f' stroke="{stroke}" stroke-width="1.5"' if stroke else ""
-    return (
-        f'<rect x="{x}" y="{y}" width="{width}" height="34" rx="17" fill="{fill}"{stroke_attr}/>'
-        f'<text x="{x + 18}" y="{y + 23}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" '
-        f'font-size="14" font-weight="800" fill="{color}">{html.escape(label)}</text>'
-    )
-
-
-def render_infographic_svg(route: str, fact: dict[str, Any], index: int, total: int) -> str:
+def render_infographic_svg(route: str, fact: dict[str, Any]) -> str:
     feature = str(fact["feature"])
     infographic_title = str(fact.get("title") or feature)
-    status_label, status_color, status_fill = infographic_status_label(str(fact.get("status", "")))
-    provider = str(fact.get("provider") or "Unknown")
-    kind = str(fact.get("kind") or "update")
-    score = int(fact.get("score") or 0)
-    score_width = max(18, min(154, int(154 * score / 100)))
-    evidence = [normalize_space(str(item)) for item in fact.get("evidence", []) if normalize_space(str(item))]
-    evidence_text = evidence[0] if evidence else "根拠行は未取得です。出典URLを開いて、日付・対象環境・有効化条件を確認してください。"
-    source_label = source_domain(str(fact.get("fetched_url") or fact.get("source_url") or fact.get("source_id") or ""))
-
-    evidence_svg = render_svg_text(evidence_text, 86, 575, 18, "#1f2937", 2, 54, 700, 6)
-    if len(evidence) > 1:
-        evidence_svg += render_svg_text(evidence[1], 86, 633, 14, "#5f6368", 1, 72, 500, 4)
 
     steps = [
-        ("1", "出典確認", "日付・対象プラン・地域"),
+        ("1", "条件確認", "対象プラン・環境"),
         ("2", "小さく検証", "CLI/API/UIで再現"),
         ("3", "採用判断", "運用に入れる価値"),
     ]
     step_svg = []
     for idx, (number, label, caption) in enumerate(steps):
-        x = 724 + idx * 140
-        step_svg.append(f'<circle cx="{x}" cy="565" r="23" fill="#15263a"/>')
-        step_svg.append(f'<text x="{x}" y="573" text-anchor="middle" font-size="18" font-weight="900" fill="#ffffff">{number}</text>')
-        step_svg.append(render_svg_text(label, x - 42, 613, 17, "#15263a", 1, 7, 900))
-        step_svg.append(render_svg_text(caption, x - 52, 638, 12, "#5f6368", 1, 11, 600))
+        x = 160 + idx * 340
+        step_svg.append(f'<circle cx="{x}" cy="566" r="23" fill="#0f172a"/>')
+        step_svg.append(f'<text x="{x}" y="574" text-anchor="middle" font-size="18" font-weight="900" fill="#ffffff">{number}</text>')
+        step_svg.append(f'<text x="{x + 48}" y="558" font-size="18" font-weight="900" fill="#0f172a">{html.escape(label)}</text>')
+        step_svg.append(f'<text x="{x + 48}" y="584" font-size="13" font-weight="700" fill="#64748b">{html.escape(caption)}</text>')
         if idx < len(steps) - 1:
-            step_svg.append(f'<path d="M{x + 30} 565 H{x + 105}" stroke="#d6a237" stroke-width="4" stroke-linecap="round"/>')
+            step_svg.append(f'<path d="M{x + 182} 566 H{x + 292}" stroke="#06b6d4" stroke-width="4" stroke-linecap="round"/>')
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
   <defs>
     <linearGradient id="header" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0" stop-color="#10263d"/>
-      <stop offset="1" stop-color="#184b55"/>
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset=".55" stop-color="#14243a"/>
+      <stop offset="1" stop-color="#0f3f46"/>
     </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#d7dee8" stroke-width="1" opacity=".45"/>
+    </pattern>
     <filter id="softShadow" x="-10%" y="-20%" width="120%" height="150%">
-      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#1f2937" flood-opacity=".14"/>
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#0f172a" flood-opacity=".16"/>
+    </filter>
+    <filter id="tightShadow" x="-12%" y="-30%" width="124%" height="160%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#0f172a" flood-opacity=".16"/>
     </filter>
   </defs>
-  <rect width="1200" height="675" fill="#f5f1e8"/>
-  <rect width="1200" height="182" fill="url(#header)"/>
-  <path d="M0 166 C170 186 310 142 482 166 C665 192 820 144 1002 164 C1085 173 1142 188 1200 180 V675 H0 Z" fill="#f5f1e8"/>
+  <rect width="1200" height="675" fill="#eef2f5"/>
+  <rect width="1200" height="675" fill="url(#grid)"/>
+  <rect width="1200" height="178" fill="url(#header)"/>
+  <path d="M0 174 C166 194 332 156 512 181 C692 206 855 161 1032 180 C1116 189 1168 203 1200 196 V675 H0 Z" fill="#eef2f5"/>
+  <path d="M0 178 H1200" stroke="#06b6d4" stroke-width="4"/>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
-    <text x="52" y="45" font-size="14" font-weight="800" fill="#b9c5d0">{html.escape(route)} · AI最新インフォグラフィック</text>
-    {render_svg_chip(52, 64, 142, provider, "#e7f5f2", "#0f766e")}
-    {render_svg_chip(206, 64, 178, status_label, status_fill, status_color)}
-    {render_svg_chip(396, 64, 108, kind, "#fff4dd", "#9a5b10")}
-    {render_svg_text(infographic_title, 52, 126, 36, "#ffffff", 2, 27, 900, 7)}
-    <text x="1046" y="46" font-size="13" font-weight="800" text-anchor="end" fill="#d7dee7">Signal score</text>
-    <rect x="968" y="62" width="154" height="10" rx="5" fill="#506376"/>
-    <rect x="968" y="62" width="{score_width}" height="10" rx="5" fill="#f4c542"/>
-    <text x="1122" y="104" font-size="42" font-weight="900" text-anchor="end" fill="#ffffff">{score}</text>
+    {render_svg_text(infographic_title, 52, 70, 36, "#ffffff", 2, 27, 900, 6)}
+    <text x="52" y="150" font-size="17" font-weight="700" fill="#cbd5e1">どういう機能か、どんな場面で使えるか</text>
   </g>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" filter="url(#softShadow)">
-    <rect x="48" y="198" width="520" height="278" rx="8" fill="#ffffff"/>
-    <rect x="48" y="198" width="12" height="278" rx="6" fill="#d94f45"/>
-    <text x="86" y="246" font-size="16" font-weight="900" fill="#d94f45">NEW FEATURE</text>
-    {render_svg_text(feature, 86, 292, 28, "#172033", 3, 22, 900, 6)}
-    <path d="M86 380 H520" stroke="#e5e7eb" stroke-width="2"/>
-    <text x="86" y="420" font-size="18" font-weight="900" fill="#172033">何が変わったか</text>
-    {render_svg_text(str(fact["what_it_is"]), 86, 452, 18, "#3c4043", 3, 31, 500, 7)}
+    <rect x="48" y="206" width="520" height="268" rx="8" fill="#ffffff"/>
+    <rect x="48" y="206" width="520" height="8" rx="4" fill="#e11d48"/>
+    <rect x="72" y="234" width="160" height="28" rx="14" fill="#ffe4e6"/>
+    <text x="152" y="253" text-anchor="middle" font-size="13" font-weight="900" fill="#be123c">どういう機能？</text>
+    {render_svg_text(str(fact["what_it_is"]), 76, 304, 21, "#111827", 4, 22, 800, 7)}
 
-    <rect x="596" y="198" width="556" height="132" rx="8" fill="#ffffff"/>
-    <rect x="596" y="198" width="556" height="10" rx="5" fill="#0f766e"/>
-    <text x="628" y="246" font-size="18" font-weight="900" fill="#0f766e">実用判断</text>
-    {render_svg_text(str(fact["use_case"]), 628, 282, 18, "#202124", 3, 42, 500, 6)}
+    <rect x="596" y="206" width="556" height="128" rx="8" fill="#ffffff"/>
+    <rect x="596" y="206" width="8" height="128" rx="4" fill="#0f766e"/>
+    <text x="628" y="248" font-size="17" font-weight="900" fill="#0f766e">使える場面</text>
+    {render_svg_text(str(fact["use_case"]), 628, 282, 17, "#263241", 3, 28, 600, 7)}
 
-    <rect x="596" y="352" width="556" height="124" rx="8" fill="#ffffff"/>
-    <rect x="596" y="352" width="556" height="10" rx="5" fill="#b45309"/>
-    <text x="628" y="400" font-size="18" font-weight="900" fill="#b45309">導入前チェック</text>
-    {render_svg_text(str(fact["check_first"]), 628, 436, 18, "#202124", 2, 42, 500, 6)}
+    <rect x="596" y="358" width="556" height="116" rx="8" fill="#ffffff"/>
+    <rect x="596" y="358" width="8" height="116" rx="4" fill="#f59e0b"/>
+    <text x="626" y="398" font-size="16" font-weight="900" fill="#9a5b10">まず確認</text>
+    {render_svg_text(str(fact["check_first"]), 626, 430, 16, "#475569", 3, 30, 600, 6)}
   </g>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
-    <rect x="48" y="506" width="650" height="136" rx="8" fill="#fffaf0" stroke="#e3cf9d" stroke-width="2"/>
-    <text x="86" y="548" font-size="17" font-weight="900" fill="#9a5b10">根拠</text>
-    {evidence_svg}
-    <text x="650" y="548" font-size="12" font-weight="800" text-anchor="end" fill="#8a6b32">{html.escape(source_label[:38])}</text>
-    <rect x="720" y="506" width="432" height="136" rx="8" fill="#ffffff" stroke="#d8dee6" stroke-width="2"/>
-    <text x="748" y="538" font-size="17" font-weight="900" fill="#15263a">次の確認フロー</text>
+    <rect x="48" y="502" width="1104" height="142" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="86" y="535" font-size="17" font-weight="900" fill="#0f172a">次の確認フロー</text>
     {''.join(step_svg)}
   </g>
 </svg>
@@ -1352,21 +1321,41 @@ def write_fallback_png(path: Path, width: int = 1200, height: int = 675) -> None
     import struct
     import zlib
 
-    bg = (246, 243, 234)
-    accent = (47, 111, 115)
+    bg = (238, 242, 245)
+    grid = (215, 222, 232)
+    ink = (15, 23, 42)
+    header = (20, 36, 58)
+    cyan = (6, 182, 212)
+    rose = (225, 29, 72)
+    amber = (245, 158, 11)
+    teal = (15, 118, 110)
     white = (255, 255, 255)
+
+    def pixel_color(x: int, y: int) -> tuple[int, int, int]:
+        if y < 178:
+            return header if x < 760 else ink
+        if 178 <= y < 182:
+            return cyan
+        if x % 32 == 0 or y % 32 == 0:
+            return grid
+        for left, top, right, bottom, color in [
+            (48, 206, 568, 474, white),
+            (48, 206, 568, 214, rose),
+            (596, 206, 1152, 334, white),
+            (596, 206, 604, 334, teal),
+            (596, 358, 1152, 474, white),
+            (596, 358, 604, 474, amber),
+            (48, 502, 1152, 644, white),
+        ]:
+            if left <= x <= right and top <= y <= bottom:
+                return color
+        return bg
+
     rows = []
     for y in range(height):
         row = bytearray([0])
         for x in range(width):
-            if y < 12:
-                row.extend(accent)
-            elif 150 <= y <= 308 and (44 <= x <= 564 or 612 <= x <= 1132):
-                row.extend(white)
-            elif 346 <= y <= 504 and (44 <= x <= 564 or 612 <= x <= 1132):
-                row.extend(white)
-            else:
-                row.extend(bg)
+            row.extend(pixel_color(x, y))
         rows.append(bytes(row))
 
     def chunk(kind: bytes, data: bytes) -> bytes:
