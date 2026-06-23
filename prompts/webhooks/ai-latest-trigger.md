@@ -10,7 +10,7 @@ AI latest watcher が、公式発表・研究/エンジニアリング記事・A
 
 payload.artifact、facts.json、factcheck、archive、local path、ファクトチェック済みであること、内部の保存先は投稿本文に出さないでください。投稿に出すのはユーザーが読む価値のある更新内容だけです。
 
-payload.artifact.infographics がある場合は、各要素の `png` をすべて投稿末尾に `MEDIA:<png>` として1行ずつ付けてください。これは画像添付用です。本文で画像枚数、ファイル名、保存先、artifact について説明しないでください。
+payload.artifact.infographics がある場合は、各要素の `png` をすべて投稿末尾に `MEDIA:<png>` として1行ずつ付けてください。これは新機能カード画像の添付用です。本文で画像枚数、ファイル名、保存先、artifact について説明しないでください。
 
 構成:
 1. 何が出たか

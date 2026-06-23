@@ -849,6 +849,7 @@ def build_feature_fact(candidate: dict[str, Any], feature: str, index: int, sett
         "fetch_error": fetch_error,
         "evidence": evidence_lines[:4],
         "what_it_is": describe_feature(candidate, feature),
+        "detail": feature_detail(candidate, feature),
         "use_case": feature_use_case(candidate, feature),
         "check_first": feature_check_first(candidate, feature),
     }
@@ -969,6 +970,35 @@ def describe_feature(candidate: dict[str, Any], feature: str) -> str:
     if "api" in text or "model" in text:
         return "APIやモデル利用時の選択肢、指定方法、運用条件を広げる機能です。"
     return "公式リリースで追加された新しい使い方です。既存の作業に組み込めるかを確認します。"
+
+
+def feature_detail(candidate: dict[str, Any], feature: str) -> str:
+    text = feature_context(candidate, feature)
+    if "record" in text and "replay" in text:
+        return "一度行った操作を記録し、同じ流れをあとから呼び出せる形にします。画面操作、確認手順、検証の流れなど、毎回同じことを繰り返す作業を再利用しやすくします。"
+    if "status filtering" in text and "workflows" in text:
+        return "/workflows の一覧が増えた時に、状態ごとに表示を絞れます。失敗した実行だけを見る、待機中のものだけ追う、完了済みを一度隠す、といった確認がしやすくなります。"
+    if "skills" in text and "/plugin" in text:
+        return "インストール済みプラグインの中に含まれる Skills を /plugin から確認できます。プラグインを入れた後に、どの能力が追加されたのかを探す入口として使えます。"
+    if "teammatemode" in text and "iterm2" in text:
+        return "teammateMode の起動先として iTerm2 を明示できます。必要な it2 CLI がない場合は警告されるため、意図しないターミナルで起動する前に設定を見直せます。"
+    if "refresh credentials" in text and "aws" in text:
+        return "/log を見ている最中に AWS 認証の更新操作へ進めます。Claude Platform on AWS の作業中に認証切れが起きた時、ログ確認から復旧までの移動を短くできます。"
+    if "mcp" in text:
+        return "MCP サーバーとの接続や認証を、作業中の流れから扱いやすくする更新です。GitHub、DB、社内APIなど、外部の情報源をエージェント作業へつなぐ場面で確認します。"
+    if "browser" in text or "chrome" in text:
+        return "ブラウザでしか確認できない画面や、ログイン済みの管理画面を作業手順に含めやすくする更新です。UI確認、再現調査、管理画面操作の入口になります。"
+    if "automation run history" in text and "bulk action" in text:
+        return "自動化の実行履歴に対して、複数件をまとめて処理できます。確認済みの履歴を既読化したり、アーカイブ対象を整理したりする時に使います。"
+    if "automation" in text or "bulk action" in text:
+        return "繰り返し実行される処理や、その実行結果をまとめて扱うための更新です。履歴確認、整理、再実行前の状態確認を短くできます。"
+    if "usage" in text and ("credit" in text or "limit" in text):
+        return "利用状況や上限に関する情報を、作業中に確認しやすくする更新です。残量を見て作業を続けるか、リセットやプラン条件を確認するかを判断できます。"
+    if "handoff" in text:
+        return "作業中の状態を別の環境へ移すための更新です。ローカルからリモート、または別ホストへ作業を移したい時に、引き継ぎ先で続きを始めやすくします。"
+    if "api" in text or "model" in text:
+        return "APIやモデル利用時の指定方法、選択肢、運用条件が増える更新です。検証環境で挙動を比べたり、既存実装の設定値を見直したりする時に確認します。"
+    return f"{feature} について、公式リリースで追加された新しい使い方を確認します。まず小さく試し、既存の作業に入れる場所と利用条件を見ます。"
 
 
 def feature_use_case(candidate: dict[str, Any], feature: str) -> str:
@@ -1186,618 +1216,201 @@ def render_summary_html(route: str, candidates: list[dict[str, Any]]) -> str:
 """
 
 
-def wrap_text(value: str, limit: int) -> list[str]:
-    words = normalize_space(value).split(" ")
-    lines: list[str] = []
-    current = ""
-    for word in words:
-        if len(word) > limit:
-            if current:
-                lines.append(current)
-                current = ""
-            lines.extend(word[i:i + limit] for i in range(0, len(word), limit))
-            continue
-        if not current:
-            current = word
-        elif len(current) + 1 + len(word) <= limit:
-            current += " " + word
-        else:
-            lines.append(current)
-            current = word
-    if current:
-        lines.append(current)
-    if not lines and value:
-        lines = [value[:limit]]
-    return lines
-
-
-def render_svg_text(
-    value: str,
-    x: int,
-    y: int,
-    size: int,
-    color: str,
-    max_lines: int,
-    width_chars: int,
-    font_weight: Any = 400,
-    line_gap: int = 8,
-) -> str:
-    tspans = []
-    for idx, line in enumerate(wrap_text(value, width_chars)[:max_lines]):
-        dy = 0 if idx == 0 else size + line_gap
-        tspans.append(f'<tspan x="{x}" dy="{dy}">{html.escape(line)}</tspan>')
-    return (
-        f'<text x="{x}" y="{y}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" '
-        f'font-size="{size}" font-weight="{font_weight}" fill="{color}">'
-        + "".join(tspans)
-        + "</text>"
-    )
-
-
-def source_domain(value: str) -> str:
-    parsed = urllib.parse.urlparse(value)
-    if parsed.scheme == "file":
-        return "local snapshot"
-    return parsed.netloc or value[:38]
-
-
 def feature_visual_plan(fact: dict[str, Any]) -> dict[str, Any]:
     text = feature_context({"source_id": fact.get("source_id", ""), "tags": []}, str(fact.get("feature", "")))
-    title = str(fact.get("title") or fact.get("feature") or "新機能")
     plan: dict[str, Any] = {
         "accent": "#2563eb",
-        "icon": "gear",
         "steps": [
             ("入口", "対象画面を開く", "どこから使うかを確認"),
             ("操作", "小さく試す", "CLI/API/UIで再現"),
             ("結果", "運用に入れる", "使う場面を決める"),
         ],
-        "chips": ["日常作業", "検証", "運用判断"],
-        "checks": ["対象環境", "利用条件", "戻し方"],
-        "takeaway": f"{title}は、作業の入口を短くするための新しい使い方です。",
-        "diagram": "default",
     }
     if "claude mcp login" in text or "claude mcp logout" in text:
         plan.update({
             "accent": "#1d4ed8",
-            "icon": "plug",
             "steps": [
                 ("入口", "SSH・CIで作業中", "ブラウザを開きにくい環境"),
                 ("操作", "claude mcp login", "/mcpメニューを開かず認証"),
                 ("結果", "MCP接続を使える", "外部ツールにすぐ接続"),
             ],
-            "chips": ["SSH越しの認証", "stdin redirect", "MCPサーバー接続"],
-            "checks": ["サーバー名", "--no-browser", "読み書き権限"],
-            "takeaway": "MCP認証をCLIだけで完了できます。",
-            "diagram": "mcp-auth",
         })
     elif "status filtering" in text and "workflows" in text:
         plan.update({
             "accent": "#0f766e",
-            "icon": "filter",
             "steps": [
                 ("入口", "/workflows詳細", "エージェント実行が増えた画面"),
                 ("操作", "fで絞り込み", "状態ごとに表示を切り替え"),
                 ("結果", "詰まりを探す", "失敗・待機・完了を分けて確認"),
             ],
-            "chips": ["失敗だけ見る", "待機中を追う", "完了済みを隠す"],
-            "checks": ["対象画面", "fキー", "表示される状態"],
-            "takeaway": "実行一覧を状態ごとに絞れます。",
-            "diagram": "status-filter",
         })
     elif "skills" in text and "/plugin" in text:
         plan.update({
             "accent": "#7c3aed",
-            "icon": "puzzle",
             "steps": [
                 ("入口", "/plugin Installed", "入っているプラグインを見る"),
                 ("操作", "Skills欄を確認", "プラグインが持つ能力を一覧化"),
                 ("結果", "使うSkillを選ぶ", "呼び出す機能を迷わず探せる"),
             ],
-            "chips": ["プラグイン確認", "Skill探索", "導入後の棚卸し"],
-            "checks": ["Installedタブ", "Skill名", "実際の呼び出し方"],
-            "takeaway": "プラグイン内のSkillsを一覧で見つけられます。",
-            "diagram": "plugin-skills",
         })
     elif "teammatemode" in text and "iterm2" in text:
         plan.update({
             "accent": "#0891b2",
-            "icon": "terminal",
             "steps": [
                 ("入口", "teammate作業", "ターミナル連携を使う"),
                 ("操作", "iterm2を指定", "teammateModeで起動先を固定"),
                 ("結果", "警告で気づける", "it2 CLI不足を見落としにくい"),
             ],
-            "chips": ["iTerm2固定", "auto mode警告", "起動先の安定化"],
-            "checks": ["iTerm2", "it2 CLI", "設定値"],
-            "takeaway": "teammate作業をiTerm2で安定起動できます。",
-            "diagram": "iterm2",
         })
     elif "refresh credentials" in text and "aws" in text:
         plan.update({
             "accent": "#d97706",
-            "icon": "key",
             "steps": [
                 ("入口", "/logを開く", "認証切れに気づく"),
                 ("操作", "refresh credentials", "AWS認証情報を更新"),
                 ("結果", "作業に戻る", "Claude Platform on AWSを継続"),
             ],
-            "chips": ["AWS認証切れ", "ログ画面から復旧", "作業中断を短縮"],
-            "checks": ["AWSプロファイル", "権限", "更新後の再開"],
-            "takeaway": "/logからAWS認証を更新できます。",
-            "diagram": "aws-refresh",
         })
     elif "record" in text and "replay" in text:
         plan.update({
             "accent": "#16a34a",
-            "icon": "record",
             "steps": [
                 ("入口", "手順を実行", "いつもの操作を一度行う"),
                 ("操作", "Record & Replay", "操作を再利用できる形にする"),
                 ("結果", "Skill化", "反復作業を呼び出せる"),
             ],
-            "chips": ["検証手順", "社内ツール操作", "反復作業"],
-            "checks": ["記録範囲", "権限", "再実行条件"],
-            "takeaway": "操作手順を再利用できる形にできます。",
-            "diagram": "record-replay",
         })
     elif "bulk action" in text or "bulk actions" in text:
         plan.update({
             "accent": "#ea580c",
-            "icon": "stack",
             "steps": [
                 ("入口", "実行履歴を見る", "自動化の結果がたまる"),
                 ("操作", "まとめて選ぶ", "既読化・整理を一括実行"),
                 ("結果", "履歴を片付ける", "次に見るべき実行だけ残す"),
             ],
-            "chips": ["大量履歴", "既読化", "アーカイブ整理"],
-            "checks": ["対象条件", "戻せる操作か", "残す履歴"],
-            "takeaway": "実行履歴をまとめて整理できます。",
-            "diagram": "bulk-actions",
         })
     return plan
 
 
-def render_svg_block_text(
-    value: str,
-    x: int,
-    y: int,
-    size: int,
-    color: str,
-    max_lines: int,
-    width_chars: int,
-    font_weight: Any = 700,
-) -> str:
-    return render_svg_text(value, x, y, size, color, max_lines, width_chars, font_weight, 5)
-
-
-def render_infographic_icon(kind: str, x: int, y: int, color: str) -> str:
-    common = f'fill="none" stroke="{color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"'
-    if kind == "plug":
-        return f'<path d="M{x+14} {y+28} h36 M{x+24} {y+14} v28 M{x+42} {y+14} v28 M{x+50} {y+28} c16 0 26 10 26 24 v28 h-50 v-28 c0-14 9-24 24-24 Z" {common}/><path d="M{x+52} {y+80} v20" {common}/>'
-    if kind == "filter":
-        return f'<path d="M{x+12} {y+16} h84 l-32 36 v34 l-20 12 v-46 Z" {common}/><path d="M{x+68} {y+78} h28" {common}/>'
-    if kind == "puzzle":
-        return f'<path d="M{x+18} {y+30} h24 c-5-16 22-16 17 0 h27 v27 c16-5 16 22 0 17 v27 h-27 c5-16-22-16-17 0 h-24 v-25 c16 5 16-22 0-17 Z" {common}/>'
-    if kind == "terminal":
-        return f'<rect x="{x+12}" y="{y+20}" width="92" height="68" rx="10" {common}/><path d="M{x+30} {y+42} l17 13 -17 13 M{x+58} {y+72} h26" {common}/>'
-    if kind == "key":
-        return f'<circle cx="{x+42}" cy="{y+52}" r="22" {common}/><path d="M{x+62} {y+52} h48 M{x+92} {y+52} v18 M{x+108} {y+52} v12" {common}/><path d="M{x+36} {y+52} h1" {common}/>'
-    if kind == "record":
-        return f'<circle cx="{x+58}" cy="{y+54}" r="36" {common}/><circle cx="{x+58}" cy="{y+54}" r="15" fill="{color}"/><path d="M{x+94} {y+78} l18 14 M{x+24} {y+26} l-14-14" {common}/>'
-    if kind == "stack":
-        return f'<rect x="{x+24}" y="{y+16}" width="72" height="24" rx="6" {common}/><rect x="{x+18}" y="{y+50}" width="84" height="24" rx="6" {common}/><rect x="{x+12}" y="{y+84}" width="96" height="24" rx="6" {common}/>'
-    return f'<circle cx="{x+60}" cy="{y+60}" r="42" {common}/><path d="M{x+60} {y+32} v56 M{x+32} {y+60} h56" {common}/>'
-
-
-def render_flow_step(x: int, y: int, width: int, number: int, label: str, caption: str, accent: str) -> str:
-    return f"""
-    <g>
-      <rect x="{x}" y="{y}" width="{width}" height="126" rx="18" fill="#ffffff" stroke="{accent}" stroke-width="3"/>
-      <circle cx="{x + 34}" cy="{y + 34}" r="20" fill="{accent}"/>
-      <text x="{x + 34}" y="{y + 42}" text-anchor="middle" font-size="20" font-weight="900" fill="#ffffff">{number}</text>
-      <text x="{x + 70}" y="{y + 40}" font-size="20" font-weight="900" fill="#172033">{html.escape(label)}</text>
-      {render_svg_block_text(caption, x + 28, y + 82, 15, "#334155", 2, 16, 700)}
-    </g>
-    """
-
-
-def render_chip_row(items: list[str], x: int, y: int, accent: str) -> str:
-    parts = []
-    cursor = x
-    for item in items[:3]:
-        width = 150
-        label = item if len(item) <= 14 else item[:13] + "..."
-        parts.append(f'<rect x="{cursor}" y="{y}" width="{width}" height="34" rx="17" fill="#ffffff" stroke="{accent}" stroke-width="2"/>')
-        parts.append(f'<text x="{cursor + width / 2:.1f}" y="{y + 23}" text-anchor="middle" font-size="13" font-weight="800" fill="#172033">{html.escape(label)}</text>')
-        cursor += width + 13
-    return "".join(parts)
-
-
-def infographic_icon_html(kind: str, color: str) -> str:
-    stroke = f'stroke="{html.escape(color)}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"'
-    if kind == "plug":
-        paths = f'<path d="M28 38h44M40 20v40M60 20v40M72 38c18 0 30 13 30 31v35H42V69c0-18 11-31 30-31Z" {stroke}/><path d="M74 104v28" {stroke}/>'
-    elif kind == "filter":
-        paths = f'<path d="M22 24h112L92 75v46l-28 16V75Z" {stroke}/><path d="M98 110h36" {stroke}/>'
-    elif kind == "puzzle":
-        paths = f'<path d="M30 42h34c-8-24 32-24 24 0h38v38c24-8 24 32 0 24v38H88c8-24-32-24-24 0H30v-34c24 8 24-32 0-24Z" {stroke}/>'
-    elif kind == "terminal":
-        paths = f'<rect x="22" y="34" width="116" height="88" rx="14" {stroke}/><path d="M46 62l24 18-24 18M82 100h34" {stroke}/>'
-    elif kind == "key":
-        paths = f'<circle cx="58" cy="72" r="28" {stroke}/><path d="M86 72h66M124 72v24M146 72v18" {stroke}/><path d="M52 72h1" {stroke}/>'
-    elif kind == "record":
-        paths = f'<circle cx="80" cy="78" r="52" {stroke}/><circle cx="80" cy="78" r="22" fill="{html.escape(color)}"/><path d="M126 114l28 22M32 42L12 22" {stroke}/>'
-    elif kind == "stack":
-        paths = f'<rect x="42" y="26" width="82" height="30" rx="8" {stroke}/><rect x="32" y="72" width="102" height="30" rx="8" {stroke}/><rect x="22" y="118" width="122" height="30" rx="8" {stroke}/>'
-    else:
-        paths = f'<circle cx="80" cy="80" r="52" {stroke}/><path d="M80 42v76M42 80h76" {stroke}/>'
-    return f'<svg class="icon" viewBox="0 0 160 160" aria-hidden="true">{paths}</svg>'
-
-
-def html_list_items(items: list[str], css_class: str = "") -> str:
-    cls = f' class="{css_class}"' if css_class else ""
-    return "".join(f"<li{cls}>{html.escape(str(item))}</li>" for item in items)
-
-
-def render_feature_diagram_html(plan: dict[str, Any], accent: str) -> str:
-    diagram = str(plan.get("diagram") or "default")
-    if diagram == "mcp-auth":
-        return """
-        <section class="diagram diagram-mcp">
-          <div class="terminal">
-            <div class="terminal-bar"><span></span><span></span><span></span></div>
-            <code>$ claude mcp login github</code>
-            <code>$ claude mcp logout github</code>
-            <small>SSH / CI / --no-browser</small>
-          </div>
-          <div class="big-arrow">→</div>
-          <div class="auth-card">
-            <strong>認証</strong>
-            <p>/mcpメニューを開かず完了</p>
-          </div>
-          <div class="big-arrow">→</div>
-          <div class="server-card">
-            <strong>MCPサーバー</strong>
-            <ul><li>GitHub</li><li>DB</li><li>社内API</li></ul>
-          </div>
-        </section>
-        """
-    if diagram == "status-filter":
-        return """
-        <section class="diagram diagram-filter">
-          <div class="list-card">
-            <strong>/workflows</strong>
-            <p class="row failed">failed</p>
-            <p class="row waiting">waiting</p>
-            <p class="row done">done</p>
-          </div>
-          <div class="filter-key">f</div>
-          <div class="funnel"></div>
-          <div class="list-card focused">
-            <strong>絞り込み後</strong>
-            <p class="row failed">failedだけ表示</p>
-            <p class="row waiting">待機中だけ確認</p>
-          </div>
-        </section>
-        """
-    if diagram == "plugin-skills":
-        return """
-        <section class="diagram diagram-plugin">
-          <div class="plugin-window">
-            <div class="tabs"><span>Installed</span><span>Marketplace</span></div>
-            <div class="plugin-name">my-plugin</div>
-          </div>
-          <div class="big-arrow">→</div>
-          <div class="skills-list">
-            <strong>Skills</strong>
-            <p>コードレビュー</p>
-            <p>手順生成</p>
-            <p>検証支援</p>
-          </div>
-          <div class="callout-mini">使う機能を<br>迷わず探す</div>
-        </section>
-        """
-    if diagram == "iterm2":
-        return """
-        <section class="diagram diagram-iterm">
-          <div class="setting-card">
-            <strong>teammateMode</strong>
-            <code>"iterm2"</code>
-          </div>
-          <div class="big-arrow">→</div>
-          <div class="terminal-app">iTerm2</div>
-          <div class="warning-card">
-            <strong>it2 CLIなし</strong>
-            <p>auto modeで警告</p>
-          </div>
-        </section>
-        """
-    if diagram == "aws-refresh":
-        return """
-        <section class="diagram diagram-aws">
-          <div class="log-card">
-            <strong>/log</strong>
-            <p>認証切れを確認</p>
-          </div>
-          <div class="big-arrow">→</div>
-          <div class="refresh-card">refresh credentials</div>
-          <div class="big-arrow">→</div>
-          <div class="aws-card">Claude Platform<br>on AWS</div>
-        </section>
-        """
-    if diagram == "record-replay":
-        return """
-        <section class="diagram diagram-record">
-          <div class="action-chain"><span>クリック</span><span>入力</span><span>確認</span></div>
-          <div class="record-dot">REC</div>
-          <div class="big-arrow">→</div>
-          <div class="skill-card">再利用できる<br>Skill</div>
-        </section>
-        """
-    if diagram == "bulk-actions":
-        return """
-        <section class="diagram diagram-bulk">
-          <div class="history-list"><p>☑ run #128</p><p>☑ run #129</p><p>☑ run #130</p></div>
-          <div class="bulk-button">bulk action</div>
-          <div class="big-arrow">→</div>
-          <div class="archive-card">既読化<br>アーカイブ</div>
-        </section>
-        """
-    steps = list(plan["steps"])[:3]
-    step_cards = []
-    for idx, (label, caption, detail) in enumerate(steps, 1):
-        step_cards.append(f"""
-          <section class="step">
-            <div class="step-head"><span>{idx}</span><strong>{html.escape(str(label))}</strong></div>
-            <p>{html.escape(str(caption))}</p>
-            <small>{html.escape(str(detail))}</small>
-          </section>
-        """)
-    return f"""
-    <section class="flow">
-      {step_cards[0]}
-      <div class="arrow"></div>
-      {step_cards[1]}
-      <div class="arrow"></div>
-      {step_cards[2]}
-    </section>
-    """
-
-
 def render_infographic_html(route: str, fact: dict[str, Any]) -> str:
     feature = str(fact["feature"])
-    infographic_title = str(fact.get("title") or feature)
+    card_title = str(fact.get("title") or feature)
     plan = feature_visual_plan(fact)
     accent = str(plan["accent"])
-    chips = [str(item) for item in list(plan["chips"])[:3]]
-    checks = [str(item) for item in list(plan["checks"])[:3]]
     what_it_is = str(fact["what_it_is"])
+    detail = str(fact["detail"])
     use_case = str(fact["use_case"])
-    takeaway = str(plan["takeaway"])
-    chip_html = "".join(f"<span>{html.escape(chip)}</span>" for chip in chips)
-    diagram_html = render_feature_diagram_html(plan, accent)
+    check_first = str(fact["check_first"])
+    steps = list(plan["steps"])
+    entry = str(steps[0][1]) if steps else "対象の画面やコマンドを開く"
+    action = str(steps[1][1]) if len(steps) > 1 else "小さく試す"
+    result = str(steps[2][1]) if len(steps) > 2 else "使える場面を決める"
+    provider = str(fact.get("provider") or "")
+    kind = str(fact.get("kind") or "新機能")
     return f"""<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=1200, initial-scale=1">
-  <title>{html.escape(infographic_title)}</title>
+  <title>{html.escape(card_title)}</title>
   <style>
     * {{ box-sizing: border-box; }}
     html, body {{ margin: 0; width: 1200px; height: 675px; overflow: hidden; }}
     body {{
-      background:
-        repeating-linear-gradient(0deg, rgba(225, 205, 157, .22) 0 1px, transparent 1px 30px),
-        #fff8e8;
-      color: #172033;
+      background: #eef0ec;
+      color: #151a23;
       font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "Segoe UI", sans-serif;
       letter-spacing: 0;
     }}
-    .page {{ width: 1200px; height: 675px; padding: 34px 46px 30px; position: relative; }}
-    .marker {{
-      position: absolute; left: 38px; right: 38px; top: 94px; height: 9px; border-radius: 99px;
-      background: #f2c94c; transform: rotate(-.25deg);
-    }}
-    h1 {{
-      margin: 0; max-width: 1040px; font-size: 37px; line-height: 1.12; font-weight: 800;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }}
-    .subtitle {{ margin-top: 36px; color: #475569; font-size: 18px; font-weight: 700; }}
-    .top {{ display: grid; grid-template-columns: 1fr 380px; gap: 20px; margin-top: 14px; }}
+    .page {{ width: 1200px; height: 675px; padding: 34px; }}
     .card {{
-      background: rgba(255,255,255,.94); border: 3px solid #172033; border-radius: 18px;
-      box-shadow: 0 7px 16px rgba(91,70,49,.10); min-width: 0;
+      width: 1132px; height: 607px; background: #fffdf8; border: 2px solid #242a32;
+      border-radius: 20px; box-shadow: 0 18px 44px rgba(22, 27, 34, .16);
+      display: grid; grid-template-columns: 26px 1fr; overflow: hidden;
     }}
-    .what {{ padding: 24px 34px; min-height: 126px; }}
-    .label {{ color: {accent}; font-weight: 800; font-size: 18px; margin-bottom: 10px; }}
-    .what p, .use p {{ margin: 0; font-size: 18px; line-height: 1.45; font-weight: 700; }}
-    .one {{ border-color: {accent}; padding: 18px 20px; display: grid; grid-template-columns: 118px 1fr; gap: 14px; align-items: center; min-height: 136px; }}
-    .one .icon {{ width: 112px; height: 112px; }}
-    .one p {{ margin: 7px 0 0; font-size: 16px; line-height: 1.45; font-weight: 700; }}
-    .flow-title {{ margin: 12px 0 8px 28px; font-size: 20px; font-weight: 800; }}
-    .flow {{ display: grid; grid-template-columns: 1fr 48px 1fr 48px 1fr; align-items: center; gap: 12px; padding: 0 28px; }}
-    .diagram {{
-      height: 124px; margin: 0 28px; display: grid; align-items: center; gap: 14px;
-      color: #172033;
+    .rail {{ background: {accent}; }}
+    .content {{ padding: 30px 38px 28px; min-width: 0; }}
+    .meta {{ display: flex; align-items: center; gap: 10px; color: #53606d; font-size: 16px; font-weight: 700; }}
+    .dot {{ width: 10px; height: 10px; border-radius: 999px; background: {accent}; }}
+    h1 {{
+      margin: 14px 0 20px; max-width: 1010px; font-size: 42px; line-height: 1.14; font-weight: 800;
+      letter-spacing: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical; overflow: hidden;
     }}
-    .diagram strong {{ display: block; font-size: 18px; font-weight: 800; margin-bottom: 7px; }}
-    .diagram p {{ margin: 0; font-size: 14px; line-height: 1.25; font-weight: 700; }}
-    .diagram small {{ color: #475569; font-size: 13px; font-weight: 700; }}
-    .big-arrow {{ color: {accent}; font-size: 48px; line-height: 1; font-weight: 800; text-align: center; }}
-    .terminal, .auth-card, .server-card, .list-card, .plugin-window, .skills-list,
-    .setting-card, .terminal-app, .warning-card, .log-card, .refresh-card, .aws-card,
-    .skill-card, .history-list, .archive-card {{
-      min-width: 0; background: rgba(255,255,255,.96); border: 3px solid {accent}; border-radius: 18px;
-      box-shadow: 0 7px 16px rgba(91,70,49,.10);
+    .body {{ display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr); gap: 20px; }}
+    .left, .right {{ min-width: 0; display: grid; gap: 16px; }}
+    .lead {{
+      margin: 0; padding: 20px 24px; border-radius: 16px; background: #f5f7fb;
+      border: 1px solid #d7dde7; font-size: 22px; line-height: 1.5; font-weight: 700;
+      overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
     }}
-    .diagram-mcp {{ grid-template-columns: 320px 50px 245px 50px 260px; }}
-    .terminal {{ height: 124px; padding: 18px 24px; }}
-    .terminal-bar {{ display: flex; gap: 6px; margin-bottom: 14px; }}
-    .terminal-bar span {{ width: 10px; height: 10px; border-radius: 50%; background: {accent}; opacity: .75; }}
-    .terminal code, .setting-card code {{ display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; font-size: 14px; margin: 6px 0; }}
-    .auth-card {{ height: 104px; padding: 22px 24px; }}
-    .server-card {{ height: 112px; padding: 16px 24px; }}
-    .server-card ul {{ margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.22; font-weight: 700; }}
-    .diagram-filter {{ grid-template-columns: 265px 74px 96px 1fr; }}
-    .list-card {{ height: 124px; padding: 16px 22px; }}
-    .row {{ height: 22px; border-radius: 11px; padding: 3px 12px; margin: 7px 0 0 !important; color: white; font-size: 12px !important; }}
-    .failed {{ background: #dc2626; }} .waiting {{ background: #d97706; }} .done {{ background: #16a34a; }}
-    .filter-key {{ width: 58px; height: 58px; border-radius: 18px; display: grid; place-items: center; background: {accent}; color: white; font-size: 32px; font-weight: 900; }}
-    .funnel {{ width: 86px; height: 92px; background: {accent}; clip-path: polygon(0 0, 100% 0, 62% 48%, 62% 100%, 38% 100%, 38% 48%); opacity: .9; }}
-    .focused {{ border-width: 4px; }}
-    .diagram-plugin {{ grid-template-columns: 325px 50px 260px 1fr; }}
-    .plugin-window {{ height: 124px; padding: 18px 22px; }}
-    .tabs {{ display: flex; gap: 8px; margin-bottom: 18px; }}
-    .tabs span {{ padding: 7px 12px; border-radius: 999px; background: #f3e8ff; color: {accent}; font-size: 12px; font-weight: 800; }}
-    .plugin-name {{ font-size: 20px; font-weight: 800; }}
-    .skills-list {{ height: 124px; padding: 16px 22px; }}
-    .skills-list p {{ border-bottom: 2px solid #eee7dc; padding: 4px 0; }}
-    .callout-mini {{ align-self: stretch; display: grid; place-items: center; border: 3px dashed {accent}; border-radius: 18px; font-size: 20px; line-height: 1.35; font-weight: 800; color: {accent}; text-align: center; background: rgba(255,255,255,.74); }}
-    .diagram-iterm {{ grid-template-columns: 280px 60px 260px 1fr; }}
-    .setting-card, .warning-card {{ height: 116px; padding: 22px 24px; }}
-    .terminal-app {{ height: 116px; display: grid; place-items: center; font-size: 30px; font-weight: 900; }}
-    .warning-card {{ border-color: #f59e0b; }}
-    .diagram-aws {{ grid-template-columns: 250px 50px 285px 50px 280px; }}
-    .log-card, .refresh-card, .aws-card {{ height: 112px; padding: 22px 24px; }}
-    .refresh-card, .aws-card {{ display: grid; place-items: center; text-align: center; font-size: 22px; font-weight: 850; }}
-    .diagram-record {{ grid-template-columns: 390px 100px 60px 1fr; }}
-    .action-chain {{ display: flex; gap: 10px; }}
-    .action-chain span {{ height: 72px; min-width: 112px; display: grid; place-items: center; border: 3px solid {accent}; border-radius: 18px; background: white; font-weight: 800; }}
-    .record-dot {{ width: 86px; height: 86px; border-radius: 50%; display: grid; place-items: center; background: {accent}; color: white; font-weight: 900; font-size: 24px; }}
-    .skill-card {{ height: 112px; display: grid; place-items: center; text-align: center; font-size: 24px; line-height: 1.3; font-weight: 850; }}
-    .diagram-bulk {{ grid-template-columns: 300px 220px 60px 1fr; }}
-    .history-list {{ height: 116px; padding: 14px 22px; }}
-    .history-list p {{ margin: 7px 0; font-size: 16px; }}
-    .bulk-button {{ height: 62px; display: grid; place-items: center; background: {accent}; color: white; border-radius: 999px; font-size: 22px; font-weight: 900; }}
-    .archive-card {{ height: 112px; display: grid; place-items: center; text-align: center; font-size: 24px; line-height: 1.3; font-weight: 850; }}
-    .step {{
-      height: 124px; border: 3px solid {accent}; border-radius: 18px; background: rgba(255,255,255,.96);
-      padding: 21px 26px 18px; box-shadow: 0 7px 16px rgba(91,70,49,.10); min-width: 0;
+    section {{
+      border-radius: 16px; border: 1px solid #d8d2c7; background: #ffffff;
+      padding: 18px 22px; min-width: 0; overflow: hidden;
     }}
-    .step-head {{ display: flex; align-items: center; gap: 14px; }}
-    .step-head span {{ display: grid; place-items: center; width: 40px; height: 40px; border-radius: 999px; background: {accent}; color: white; font-size: 20px; font-weight: 800; flex: none; }}
-    .step-head strong {{ font-size: 20px; font-weight: 800; }}
-    .step p {{ margin: 14px 0 2px; font-size: 15px; line-height: 1.25; font-weight: 700; }}
-    .step small {{ display: block; color: #475569; font-size: 13px; line-height: 1.25; font-weight: 700; }}
-    .arrow {{ position: relative; height: 5px; background: {accent}; border-radius: 99px; }}
-    .arrow:after {{ content: ""; position: absolute; right: -2px; top: 50%; width: 17px; height: 17px; border-right: 5px solid {accent}; border-top: 5px solid {accent}; transform: translateY(-50%) rotate(45deg); }}
-    .bottom {{ display: grid; grid-template-columns: 1fr 1fr; gap: 38px; margin-top: 20px; }}
-    .use, .check {{ height: 132px; padding: 16px 32px; border-radius: 18px; box-shadow: 0 7px 16px rgba(91,70,49,.10); overflow: hidden; }}
-    .use {{ background: #f0fdf4; border: 3px solid #22c55e; }}
-    .check {{ background: #fff7ed; border: 3px solid #fb923c; }}
-    .use h2, .check h2 {{ margin: 0 0 11px; font-size: 20px; line-height: 1; font-weight: 800; }}
-    .use h2 {{ color: #166534; }} .check h2 {{ color: #9a3412; }}
-    .chips {{ display: flex; gap: 10px; margin-bottom: 12px; }}
-    .chips span {{ min-width: 140px; max-width: 146px; height: 30px; display: grid; place-items: center; padding: 0 12px; border: 2px solid #22c55e; border-radius: 999px; background: white; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-    .use p {{
-      font-size: 13px; line-height: 1.25; max-width: 448px; font-weight: 700;
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    h2 {{ margin: 0 0 12px; font-size: 18px; line-height: 1; color: {accent}; font-weight: 800; }}
+    p {{ margin: 0; font-size: 19px; line-height: 1.5; font-weight: 700; overflow-wrap: anywhere; }}
+    .detail {{ min-height: 242px; }}
+    .detail p {{
+      font-size: 18px; line-height: 1.56; font-weight: 680; color: #2f3845;
+      display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden;
     }}
-    .check ul {{ margin: 2px 0 0; padding: 0; list-style: none; display: grid; gap: 7px; }}
-    .check li {{ position: relative; padding-left: 34px; font-size: 16px; line-height: 1.2; font-weight: 700; }}
-    .check li:before {{ content: "✓"; position: absolute; left: 0; top: -2px; width: 23px; height: 23px; border-radius: 999px; display: grid; place-items: center; background: {accent}; color: white; font-size: 15px; font-weight: 800; }}
+    .use, .check {{ min-height: 118px; }}
+    .use p, .check p {{
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    }}
+    .muted {{ color: #53606d; font-size: 18px; line-height: 1.46; font-weight: 700; }}
+    .path-card {{ min-height: 134px; }}
+    .path {{
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+    }}
+    .path div {{ min-width: 0; border-left: 5px solid {accent}; padding: 4px 0 4px 14px; }}
+    .path span {{ display: block; color: #687281; font-size: 14px; font-weight: 800; margin-bottom: 8px; }}
+    .path strong {{
+      display: block; color: #151a23; font-size: 20px; line-height: 1.26; font-weight: 760;
+      overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }}
   </style>
 </head>
 <body>
   <main class="page">
-    <div class="marker"></div>
-    <h1>{html.escape(infographic_title)}</h1>
-    <div class="subtitle">入口 → 操作 → 結果で見る、新機能の使いどころ</div>
-    <section class="top">
-      <article class="card what">
-        <div class="label">これは何？</div>
-        <p>{html.escape(what_it_is)}</p>
-      </article>
-      <article class="card one">
-        {infographic_icon_html(str(plan["icon"]), accent)}
-        <div>
-          <div class="label">一言でいうと</div>
-          <p>{html.escape(takeaway)}</p>
+    <article class="card">
+      <div class="rail"></div>
+      <div class="content">
+        <div class="meta"><span class="dot"></span><span>{html.escape(provider)}</span><span>·</span><span>{html.escape(kind)}</span></div>
+        <h1>{html.escape(card_title)}</h1>
+        <div class="body">
+          <div class="left">
+            <p class="lead">{html.escape(what_it_is)}</p>
+            <section class="detail">
+              <h2>詳細</h2>
+              <p>{html.escape(detail)}</p>
+            </section>
+          </div>
+          <div class="right">
+            <section class="use">
+              <h2>どういう場面で使えるか</h2>
+              <p>{html.escape(use_case)}</p>
+            </section>
+            <section class="check">
+              <h2>最初に確認すること</h2>
+              <p class="muted">{html.escape(check_first)}</p>
+            </section>
+            <section class="path-card">
+              <h2>使い方の目安</h2>
+              <div class="path">
+                <div><span>入口</span><strong>{html.escape(entry)}</strong></div>
+                <div><span>操作</span><strong>{html.escape(action)}</strong></div>
+                <div><span>結果</span><strong>{html.escape(result)}</strong></div>
+              </div>
+            </section>
+          </div>
         </div>
-      </article>
-    </section>
-    <div class="flow-title">使い方の流れ</div>
-    {diagram_html}
-    <section class="bottom">
-      <article class="use">
-        <h2>使える場面</h2>
-        <div class="chips">{chip_html}</div>
-        <p>{html.escape(use_case)}</p>
-      </article>
-      <article class="check">
-        <h2>確認すること</h2>
-        <ul>{html_list_items(checks)}</ul>
-      </article>
-    </section>
+      </div>
+    </article>
   </main>
 </body>
 </html>
-"""
-
-
-def render_infographic_svg(route: str, fact: dict[str, Any]) -> str:
-    feature = str(fact["feature"])
-    infographic_title = str(fact.get("title") or feature)
-    plan = feature_visual_plan(fact)
-    accent = str(plan["accent"])
-    steps = list(plan["steps"])
-    checks = list(plan["checks"])
-
-    step_svg = []
-    for idx, (label, caption, detail) in enumerate(steps[:3]):
-        x = 74 + idx * 374
-        step_svg.append(render_flow_step(x, 318, 300, idx + 1, label, f"{caption} / {detail}", accent))
-        if idx < 2:
-            arrow_x = x + 314
-            step_svg.append(f'<path d="M{arrow_x} 378 h44" stroke="{accent}" stroke-width="5" stroke-linecap="round"/><path d="M{arrow_x + 44} 378 l-14 -11 M{arrow_x + 44} 378 l-14 11" stroke="{accent}" stroke-width="5" stroke-linecap="round"/>')
-
-    check_svg = []
-    for idx, check in enumerate(checks[:3]):
-        cy = 536 + idx * 36
-        check_svg.append(f'<circle cx="666" cy="{cy - 5}" r="12" fill="{accent}"/><path d="M660 {cy - 5} l5 5 l9 -11" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>')
-        check_svg.append(render_svg_block_text(check, 688, cy, 17, "#172033", 1, 24, 800))
-
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
-  <defs>
-    <pattern id="paper" width="30" height="30" patternUnits="userSpaceOnUse">
-      <path d="M0 29 H30" stroke="#efe2bf" stroke-width="1" opacity=".45"/>
-    </pattern>
-    <filter id="softShadow" x="-12%" y="-20%" width="124%" height="150%">
-      <feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#5b4631" flood-opacity=".12"/>
-    </filter>
-  </defs>
-  <rect width="1200" height="675" fill="#fff8e8"/>
-  <rect width="1200" height="675" fill="url(#paper)"/>
-  <path d="M42 104 C260 94 460 112 654 100 C836 89 1000 106 1156 96" stroke="#f2c94c" stroke-width="9" stroke-linecap="round" opacity=".9"/>
-  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
-    {render_svg_text(infographic_title, 46, 70, 38, "#1f2937", 2, 30, 900, 4)}
-    <text x="48" y="132" font-size="18" font-weight="800" fill="#475569">入口 → 操作 → 結果で見る、新機能の使いどころ</text>
-  </g>
-  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" filter="url(#softShadow)">
-    <rect x="48" y="150" width="704" height="130" rx="18" fill="#ffffff" stroke="#1f2937" stroke-width="3"/>
-    <rect x="774" y="146" width="378" height="134" rx="18" fill="#ffffff" stroke="{accent}" stroke-width="4"/>
-    <text x="84" y="188" font-size="18" font-weight="900" fill="{accent}">これは何？</text>
-    {render_svg_block_text(str(fact["what_it_is"]), 84, 220, 17, "#172033", 3, 38, 800)}
-    {render_infographic_icon(str(plan["icon"]), 798, 162, accent)}
-    <text x="920" y="188" font-size="18" font-weight="900" fill="{accent}">一言でいうと</text>
-    {render_svg_block_text(str(plan["takeaway"]), 920, 220, 15, "#172033", 3, 17, 800)}
-  </g>
-  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" filter="url(#softShadow)">
-    <text x="74" y="306" font-size="20" font-weight="900" fill="#172033">使い方の流れ</text>
-    {''.join(step_svg)}
-  </g>
-  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" filter="url(#softShadow)">
-    <rect x="48" y="464" width="540" height="164" rx="18" fill="#f0fdf4" stroke="#22c55e" stroke-width="3"/>
-    <text x="82" y="504" font-size="20" font-weight="900" fill="#166534">使える場面</text>
-    {render_chip_row(list(plan["chips"]), 82, 528, "#22c55e")}
-    {render_svg_block_text(str(fact["use_case"]), 82, 592, 16, "#172033", 2, 30, 700)}
-    <rect x="628" y="464" width="524" height="164" rx="18" fill="#fff7ed" stroke="#fb923c" stroke-width="3"/>
-    <text x="662" y="504" font-size="20" font-weight="900" fill="#9a3412">確認すること</text>
-    {''.join(check_svg)}
-  </g>
-  <path d="M44 646 C280 636 510 650 742 642 C910 636 1032 650 1156 640" stroke="{accent}" stroke-width="4" stroke-linecap="round" opacity=".55"/>
-</svg>
 """
 
 
