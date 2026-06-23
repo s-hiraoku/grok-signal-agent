@@ -1297,7 +1297,7 @@ def feature_card_accent(provider: str, fallback: str) -> str:
     if normalized == "openai":
         return "#2563eb"
     if normalized == "anthropic":
-        return "#8b2f3a"
+        return "#c15f3c"
     return fallback
 
 

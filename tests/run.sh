@@ -2232,7 +2232,7 @@ JSON
   assert_file_not_contains "${openai_latest}/infographic.html" "#16a34a"
   assert_file_contains "${anthropic_latest}/signals.json" "anthropic-local"
   assert_file_contains "${anthropic_latest}/index.html" "ai-latest-trigger / Anthropic"
-  assert_file_contains "${anthropic_latest}/infographic.html" "#8b2f3a"
+  assert_file_contains "${anthropic_latest}/infographic.html" "#c15f3c"
   assert_file_not_contains "${anthropic_latest}/infographic.html" "#1d4ed8"
   [[ -e "${openai_latest}/infographic.png" ]] || fail "expected OpenAI infographic"
   [[ -e "${anthropic_latest}/infographic.png" ]] || fail "expected Anthropic infographic"
