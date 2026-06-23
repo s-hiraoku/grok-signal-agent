@@ -137,10 +137,9 @@ scripts/register-hermes-webhooks.sh
 different override file in tests or automation. Any channel missing from the
 override falls back to the committed `channels` entry.
 
-The committed default currently maps `ai-latest` and `tech-signals` to the same
-Discord channel ID. Treat this as an intentional alias for a single high-signal
-technical alert stream. Override one or both IDs locally when you want visibly
-separate official-AI and broader-tech channels.
+The committed default maps `ai-latest` and `tech-signals` to separate Discord
+channels. Keep official AI/model/tooling updates in `#ai-latest`; route broader
+technical signals and X buzz to `#tech-signals`.
 
 ## Current Cron Jobs
 
@@ -267,9 +266,17 @@ URLs, scores new items with keyword weights, applies route cooldowns, and sends
 only threshold-crossing payloads to Hermes webhooks. Official AI sources route
 to `ai-latest-trigger` as `#ai-latest` posts. Zenn and generic technical
 signals route to `signal-catchup` as consolidated `#tech-signals` posts.
-Generic sources include Anthropic News/Engineering/Research, Google AI,
-Mistral, Meta AI, Hugging Face, LangChain, GitHub Changelog, OpenAI News,
-Cloudflare Changelog, Hacker News frontpage/best, Publickey, and release feeds.
+Generic sources include Anthropic News/Engineering/Research, Anthropic Claude
+Code and Claude Platform snapshot diffs, Google AI, Mistral, Meta AI, Hugging
+Face, LangChain, GitHub Changelog, OpenAI News, OpenAI Codex/API changelog
+snapshot diffs, Cloudflare Changelog, Hacker News frontpage/best, Publickey,
+and release feeds. For `ai-latest-trigger`, the watcher writes local artifacts
+under `~/.hermes/state/ai-latest/`: `signals.json`, `analysis.md`,
+`summary.html`, and conditional image summaries. New-feature signals create
+`infographic.png`; version or release-note signals create `summary.png`. If both
+kinds are present, both images are written. Snapshot sources store the previous
+normalized page content in watcher state and emit a signal only when the fetched
+Markdown or HTML text changes.
 The batch trigger threshold is intentionally set out of normal reach so source
 movement does not automatically start a full tech digest. The macOS installer
 runs it through

@@ -194,11 +194,9 @@ channel, not by whether the post was started by cron or a webhook.
 | `#hermes-chat` | Main conversation channel for talking with Hermes and manual interaction. |
 | `#hermes-info` | Hermes health, failures, runtime sync status, and operational alerts only. |
 
-The current default config intentionally aliases `#ai-latest` and
-`#tech-signals` to the same Discord channel ID. Keep that alias when you want a
-single stream of high-signal technical alerts; split the IDs in
-`config/hermes-channels.local.json` when the official AI feed becomes busy
-enough to deserve its own visible channel.
+The current default config keeps `#ai-latest` and `#tech-signals` as separate
+Discord channels. Keep official AI/model/tooling updates in `#ai-latest`; route
+broader technical signals and X buzz to `#tech-signals`.
 
 Keep `#tech-digest` focused on deliberate summaries. Automatic notifications
 should be quiet by default: source watchers only post when a signal clears the
@@ -215,6 +213,13 @@ intended split is:
   News, Cloudflare Changelog, Hacker News, Publickey, release feeds, and other
   sources; score/dedupe/cooldown changes with high thresholds before any
   Discord post is triggered.
+- AI latest artifacts: for `ai-latest-trigger`, the signal watcher also writes
+  local run artifacts under `~/.hermes/state/ai-latest/`, including
+  `signals.json`, `analysis.md`, and `summary.html`. New-feature signals also
+  create `infographic.png`; version or release-note signals create
+  `summary.png`. If both kinds are present, both images are written.
+  Anthropic and OpenAI changelog-style pages are watched as snapshots, so
+  Markdown/HTML diffs can be preserved even when a source has no RSS feed.
 - X pulse watcher: sample recent X discussion with `x_search`; trigger a short
   `x-buzz-trigger` post only when strongly engagement-qualified X posts appear.
 - GitHub PR event source: send review-request, CI, workflow, or stale-review

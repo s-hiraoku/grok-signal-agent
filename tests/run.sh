@@ -155,7 +155,7 @@ test_register_cronjobs_syncs_enabled_tech_digest_jobs() {
   assert_file_contains "${log_file}" "--script hermes-health-check-cron.sh"
   assert_file_contains "${log_file}" "--script hermes-disk-watchdog-cron.sh"
   assert_file_contains "${log_file}" "--script hermes-ssl-expiry-watchdog-cron.sh"
-  assert_file_contains "${log_file}" "--deliver discord:1513665059723808878"
+  assert_file_contains "${log_file}" "--deliver discord:1518735846998675577"
   assert_file_not_contains "${log_file}" "--script hermes-daily-review-cron.sh"
   assert_file_not_contains "${log_file}" "cron remove stub-id"
 }
@@ -1111,16 +1111,16 @@ test_scheduled_prompts_require_direct_source_links() {
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "DEFAULT_GENERAL_FEEDS"
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "DEFAULT_TECH_FEEDS"
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "出典:"
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"ai-latest": "discord:1514063816093335653"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"ai-latest": "discord:1518734996544815126"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"tech-signals": "discord:1514063816093335653"'
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes-info": "discord:1513665059723808878"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes-info": "discord:1518735846998675577"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes-chat": "discord:1510425922384167043"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-health-check-cron.sh"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-tech-digest-evaluate-cron.sh"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-disk-watchdog-cron.sh"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-ssl-expiry-watchdog-cron.sh"'
   assert_file_contains "${REPO_DIR}/README.md" "Hermes channel routing is organized by what readers expect"
-  assert_file_contains "${REPO_DIR}/README.md" "current default config intentionally aliases"
+  assert_file_contains "${REPO_DIR}/README.md" 'current default config keeps `#ai-latest` and `#tech-signals` as separate'
   assert_file_contains "${REPO_DIR}/README.md" '`#ai-latest`'
   assert_file_contains "${REPO_DIR}/README.md" '`#hermes-chat`'
   assert_file_contains "${REPO_DIR}/README.md" '`#hermes-info`'
@@ -1201,7 +1201,7 @@ JSON
   assert_file_contains "${log_file}" "SCRIPT_UNAVAILABLE"
   assert_file_contains "${log_file}" 'bash "${script_path}"'
   assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1510425425971515503"
-  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1514063816093335653"
+  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1518734996544815126"
   assert_file_contains "${log_file}" "--secret existing-secret"
   assert_file_contains "${log_file}" "--secret post-secret-from-env-file"
 }
@@ -1239,7 +1239,7 @@ JSON
   assert_file_contains "${log_file}" "--deliver-chat-id 888888888888888888"
   assert_file_contains "${log_file}" "webhook subscribe signal-catchup"
   assert_file_contains "${log_file}" "webhook subscribe ai-latest-trigger"
-  assert_file_contains "${log_file}" "--deliver-chat-id 1514063816093335653"
+  assert_file_contains "${log_file}" "--deliver-chat-id 1518734996544815126"
 }
 
 test_register_webhooks_rejects_script_names_outside_runtime_cron_pattern() {
@@ -1724,6 +1724,95 @@ JSON
   assert_file_contains "${log_file}" "dry-run route=tech-digest-trigger candidates=2"
   assert_file_contains "${log_file}" "dry-run route=zenn-dev-trigger candidates=1"
   assert_file_not_contains "${log_file}" "dry-run route=tech-digest-trigger candidates=3"
+}
+
+test_signal_watcher_writes_ai_latest_summary_artifacts_for_snapshot_changes() {
+  local tmp_home snapshot config state log_file output artifact_dir summary_signature infographic_signature
+  tmp_home="$(mktemp -d)"
+  snapshot="${tmp_home}/changelog.md"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${snapshot}" <<'MD'
+# Changelog
+
+## 2.0.0
+- Added Claude Code MCP release tracking.
+- Fixed agent session handling.
+MD
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "snapshots": {
+    "local-changelog": {
+      "hash": "old",
+      "content": "# Changelog\n\n## 1.0.0\n- Initial release.",
+      "url": "https://example.com/changelog",
+      "title": "Local changelog",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    }
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": ""
+  },
+  "keyword_weights": {
+    "claude code": 30,
+    "mcp": 20,
+    "agent": 20,
+    "release": 15
+  },
+  "sources": [
+    {
+      "id": "local-changelog",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${snapshot}",
+      "link_url": "https://example.com/changelog",
+      "title": "Local changelog changed",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["claude code", "release"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+  [[ -n "${artifact_dir}" ]] || fail "expected ai-latest artifact directory"
+  summary_signature="$(od -An -tx1 -N8 "${artifact_dir}/summary.png" | tr -d ' \n')"
+  infographic_signature="$(od -An -tx1 -N8 "${artifact_dir}/infographic.png" | tr -d ' \n')"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_file_contains "${log_file}" "summary artifacts route=ai-latest-trigger"
+  assert_file_contains "${artifact_dir}/analysis.md" "Local changelog changed"
+  assert_file_contains "${artifact_dir}/signals.json" "+- Added Claude Code MCP release tracking."
+  assert_file_contains "${artifact_dir}/summary.html" "AI最新"
+  assert_eq "${summary_signature}" "89504e470d0a1a0a" "summary.png signature"
+  assert_eq "${infographic_signature}" "89504e470d0a1a0a" "infographic.png signature"
 }
 
 test_x_pulse_watcher_primes_sample_urls() {
@@ -2658,6 +2747,7 @@ main() {
     test_signal_watcher_parses_nested_html_links
     test_signal_watcher_retries_candidates_blocked_by_cooldown
     test_signal_watcher_keeps_custom_routes_out_of_batch
+    test_signal_watcher_writes_ai_latest_summary_artifacts_for_snapshot_changes
     test_x_pulse_watcher_primes_sample_urls
     test_x_pulse_watcher_detects_sample_pulse
     test_x_pulse_watcher_rejects_low_engagement_url_bundle
