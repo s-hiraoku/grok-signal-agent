@@ -763,6 +763,8 @@ def clean_feature_line(line: str) -> str:
     cleaned = normalize_space(cleaned)
     cleaned = re.sub(r"^[-*#\s]+", "", cleaned).strip()
     cleaned = re.sub(r"^\d+[.)]\s*", "", cleaned).strip()
+    cleaned = re.sub(r"\s*\(#[0-9].*$", "", cleaned).strip()
+    cleaned = cleaned.rstrip(" ,.;")
     return cleaned[:220]
 
 
@@ -822,6 +824,7 @@ def build_feature_fact(candidate: dict[str, Any], feature: str, index: int, sett
     return {
         "index": index,
         "feature": feature,
+        "title": feature_title(candidate, feature),
         "source_id": candidate["source_id"],
         "source_url": source_url,
         "fetched_url": fetched_url,
@@ -847,6 +850,31 @@ def unique_urls(values: list[str]) -> list[str]:
         seen.add(value)
         urls.append(value)
     return urls
+
+
+def feature_title(candidate: dict[str, Any], feature: str) -> str:
+    text = (feature + " " + candidate_text(candidate)).lower()
+    if "usage" in text and ("credit" in text or "limit" in text):
+        return "/usageで利用上限リセットクレジットを確認・利用"
+    if "claude mcp login" in text or "claude mcp logout" in text:
+        return "MCPサーバー認証をCLIから実行"
+    if "status filtering" in text and "workflows" in text:
+        return "/workflowsでステータス絞り込み"
+    if "skills" in text and "/plugin" in text:
+        return "/pluginにSkillsセクションを追加"
+    if "teammatemode" in text and "iterm2" in text:
+        return "iTerm2向けteammateMode設定を追加"
+    if "refresh credentials" in text and "aws" in text:
+        return "AWS認証情報を/logから更新"
+    if "record" in text and "replay" in text:
+        return "Record & Replayで操作手順をスキル化"
+    if "bulk action" in text or "bulk actions" in text:
+        return "自動化履歴を一括操作"
+    if "handoff" in text:
+        return "スレッドを別ホストへ引き継ぎ"
+    title = re.sub(r"^(added|adds|add|introduced|launched)\s+", "", feature, flags=re.IGNORECASE).strip()
+    title = re.sub(r"\s+", " ", title)
+    return title[:72].rstrip(" ,.;")
 
 
 def looks_like_html(value: str) -> bool:
@@ -1140,91 +1168,66 @@ def render_svg_text(value: str, x: int, y: int, size: int, color: str, max_lines
     for idx, line in enumerate(wrap_text(value, width_chars)[:max_lines]):
         dy = 0 if idx == 0 else size + 8
         tspans.append(f'<tspan x="{x}" dy="{dy}">{html.escape(line)}</tspan>')
-    return f'<text x="{x}" y="{y}" font-size="{size}" fill="{color}">' + "".join(tspans) + "</text>"
+    return f'<text x="{x}" y="{y}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="{size}" fill="{color}">' + "".join(tspans) + "</text>"
 
 
 def render_infographic_svg(route: str, fact: dict[str, Any], index: int, total: int) -> str:
     provider = str(fact["provider"])
     feature = str(fact["feature"])
-    source = f"{fact['provider']} / {fact['kind']} / スコア {fact['score']}"
-    evidence_label = "公式ソース確認済み" if fact["status"] == "official-source-confirmed" else "差分本文で確認"
-    generated_at = now_iso()
+    infographic_title = str(fact.get("title") or feature)
 
     panels = [
         (
-            44,
+            54,
             "#2f7d46",
-            "1",
             "どういう機能？",
             str(fact["what_it_is"]),
-            "公式の新機能文を根拠に、機能の役割だけを短く整理しています。",
         ),
         (
-            414,
+            426,
             "#245c9f",
-            "2",
             "使える場面",
             str(fact["use_case"]),
-            "どの作業に入れると便利かを、検証前の仮説として置いています。",
         ),
         (
-            784,
+            798,
             "#c96014",
-            "3",
             "まず確認",
             str(fact["check_first"]),
-            "使う前に条件・権限・対象環境を確認してから小さく試します。",
         ),
     ]
     panel_svg = []
-    for x, color, number, title, body, footer in panels:
-        panel_svg.append(f'<rect x="{x}" y="282" width="332" height="222" rx="14" fill="#ffffff" stroke="{color}" stroke-width="2"/>')
-        panel_svg.append(f'<circle cx="{x + 34}" cy="320" r="20" fill="#ffffff" stroke="{color}" stroke-width="4"/>')
-        panel_svg.append(f'<text x="{x + 34}" y="328" font-size="24" font-weight="900" text-anchor="middle" fill="{color}">{number}</text>')
-        panel_svg.append(f'<text x="{x + 66}" y="314" font-size="22" font-weight="900" fill="{color}">{html.escape(title)}</text>')
-        panel_svg.append(render_svg_text(body, x + 24, 360, 15, "#202124", 3, 22))
-        panel_svg.append(f'<rect x="{x + 22}" y="440" width="288" height="46" rx="10" fill="#f8f4e8" stroke="{color}" stroke-width="1"/>')
-        panel_svg.append(render_svg_text(footer, x + 38, 464, 12, color, 2, 22))
+    for x, color, panel_title, body in panels:
+        panel_svg.append(f'<rect x="{x}" y="246" width="348" height="218" rx="14" fill="#ffffff" stroke="{color}" stroke-width="2"/>')
+        panel_svg.append(f'<text x="{x + 24}" y="292" font-size="25" font-weight="900" fill="{color}">{html.escape(panel_title)}</text>')
+        panel_svg.append(render_svg_text(body, x + 24, 340, 17, "#202124", 4, 15))
 
     flow_items = [
         ("出典を開く", "日付と条件を見る"),
         ("小さく試す", "CLI/API/UIで確認"),
-        ("差分を記録", "設定と原稿へ反映"),
-        ("運用判断", "使う/待つを決める"),
+        ("使うか決める", "運用に入れるか判断"),
     ]
     flow_svg = []
     for idx, (label, caption) in enumerate(flow_items):
-        x = 78 + idx * 270
-        flow_svg.append(f'<circle cx="{x}" cy="596" r="26" fill="#ffffff" stroke="#245c9f" stroke-width="2"/>')
-        flow_svg.append(f'<text x="{x}" y="604" font-size="22" font-weight="900" text-anchor="middle" fill="#245c9f">{idx + 1}</text>')
-        flow_svg.append(f'<text x="{x + 42}" y="590" font-size="17" font-weight="900" fill="#202124">{html.escape(label)}</text>')
-        flow_svg.append(f'<text x="{x + 42}" y="616" font-size="13" fill="#5f6368">{html.escape(caption)}</text>')
+        x = 122 + idx * 350
+        flow_svg.append(f'<circle cx="{x}" cy="558" r="28" fill="#ffffff" stroke="#245c9f" stroke-width="2"/>')
+        flow_svg.append(f'<text x="{x}" y="567" font-size="22" font-weight="900" text-anchor="middle" fill="#245c9f">{idx + 1}</text>')
+        flow_svg.append(f'<text x="{x + 48}" y="552" font-size="19" font-weight="900" fill="#202124">{html.escape(label)}</text>')
+        flow_svg.append(f'<text x="{x + 48}" y="580" font-size="14" fill="#5f6368">{html.escape(caption)}</text>')
         if idx < len(flow_items) - 1:
-            flow_svg.append(f'<text x="{x + 188}" y="604" font-size="26" font-weight="900" fill="#245c9f">→</text>')
+            flow_svg.append(f'<text x="{x + 230}" y="568" font-size="30" font-weight="900" fill="#245c9f">→</text>')
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
   <rect width="1200" height="675" fill="#fffdf7"/>
-  <path d="M48 82 C250 73 478 91 708 78 C870 69 1016 82 1152 75" stroke="#f0ca3f" stroke-width="7" fill="none" stroke-linecap="round" opacity=".75"/>
-  <text x="44" y="66" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="42" font-weight="900" fill="#202124">新機能を1つ深掘り：{html.escape(provider)}</text>
-  <text x="44" y="110" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" fill="#3c4043">どういう機能か、どんな場面で使えるかを公式情報から整理</text>
+  <path d="M48 166 C250 157 478 175 708 162 C870 153 1016 166 1152 159" stroke="#f0ca3f" stroke-width="7" fill="none" stroke-linecap="round" opacity=".75"/>
+  <rect x="910" y="30" width="224" height="52" rx="12" fill="#ffffff" stroke="#245c9f" stroke-width="2"/>
+  <text x="930" y="63" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="900" fill="#245c9f">{html.escape(provider)} · {index}/{total}</text>
+  {render_svg_text(infographic_title, 48, 64, 39, "#202124", 2, 21)}
+  <text x="48" y="190" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" fill="#3c4043">どういう機能か、どんな場面で使えるか</text>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
-    <rect x="44" y="136" width="536" height="126" rx="14" fill="#ffffff" stroke="#202124" stroke-width="2"/>
-    <text x="70" y="170" font-size="18" font-weight="900" fill="#202124">新機能 {index}/{total}</text>
-    {render_svg_text(feature, 70, 202, 19, "#202124", 2, 31)}
-    <text x="70" y="246" font-size="13" font-weight="800" fill="#2f6f73">{html.escape(source)}</text>
-    <path d="M606 192 L660 192" stroke="#245c9f" stroke-width="8" stroke-linecap="round"/>
-    <path d="M650 174 L680 192 L650 210" fill="none" stroke="#245c9f" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="704" y="132" width="430" height="122" rx="14" fill="#ffffff" stroke="#245c9f" stroke-width="3"/>
-    <rect x="732" y="118" width="260" height="30" rx="6" fill="#245c9f"/>
-    <text x="748" y="140" font-size="16" font-weight="900" fill="#ffffff">ファクトチェック</text>
-    <text x="738" y="178" font-size="18" fill="#202124">1. {html.escape(evidence_label)}</text>
-    <text x="738" y="210" font-size="18" fill="#202124">2. 根拠は facts.json に保存</text>
-    <text x="738" y="242" font-size="18" fill="#202124">3. 画像は確認後に生成</text>
     {''.join(panel_svg)}
-    <rect x="44" y="536" width="1090" height="102" rx="16" fill="#ffffff" stroke="#8bb8dc" stroke-width="2"/>
-    <text x="70" y="566" font-size="21" font-weight="900" fill="#245c9f">次にやること</text>
+    <rect x="54" y="502" width="1092" height="106" rx="16" fill="#ffffff" stroke="#8bb8dc" stroke-width="2"/>
     {''.join(flow_svg)}
-    <text x="44" y="660" font-size="12" fill="#5f6368">{html.escape(route)} · {html.escape(generated_at)} · 詳細は signals.json / analysis.md に保存</text>
   </g>
 </svg>
 """
