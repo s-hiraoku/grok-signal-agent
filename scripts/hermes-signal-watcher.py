@@ -1240,73 +1240,232 @@ def source_domain(value: str) -> str:
     return parsed.netloc or value[:38]
 
 
+def feature_visual_plan(fact: dict[str, Any]) -> dict[str, Any]:
+    text = feature_context({"source_id": fact.get("source_id", ""), "tags": []}, str(fact.get("feature", "")))
+    title = str(fact.get("title") or fact.get("feature") or "新機能")
+    plan: dict[str, Any] = {
+        "accent": "#2563eb",
+        "icon": "gear",
+        "steps": [
+            ("入口", "対象画面を開く", "どこから使うかを確認"),
+            ("操作", "小さく試す", "CLI/API/UIで再現"),
+            ("結果", "運用に入れる", "使う場面を決める"),
+        ],
+        "chips": ["日常作業", "検証", "運用判断"],
+        "checks": ["対象環境", "利用条件", "戻し方"],
+        "takeaway": f"{title}は、作業の入口を短くするための新しい使い方です。",
+    }
+    if "claude mcp login" in text or "claude mcp logout" in text:
+        plan.update({
+            "accent": "#1d4ed8",
+            "icon": "plug",
+            "steps": [
+                ("入口", "SSH・CIで作業中", "ブラウザを開きにくい環境"),
+                ("操作", "claude mcp login", "/mcpメニューを開かず認証"),
+                ("結果", "MCP接続を使える", "外部ツールにすぐ接続"),
+            ],
+            "chips": ["SSH越しの認証", "stdin redirect", "MCPサーバー接続"],
+            "checks": ["サーバー名", "--no-browser", "読み書き権限"],
+            "takeaway": "MCP認証をCLIだけで完了できます。",
+        })
+    elif "status filtering" in text and "workflows" in text:
+        plan.update({
+            "accent": "#0f766e",
+            "icon": "filter",
+            "steps": [
+                ("入口", "/workflows詳細", "エージェント実行が増えた画面"),
+                ("操作", "fで絞り込み", "状態ごとに表示を切り替え"),
+                ("結果", "詰まりを探す", "失敗・待機・完了を分けて確認"),
+            ],
+            "chips": ["失敗だけ見る", "待機中を追う", "完了済みを隠す"],
+            "checks": ["対象画面", "fキー", "表示される状態"],
+            "takeaway": "実行一覧を状態ごとに絞れます。",
+        })
+    elif "skills" in text and "/plugin" in text:
+        plan.update({
+            "accent": "#7c3aed",
+            "icon": "puzzle",
+            "steps": [
+                ("入口", "/plugin Installed", "入っているプラグインを見る"),
+                ("操作", "Skills欄を確認", "プラグインが持つ能力を一覧化"),
+                ("結果", "使うSkillを選ぶ", "呼び出す機能を迷わず探せる"),
+            ],
+            "chips": ["プラグイン確認", "Skill探索", "導入後の棚卸し"],
+            "checks": ["Installedタブ", "Skill名", "実際の呼び出し方"],
+            "takeaway": "プラグイン内のSkillsを一覧で見つけられます。",
+        })
+    elif "teammatemode" in text and "iterm2" in text:
+        plan.update({
+            "accent": "#0891b2",
+            "icon": "terminal",
+            "steps": [
+                ("入口", "teammate作業", "ターミナル連携を使う"),
+                ("操作", "iterm2を指定", "teammateModeで起動先を固定"),
+                ("結果", "警告で気づける", "it2 CLI不足を見落としにくい"),
+            ],
+            "chips": ["iTerm2固定", "auto mode警告", "起動先の安定化"],
+            "checks": ["iTerm2", "it2 CLI", "設定値"],
+            "takeaway": "teammate作業をiTerm2で安定起動できます。",
+        })
+    elif "refresh credentials" in text and "aws" in text:
+        plan.update({
+            "accent": "#d97706",
+            "icon": "key",
+            "steps": [
+                ("入口", "/logを開く", "認証切れに気づく"),
+                ("操作", "refresh credentials", "AWS認証情報を更新"),
+                ("結果", "作業に戻る", "Claude Platform on AWSを継続"),
+            ],
+            "chips": ["AWS認証切れ", "ログ画面から復旧", "作業中断を短縮"],
+            "checks": ["AWSプロファイル", "権限", "更新後の再開"],
+            "takeaway": "/logからAWS認証を更新できます。",
+        })
+    elif "record" in text and "replay" in text:
+        plan.update({
+            "accent": "#16a34a",
+            "icon": "record",
+            "steps": [
+                ("入口", "手順を実行", "いつもの操作を一度行う"),
+                ("操作", "Record & Replay", "操作を再利用できる形にする"),
+                ("結果", "Skill化", "反復作業を呼び出せる"),
+            ],
+            "chips": ["検証手順", "社内ツール操作", "反復作業"],
+            "checks": ["記録範囲", "権限", "再実行条件"],
+            "takeaway": "操作手順を再利用できる形にできます。",
+        })
+    elif "bulk action" in text or "bulk actions" in text:
+        plan.update({
+            "accent": "#ea580c",
+            "icon": "stack",
+            "steps": [
+                ("入口", "実行履歴を見る", "自動化の結果がたまる"),
+                ("操作", "まとめて選ぶ", "既読化・整理を一括実行"),
+                ("結果", "履歴を片付ける", "次に見るべき実行だけ残す"),
+            ],
+            "chips": ["大量履歴", "既読化", "アーカイブ整理"],
+            "checks": ["対象条件", "戻せる操作か", "残す履歴"],
+            "takeaway": "実行履歴をまとめて整理できます。",
+        })
+    return plan
+
+
+def render_svg_block_text(
+    value: str,
+    x: int,
+    y: int,
+    size: int,
+    color: str,
+    max_lines: int,
+    width_chars: int,
+    font_weight: Any = 700,
+) -> str:
+    return render_svg_text(value, x, y, size, color, max_lines, width_chars, font_weight, 5)
+
+
+def render_infographic_icon(kind: str, x: int, y: int, color: str) -> str:
+    common = f'fill="none" stroke="{color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"'
+    if kind == "plug":
+        return f'<path d="M{x+14} {y+28} h36 M{x+24} {y+14} v28 M{x+42} {y+14} v28 M{x+50} {y+28} c16 0 26 10 26 24 v28 h-50 v-28 c0-14 9-24 24-24 Z" {common}/><path d="M{x+52} {y+80} v20" {common}/>'
+    if kind == "filter":
+        return f'<path d="M{x+12} {y+16} h84 l-32 36 v34 l-20 12 v-46 Z" {common}/><path d="M{x+68} {y+78} h28" {common}/>'
+    if kind == "puzzle":
+        return f'<path d="M{x+18} {y+30} h24 c-5-16 22-16 17 0 h27 v27 c16-5 16 22 0 17 v27 h-27 c5-16-22-16-17 0 h-24 v-25 c16 5 16-22 0-17 Z" {common}/>'
+    if kind == "terminal":
+        return f'<rect x="{x+12}" y="{y+20}" width="92" height="68" rx="10" {common}/><path d="M{x+30} {y+42} l17 13 -17 13 M{x+58} {y+72} h26" {common}/>'
+    if kind == "key":
+        return f'<circle cx="{x+42}" cy="{y+52}" r="22" {common}/><path d="M{x+62} {y+52} h48 M{x+92} {y+52} v18 M{x+108} {y+52} v12" {common}/><path d="M{x+36} {y+52} h1" {common}/>'
+    if kind == "record":
+        return f'<circle cx="{x+58}" cy="{y+54}" r="36" {common}/><circle cx="{x+58}" cy="{y+54}" r="15" fill="{color}"/><path d="M{x+94} {y+78} l18 14 M{x+24} {y+26} l-14-14" {common}/>'
+    if kind == "stack":
+        return f'<rect x="{x+24}" y="{y+16}" width="72" height="24" rx="6" {common}/><rect x="{x+18}" y="{y+50}" width="84" height="24" rx="6" {common}/><rect x="{x+12}" y="{y+84}" width="96" height="24" rx="6" {common}/>'
+    return f'<circle cx="{x+60}" cy="{y+60}" r="42" {common}/><path d="M{x+60} {y+32} v56 M{x+32} {y+60} h56" {common}/>'
+
+
+def render_flow_step(x: int, y: int, width: int, number: int, label: str, caption: str, accent: str) -> str:
+    return f"""
+    <g>
+      <rect x="{x}" y="{y}" width="{width}" height="126" rx="18" fill="#ffffff" stroke="{accent}" stroke-width="3"/>
+      <circle cx="{x + 34}" cy="{y + 34}" r="20" fill="{accent}"/>
+      <text x="{x + 34}" y="{y + 42}" text-anchor="middle" font-size="20" font-weight="900" fill="#ffffff">{number}</text>
+      <text x="{x + 70}" y="{y + 40}" font-size="20" font-weight="900" fill="#172033">{html.escape(label)}</text>
+      {render_svg_block_text(caption, x + 28, y + 82, 15, "#334155", 2, 16, 700)}
+    </g>
+    """
+
+
+def render_chip_row(items: list[str], x: int, y: int, accent: str) -> str:
+    parts = []
+    cursor = x
+    for item in items[:3]:
+        width = 150
+        label = item if len(item) <= 14 else item[:13] + "..."
+        parts.append(f'<rect x="{cursor}" y="{y}" width="{width}" height="34" rx="17" fill="#ffffff" stroke="{accent}" stroke-width="2"/>')
+        parts.append(f'<text x="{cursor + width / 2:.1f}" y="{y + 23}" text-anchor="middle" font-size="13" font-weight="800" fill="#172033">{html.escape(label)}</text>')
+        cursor += width + 13
+    return "".join(parts)
+
+
 def render_infographic_svg(route: str, fact: dict[str, Any]) -> str:
     feature = str(fact["feature"])
     infographic_title = str(fact.get("title") or feature)
+    plan = feature_visual_plan(fact)
+    accent = str(plan["accent"])
+    steps = list(plan["steps"])
+    checks = list(plan["checks"])
 
-    steps = [
-        ("1", "条件確認", "対象プラン・環境"),
-        ("2", "小さく検証", "CLI/API/UIで再現"),
-        ("3", "採用判断", "運用に入れる価値"),
-    ]
     step_svg = []
-    for idx, (number, label, caption) in enumerate(steps):
-        x = 160 + idx * 340
-        step_svg.append(f'<circle cx="{x}" cy="566" r="23" fill="#0f172a"/>')
-        step_svg.append(f'<text x="{x}" y="574" text-anchor="middle" font-size="18" font-weight="900" fill="#ffffff">{number}</text>')
-        step_svg.append(f'<text x="{x + 48}" y="558" font-size="18" font-weight="900" fill="#0f172a">{html.escape(label)}</text>')
-        step_svg.append(f'<text x="{x + 48}" y="584" font-size="13" font-weight="700" fill="#64748b">{html.escape(caption)}</text>')
-        if idx < len(steps) - 1:
-            step_svg.append(f'<path d="M{x + 182} 566 H{x + 292}" stroke="#06b6d4" stroke-width="4" stroke-linecap="round"/>')
+    for idx, (label, caption, detail) in enumerate(steps[:3]):
+        x = 74 + idx * 374
+        step_svg.append(render_flow_step(x, 318, 300, idx + 1, label, f"{caption} / {detail}", accent))
+        if idx < 2:
+            arrow_x = x + 314
+            step_svg.append(f'<path d="M{arrow_x} 378 h44" stroke="{accent}" stroke-width="5" stroke-linecap="round"/><path d="M{arrow_x + 44} 378 l-14 -11 M{arrow_x + 44} 378 l-14 11" stroke="{accent}" stroke-width="5" stroke-linecap="round"/>')
+
+    check_svg = []
+    for idx, check in enumerate(checks[:3]):
+        cy = 536 + idx * 36
+        check_svg.append(f'<circle cx="666" cy="{cy - 5}" r="12" fill="{accent}"/><path d="M660 {cy - 5} l5 5 l9 -11" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>')
+        check_svg.append(render_svg_block_text(check, 688, cy, 17, "#172033", 1, 24, 800))
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
   <defs>
-    <linearGradient id="header" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0" stop-color="#0b1220"/>
-      <stop offset=".55" stop-color="#14243a"/>
-      <stop offset="1" stop-color="#0f3f46"/>
-    </linearGradient>
-    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
-      <path d="M32 0H0V32" fill="none" stroke="#d7dee8" stroke-width="1" opacity=".45"/>
+    <pattern id="paper" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M0 29 H30" stroke="#efe2bf" stroke-width="1" opacity=".45"/>
     </pattern>
-    <filter id="softShadow" x="-10%" y="-20%" width="120%" height="150%">
-      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#0f172a" flood-opacity=".16"/>
-    </filter>
-    <filter id="tightShadow" x="-12%" y="-30%" width="124%" height="160%">
-      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#0f172a" flood-opacity=".16"/>
+    <filter id="softShadow" x="-12%" y="-20%" width="124%" height="150%">
+      <feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#5b4631" flood-opacity=".12"/>
     </filter>
   </defs>
-  <rect width="1200" height="675" fill="#eef2f5"/>
-  <rect width="1200" height="675" fill="url(#grid)"/>
-  <rect width="1200" height="178" fill="url(#header)"/>
-  <path d="M0 174 C166 194 332 156 512 181 C692 206 855 161 1032 180 C1116 189 1168 203 1200 196 V675 H0 Z" fill="#eef2f5"/>
-  <path d="M0 178 H1200" stroke="#06b6d4" stroke-width="4"/>
+  <rect width="1200" height="675" fill="#fff8e8"/>
+  <rect width="1200" height="675" fill="url(#paper)"/>
+  <path d="M42 104 C260 94 460 112 654 100 C836 89 1000 106 1156 96" stroke="#f2c94c" stroke-width="9" stroke-linecap="round" opacity=".9"/>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
-    {render_svg_text(infographic_title, 52, 70, 36, "#ffffff", 2, 27, 900, 6)}
-    <text x="52" y="150" font-size="17" font-weight="700" fill="#cbd5e1">どういう機能か、どんな場面で使えるか</text>
+    {render_svg_text(infographic_title, 46, 70, 38, "#1f2937", 2, 30, 900, 4)}
+    <text x="48" y="132" font-size="18" font-weight="800" fill="#475569">入口 → 操作 → 結果で見る、新機能の使いどころ</text>
   </g>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" filter="url(#softShadow)">
-    <rect x="48" y="206" width="520" height="268" rx="8" fill="#ffffff"/>
-    <rect x="48" y="206" width="520" height="8" rx="4" fill="#e11d48"/>
-    <rect x="72" y="234" width="160" height="28" rx="14" fill="#ffe4e6"/>
-    <text x="152" y="253" text-anchor="middle" font-size="13" font-weight="900" fill="#be123c">どういう機能？</text>
-    {render_svg_text(str(fact["what_it_is"]), 76, 304, 21, "#111827", 4, 22, 800, 7)}
-
-    <rect x="596" y="206" width="556" height="128" rx="8" fill="#ffffff"/>
-    <rect x="596" y="206" width="8" height="128" rx="4" fill="#0f766e"/>
-    <text x="628" y="248" font-size="17" font-weight="900" fill="#0f766e">使える場面</text>
-    {render_svg_text(str(fact["use_case"]), 628, 282, 17, "#263241", 3, 28, 600, 7)}
-
-    <rect x="596" y="358" width="556" height="116" rx="8" fill="#ffffff"/>
-    <rect x="596" y="358" width="8" height="116" rx="4" fill="#f59e0b"/>
-    <text x="626" y="398" font-size="16" font-weight="900" fill="#9a5b10">まず確認</text>
-    {render_svg_text(str(fact["check_first"]), 626, 430, 16, "#475569", 3, 30, 600, 6)}
+    <rect x="48" y="150" width="704" height="130" rx="18" fill="#ffffff" stroke="#1f2937" stroke-width="3"/>
+    <rect x="774" y="146" width="378" height="134" rx="18" fill="#ffffff" stroke="{accent}" stroke-width="4"/>
+    <text x="84" y="188" font-size="18" font-weight="900" fill="{accent}">これは何？</text>
+    {render_svg_block_text(str(fact["what_it_is"]), 84, 220, 17, "#172033", 3, 38, 800)}
+    {render_infographic_icon(str(plan["icon"]), 798, 162, accent)}
+    <text x="920" y="188" font-size="18" font-weight="900" fill="{accent}">一言でいうと</text>
+    {render_svg_block_text(str(plan["takeaway"]), 920, 220, 15, "#172033", 3, 17, 800)}
   </g>
-  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
-    <rect x="48" y="502" width="1104" height="142" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-    <text x="86" y="535" font-size="17" font-weight="900" fill="#0f172a">次の確認フロー</text>
+  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" filter="url(#softShadow)">
+    <text x="74" y="306" font-size="20" font-weight="900" fill="#172033">使い方の流れ</text>
     {''.join(step_svg)}
   </g>
+  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" filter="url(#softShadow)">
+    <rect x="48" y="464" width="540" height="164" rx="18" fill="#f0fdf4" stroke="#22c55e" stroke-width="3"/>
+    <text x="82" y="504" font-size="20" font-weight="900" fill="#166534">使える場面</text>
+    {render_chip_row(list(plan["chips"]), 82, 528, "#22c55e")}
+    {render_svg_block_text(str(fact["use_case"]), 82, 592, 16, "#172033", 2, 30, 700)}
+    <rect x="628" y="464" width="524" height="164" rx="18" fill="#fff7ed" stroke="#fb923c" stroke-width="3"/>
+    <text x="662" y="504" font-size="20" font-weight="900" fill="#9a3412">確認すること</text>
+    {''.join(check_svg)}
+  </g>
+  <path d="M44 646 C280 636 510 650 742 642 C910 636 1032 650 1156 640" stroke="{accent}" stroke-width="4" stroke-linecap="round" opacity=".55"/>
 </svg>
 """
 
