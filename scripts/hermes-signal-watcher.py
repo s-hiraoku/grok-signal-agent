@@ -777,7 +777,7 @@ def render_summary_svg(route: str, candidates: list[dict[str, Any]]) -> str:
 
 
 def render_infographic_svg(route: str, candidates: list[dict[str, Any]]) -> str:
-    top_candidates = candidates[:4]
+    top_candidates = candidates[:3]
     providers = sorted({provider_label(candidate) for candidate in top_candidates})
     kinds = sorted({candidate_kind(candidate) for candidate in top_candidates})
     stat_cards = []
@@ -799,10 +799,10 @@ def render_infographic_svg(route: str, candidates: list[dict[str, Any]]) -> str:
         rows.append(f'<circle cx="74" cy="{y + 4}" r="18" fill="#2f6f73"/>')
         rows.append(f'<text x="74" y="{y + 11}" font-size="18" font-weight="800" text-anchor="middle" fill="#ffffff">{idx}</text>')
         rows.append(f'<text x="106" y="{y - 14}" font-size="15" font-weight="800" fill="#2f6f73">{html.escape(provider_label(candidate))} · {html.escape(candidate_kind(candidate))} · スコア {candidate["score"]}</text>')
-        rows.append(render_svg_text(candidate["title"], 106, y + 18, 23, "#202124", 2, 34))
-        rows.append(render_svg_text(explain_candidate(candidate), 106, y + 78, 15, "#3c4043", 2, 34))
-        rows.append(render_svg_text("次に見る: " + next_action(candidate), 106, y + 126, 15, "#7a4d16", 1, 34))
-        y += 101
+        rows.append(render_svg_text(candidate["title"], 106, y + 18, 23, "#202124", 1, 34))
+        rows.append(render_svg_text(explain_candidate(candidate), 106, y + 56, 15, "#3c4043", 1, 38))
+        rows.append(render_svg_text("次に見る: " + next_action(candidate), 106, y + 88, 15, "#7a4d16", 1, 38))
+        y += 126
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
   <rect width="1200" height="675" fill="#f6f3ea"/>
@@ -811,7 +811,7 @@ def render_infographic_svg(route: str, candidates: list[dict[str, Any]]) -> str:
   <text x="44" y="102" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="17" fill="#5f6368">公式ソースの変化を、何が重要か・次に何を見るかで整理</text>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
     {''.join(stat_cards)}
-    <text x="44" y="228" font-size="18" font-weight="800" fill="#202124">注目ポイント</text>
+    <text x="44" y="228" font-size="18" font-weight="800" fill="#202124">注目ポイント（上位3件）</text>
     {''.join(rows)}
     <rect x="800" y="246" width="332" height="300" rx="12" fill="#ffffff" stroke="#ded8ca"/>
     <text x="826" y="282" font-size="22" font-weight="800" fill="#202124">読み方</text>
