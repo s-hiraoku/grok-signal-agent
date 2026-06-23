@@ -292,7 +292,7 @@ def parse_html_links(source: dict[str, Any], text: str) -> list[SignalItem]:
     return items
 
 
-def enrich_html_link_items(items: list[SignalItem], timeout: int, user_agent: str) -> list[SignalItem]:
+def enrich_item_summaries(items: list[SignalItem], timeout: int, user_agent: str) -> list[SignalItem]:
     for item in items:
         try:
             text = fetch_text(item.url, timeout, user_agent)
@@ -832,8 +832,8 @@ def official_article_feature(candidate: dict[str, Any]) -> str:
     tags = {str(tag).lower() for tag in candidate.get("tags", [])}
     source_id = str(candidate.get("source_id", "")).lower()
     url_path = urllib.parse.urlparse(str(candidate.get("url", ""))).path
-    article_source = re.search(r"(?:news|blog|engineering|research)", source_id) or re.search(
-        r"/(?:news|blog|engineering|research)/", url_path
+    article_source = re.search(r"(?:news|blog|engineering|research|product|release|changelog)", source_id) or re.search(
+        r"/(?:news|blog|engineering|research|product|release|changelog)/", url_path
     )
     if "official" not in tags or not article_source:
         return ""
@@ -849,7 +849,7 @@ def official_article_feature(candidate: dict[str, Any]) -> str:
 
 def clean_article_title(value: str) -> str:
     cleaned = clean_feature_line(value)
-    cleaned = re.sub(r"\s+\\\s+Anthropic$", "", cleaned)
+    cleaned = re.sub(r"\s+(?:\\|\|)\s+(?:Anthropic|OpenAI)$", "", cleaned)
     cleaned = re.sub(r"^(?:Product|Research|Engineering|Company)\s+", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"^[A-Z][a-z]{2}\s+\d{1,2},\s+\d{4}\s+", "", cleaned)
     if cleaned.lower() in {"skip to main contentskip to footer", "news", "try claude"}:
@@ -1639,7 +1639,7 @@ def main() -> int:
     max_items = int(settings.get("max_items_per_source", 20))
 
     observed: list[SignalItem] = []
-    observed_url_keys: set[str] = set()
+    observed_url_official: dict[str, bool] = {}
     candidates: list[dict[str, Any]] = []
     snapshot_updates: dict[str, dict[str, Any]] = {}
     errors: list[str] = []
@@ -1651,11 +1651,14 @@ def main() -> int:
             text = fetch_text(source["url"], timeout, user_agent)
             if source.get("type") == "feed":
                 items = parse_feed(source, text)
+                source_max_items = int(source.get("max_items", max_items))
+                if source.get("fetch_item_summary", False):
+                    items = enrich_item_summaries(items[:source_max_items], timeout, user_agent)
             elif source.get("type") == "html_links":
                 items = parse_html_links(source, text)
                 source_max_items = int(source.get("max_items", max_items))
                 if source.get("fetch_item_summary", False):
-                    items = enrich_html_link_items(items[:source_max_items], timeout, user_agent)
+                    items = enrich_item_summaries(items[:source_max_items], timeout, user_agent)
             elif source.get("type") == "snapshot":
                 items, source_snapshot_updates = parse_snapshot(source, text, state)
                 snapshot_updates.update(source_snapshot_updates)
@@ -1673,9 +1676,11 @@ def main() -> int:
         )
         for item in items[:source_max_items]:
             url_key = canonical_url_key(item.url)
-            if url_key in observed_url_keys and not is_official_item(item):
+            item_is_official = is_official_item(item)
+            existing_is_official = observed_url_official.get(url_key)
+            if existing_is_official is not None and (existing_is_official or not item_is_official):
                 continue
-            observed_url_keys.add(url_key)
+            observed_url_official[url_key] = item_is_official
             observed.append(item)
             if prime_existing:
                 mark_seen_item(state, item)

@@ -1690,6 +1690,139 @@ JSON
   assert_file_contains "${tmp_home}/public/latest/anthropic/index.html" "Claude Tag"
 }
 
+test_signal_watcher_fetches_openai_feed_body_and_dedupes_official_pages() {
+  local tmp_home feed index article config state log_file output artifact_dir
+  tmp_home="$(mktemp -d)"
+  feed="${tmp_home}/openai.xml"
+  index="${tmp_home}/product-releases.html"
+  article="${tmp_home}/introducing-gpt-codex.html"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${feed}" <<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>OpenAI News</title>
+    <item>
+      <title>Introducing GPT-Codex for agentic coding</title>
+      <link>file://${article}</link>
+      <guid>file://${article}</guid>
+      <description>Short feed summary.</description>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${index}" <<HTML
+<!doctype html>
+<html>
+  <body>
+    <a href="file://${article}">
+      <span>Product</span>
+      <span>Jun 23, 2026</span>
+      <strong>Introducing GPT-Codex for agentic coding</strong>
+    </a>
+  </body>
+</html>
+HTML
+  cat > "${article}" <<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <main>
+      <h1>Introducing GPT-Codex for agentic coding</h1>
+      <p>GPT-Codex is a new model for agentic coding workflows in the Responses API.</p>
+      <p>Developers can use it to run longer code editing sessions, review changes, and automate repository tasks.</p>
+      <p>It is available today for API and Codex users.</p>
+      <h2>Related content</h2>
+    </main>
+  </body>
+</html>
+HTML
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "last_sent_routes": {
+    "ai-latest-trigger:openai": 9999999999
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": "",
+    "summary_cooldown_bypass_min_score": 100,
+    "provider_split_routes": ["ai-latest-trigger"]
+  },
+  "keyword_weights": {
+    "openai": 22,
+    "codex": 28,
+    "gpt": 22,
+    "responses api": 26,
+    "ai": 14
+  },
+  "sources": [
+    {
+      "id": "openai-news-local",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${feed}",
+      "base_score": 54,
+      "min_score": 78,
+      "route": "ai-latest-trigger",
+      "max_items": 3,
+      "cooldown_minutes": 360,
+      "fetch_item_summary": true,
+      "tags": ["openai", "ai", "official"]
+    },
+    {
+      "id": "openai-product-releases-local",
+      "enabled": true,
+      "type": "html_links",
+      "url": "file://${index}",
+      "base_score": 54,
+      "min_score": 78,
+      "route": "ai-latest-trigger",
+      "max_items": 3,
+      "cooldown_minutes": 360,
+      "fetch_item_summary": true,
+      "include_url_patterns": ["introducing-gpt-codex"],
+      "tags": ["openai", "product", "official"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_file_contains "${log_file}" "cooldown bypass route=ai-latest-trigger group=OpenAI"
+  assert_file_contains "${artifact_dir}/signals.json" "longer code editing sessions"
+  assert_file_contains "${artifact_dir}/facts.json" "Introducing GPT-Codex for agentic coding"
+  [[ ! -e "${artifact_dir}/infographic-02.html" ]] || fail "duplicate OpenAI official pages should produce one infographic"
+  assert_file_contains "${tmp_home}/public/latest/openai/index.html" "GPT-Codex"
+}
+
 test_signal_watcher_retries_candidates_blocked_by_cooldown() {
   local tmp_home feed config state output log_file seen_count
   tmp_home="$(mktemp -d)"
@@ -3377,6 +3510,7 @@ main() {
     test_signal_watcher_reads_env_file_for_secret
     test_signal_watcher_parses_nested_html_links
     test_signal_watcher_fetches_official_news_body_and_bypasses_ai_latest_cooldown
+    test_signal_watcher_fetches_openai_feed_body_and_dedupes_official_pages
     test_signal_watcher_retries_candidates_blocked_by_cooldown
     test_signal_watcher_keeps_custom_routes_out_of_batch
     test_signal_watcher_writes_ai_latest_summary_artifacts_for_snapshot_changes
