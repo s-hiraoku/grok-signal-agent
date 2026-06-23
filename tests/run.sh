@@ -1933,6 +1933,90 @@ JSON
   assert_file_not_contains "${artifact_dir}/infographic-02.svg" "2/2"
 }
 
+test_signal_watcher_uses_full_summary_for_infographic_features() {
+  local tmp_home snapshot config state log_file output artifact_dir
+  tmp_home="$(mktemp -d)"
+  snapshot="${tmp_home}/changelog.md"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  {
+    echo "# Changelog"
+    echo
+    for i in $(seq 1 45); do
+      echo "- Navigation filler line ${i} that is intentionally long enough to push the real feature past the short payload summary."
+    done
+    echo "- Added late feature extraction after a long release note preamble."
+  } > "${snapshot}"
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "snapshots": {
+    "local-long-summary": {
+      "hash": "old",
+      "content": "# Changelog\n\n## Previous\n- Existing entry.",
+      "url": "https://example.com/changelog",
+      "title": "Local changelog",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    }
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": ""
+  },
+  "keyword_weights": {
+    "release": 15,
+    "feature": 15
+  },
+  "sources": [
+    {
+      "id": "local-long-summary",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${snapshot}",
+      "link_url": "file://${snapshot}",
+      "title": "Local long changelog changed",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["openai", "release"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_file_contains "${artifact_dir}/facts.json" "late feature extraction"
+  assert_file_contains "${artifact_dir}/infographic-01.svg" "late feature extraction"
+  assert_file_not_contains "${artifact_dir}/signals.json" "summary_full"
+}
+
 test_signal_watcher_skips_images_for_version_only_ai_latest_changes() {
   local tmp_home snapshot config state log_file output artifact_dir latest_dir
   tmp_home="$(mktemp -d)"
@@ -3078,6 +3162,7 @@ main() {
     test_signal_watcher_keeps_custom_routes_out_of_batch
     test_signal_watcher_writes_ai_latest_summary_artifacts_for_snapshot_changes
     test_signal_watcher_writes_one_infographic_per_new_feature
+    test_signal_watcher_uses_full_summary_for_infographic_features
     test_signal_watcher_skips_images_for_version_only_ai_latest_changes
     test_signal_watcher_splits_ai_latest_artifacts_by_provider
     test_x_pulse_watcher_primes_sample_urls

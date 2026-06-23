@@ -489,7 +489,7 @@ def build_payload(
         "route": route,
         "created_at": now_iso(),
         "candidate_count": len(candidates),
-        "signals": candidates,
+        "signals": public_candidates(candidates),
     }
     if group_slug and group_label:
         payload["group"] = {
@@ -498,6 +498,13 @@ def build_payload(
             "label": group_label,
         }
     return payload
+
+
+def public_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {key: value for key, value in candidate.items() if key != "summary_full"}
+        for candidate in candidates
+    ]
 
 
 def enabled_summary_artifacts(route: str, settings: dict[str, Any]) -> bool:
@@ -529,7 +536,7 @@ def write_summary_artifacts(
     html_path = artifact_dir / "summary.html"
     index_path = artifact_dir / "index.html"
 
-    signals_path.write_text(json.dumps(candidates, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    signals_path.write_text(json.dumps(public_candidates(candidates), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     analysis_path.write_text(render_summary_markdown(display_route, candidates), encoding="utf-8")
     html = render_summary_html(display_route, candidates)
     html_path.write_text(html, encoding="utf-8")
@@ -689,8 +696,9 @@ def render_summary_markdown(route: str, candidates: list[dict[str, Any]]) -> str
             f"- Score: {candidate['score']} / threshold {candidate['threshold']}",
             f"- URL: {candidate['url']}",
         ])
-        if candidate.get("summary"):
-            lines.extend(["", "```diff", candidate["summary"][:1600], "```"])
+        summary = candidate_summary(candidate)
+        if summary:
+            lines.extend(["", "```diff", summary[:1600], "```"])
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -699,9 +707,13 @@ def candidate_text(candidate: dict[str, Any]) -> str:
     return " ".join([
         candidate.get("source_id", ""),
         candidate.get("title", ""),
-        candidate.get("summary", ""),
+        candidate_summary(candidate),
         " ".join(str(tag) for tag in candidate.get("tags", [])),
     ]).lower()
+
+
+def candidate_summary(candidate: dict[str, Any]) -> str:
+    return str(candidate.get("summary_full") or candidate.get("summary") or "")
 
 
 def is_new_feature_candidate(candidate: dict[str, Any]) -> bool:
@@ -736,7 +748,7 @@ def infographic_feature_items(candidates: list[dict[str, Any]]) -> list[tuple[di
 
 def candidate_feature_lines(candidate: dict[str, Any]) -> list[str]:
     features: list[str] = []
-    for raw_line in candidate.get("summary", "").splitlines():
+    for raw_line in candidate_summary(candidate).splitlines():
         line = raw_line.strip()
         if not line.startswith("+") or line.startswith("+++"):
             continue
@@ -744,7 +756,7 @@ def candidate_feature_lines(candidate: dict[str, Any]) -> list[str]:
         if feature and is_feature_statement(feature, candidate):
             features.append(feature)
     if not features:
-        summary = candidate.get("summary", "")
+        summary = candidate_summary(candidate)
         summary_text = snapshot_text({"snapshot_format": "html" if looks_like_html(summary) else "text"}, summary)
         for raw_line in summary_text.splitlines():
             feature = clean_feature_line(raw_line)
@@ -889,7 +901,7 @@ def feature_context(candidate: dict[str, Any], feature: str) -> str:
 def feature_evidence_from_summary(candidate: dict[str, Any], feature: str) -> list[str]:
     evidence = []
     feature_key = normalize_for_match(feature)
-    for raw_line in candidate.get("summary", "").splitlines():
+    for raw_line in candidate_summary(candidate).splitlines():
         cleaned = clean_feature_line(raw_line)
         if cleaned and (normalize_for_match(cleaned) == feature_key or match_feature_phrase(cleaned, feature)):
             evidence.append(cleaned)
@@ -1124,7 +1136,7 @@ def next_action(candidate: dict[str, Any]) -> str:
 def render_summary_html(route: str, candidates: list[dict[str, Any]]) -> str:
     cards = []
     for candidate in candidates[:5]:
-        summary = html.escape(candidate.get("summary", "")[:800])
+        summary = html.escape(candidate_summary(candidate)[:800])
         if summary:
             summary = "<pre>" + summary + "</pre>"
         cards.append(f"""
@@ -1448,6 +1460,7 @@ def main() -> int:
                     "title": item.title,
                     "url": item.url,
                     "summary": item.summary[:600],
+                    "summary_full": item.summary,
                     "published_at": item.published_at,
                     "author": item.author,
                     "tags": item.tags or [],
