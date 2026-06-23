@@ -277,8 +277,11 @@ OpenAI and Anthropic create separate Discord payloads and separate latest
 directories such as `~/.hermes/public/ai-latest/latest/openai/` and
 `~/.hermes/public/ai-latest/latest/anthropic/`. Every run is archived under
 `~/.hermes/archive/ai-latest/`. New-feature signals are split into one Japanese
-infographic per feature (`infographic-01.png`, `infographic-02.png`, ...), and
-the first image is copied to `infographic.png` for preview compatibility.
+HTML/CSS infographic per feature (`infographic-01.html` plus
+`infographic-01.png`, `infographic-02.html` plus `infographic-02.png`, ...),
+and the first image is copied to `infographic.png` for preview compatibility.
+The PNGs are rendered from the HTML with Playwright when `summary_png_renderer`
+is `playwright`.
 Discord posts attach all generated feature infographic images. Before
 rendering images, the watcher re-checks the official source URL and stores the
 evidence in `facts.json` and `factcheck.md`. Version-only release notes stay in

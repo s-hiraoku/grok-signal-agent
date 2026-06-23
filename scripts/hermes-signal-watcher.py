@@ -563,24 +563,24 @@ def write_summary_artifacts(
         artifact["factcheck_md"] = str(factcheck_path)
         infographics = []
         for idx, fact in enumerate(feature_facts, 1):
-            svg_path = artifact_dir / f"infographic-{idx:02d}.svg"
+            infographic_html_path = artifact_dir / f"infographic-{idx:02d}.html"
             png_path = artifact_dir / f"infographic-{idx:02d}.png"
-            svg_path.write_text(render_infographic_svg(display_route, fact), encoding="utf-8")
-            render_summary_png(svg_path, png_path, settings)
+            infographic_html_path.write_text(render_infographic_html(display_route, fact), encoding="utf-8")
+            render_infographic_png(infographic_html_path, png_path, settings)
             infographics.append({
                 "index": idx,
                 "feature": fact["feature"],
                 "source_id": fact["source_id"],
                 "fact_status": fact["status"],
-                "svg": str(svg_path),
+                "html": str(infographic_html_path),
                 "png": str(png_path),
             })
             if idx == 1:
-                alias_svg = artifact_dir / "infographic.svg"
+                alias_html = artifact_dir / "infographic.html"
                 alias_png = artifact_dir / "infographic.png"
-                shutil.copyfile(svg_path, alias_svg)
+                shutil.copyfile(infographic_html_path, alias_html)
                 shutil.copyfile(png_path, alias_png)
-                artifact["infographic_svg"] = str(alias_svg)
+                artifact["infographic_html"] = str(alias_html)
                 artifact["infographic_png"] = str(alias_png)
         artifact["infographics"] = infographics
     archive_dir = archive_artifact(artifact_dir, artifact_id, settings, group_slug, group_label)
@@ -666,6 +666,7 @@ def cleanup_ungrouped_latest_files(latest_root: Path) -> None:
         "analysis.md",
         "summary.html",
         "index.html",
+        "infographic.html",
         "infographic.svg",
         "infographic.png",
         "summary.svg",
@@ -1254,6 +1255,7 @@ def feature_visual_plan(fact: dict[str, Any]) -> dict[str, Any]:
         "chips": ["日常作業", "検証", "運用判断"],
         "checks": ["対象環境", "利用条件", "戻し方"],
         "takeaway": f"{title}は、作業の入口を短くするための新しい使い方です。",
+        "diagram": "default",
     }
     if "claude mcp login" in text or "claude mcp logout" in text:
         plan.update({
@@ -1267,6 +1269,7 @@ def feature_visual_plan(fact: dict[str, Any]) -> dict[str, Any]:
             "chips": ["SSH越しの認証", "stdin redirect", "MCPサーバー接続"],
             "checks": ["サーバー名", "--no-browser", "読み書き権限"],
             "takeaway": "MCP認証をCLIだけで完了できます。",
+            "diagram": "mcp-auth",
         })
     elif "status filtering" in text and "workflows" in text:
         plan.update({
@@ -1280,6 +1283,7 @@ def feature_visual_plan(fact: dict[str, Any]) -> dict[str, Any]:
             "chips": ["失敗だけ見る", "待機中を追う", "完了済みを隠す"],
             "checks": ["対象画面", "fキー", "表示される状態"],
             "takeaway": "実行一覧を状態ごとに絞れます。",
+            "diagram": "status-filter",
         })
     elif "skills" in text and "/plugin" in text:
         plan.update({
@@ -1293,6 +1297,7 @@ def feature_visual_plan(fact: dict[str, Any]) -> dict[str, Any]:
             "chips": ["プラグイン確認", "Skill探索", "導入後の棚卸し"],
             "checks": ["Installedタブ", "Skill名", "実際の呼び出し方"],
             "takeaway": "プラグイン内のSkillsを一覧で見つけられます。",
+            "diagram": "plugin-skills",
         })
     elif "teammatemode" in text and "iterm2" in text:
         plan.update({
@@ -1306,6 +1311,7 @@ def feature_visual_plan(fact: dict[str, Any]) -> dict[str, Any]:
             "chips": ["iTerm2固定", "auto mode警告", "起動先の安定化"],
             "checks": ["iTerm2", "it2 CLI", "設定値"],
             "takeaway": "teammate作業をiTerm2で安定起動できます。",
+            "diagram": "iterm2",
         })
     elif "refresh credentials" in text and "aws" in text:
         plan.update({
@@ -1319,6 +1325,7 @@ def feature_visual_plan(fact: dict[str, Any]) -> dict[str, Any]:
             "chips": ["AWS認証切れ", "ログ画面から復旧", "作業中断を短縮"],
             "checks": ["AWSプロファイル", "権限", "更新後の再開"],
             "takeaway": "/logからAWS認証を更新できます。",
+            "diagram": "aws-refresh",
         })
     elif "record" in text and "replay" in text:
         plan.update({
@@ -1332,6 +1339,7 @@ def feature_visual_plan(fact: dict[str, Any]) -> dict[str, Any]:
             "chips": ["検証手順", "社内ツール操作", "反復作業"],
             "checks": ["記録範囲", "権限", "再実行条件"],
             "takeaway": "操作手順を再利用できる形にできます。",
+            "diagram": "record-replay",
         })
     elif "bulk action" in text or "bulk actions" in text:
         plan.update({
@@ -1345,6 +1353,7 @@ def feature_visual_plan(fact: dict[str, Any]) -> dict[str, Any]:
             "chips": ["大量履歴", "既読化", "アーカイブ整理"],
             "checks": ["対象条件", "戻せる操作か", "残す履歴"],
             "takeaway": "実行履歴をまとめて整理できます。",
+            "diagram": "bulk-actions",
         })
     return plan
 
@@ -1403,6 +1412,328 @@ def render_chip_row(items: list[str], x: int, y: int, accent: str) -> str:
         parts.append(f'<text x="{cursor + width / 2:.1f}" y="{y + 23}" text-anchor="middle" font-size="13" font-weight="800" fill="#172033">{html.escape(label)}</text>')
         cursor += width + 13
     return "".join(parts)
+
+
+def infographic_icon_html(kind: str, color: str) -> str:
+    stroke = f'stroke="{html.escape(color)}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"'
+    if kind == "plug":
+        paths = f'<path d="M28 38h44M40 20v40M60 20v40M72 38c18 0 30 13 30 31v35H42V69c0-18 11-31 30-31Z" {stroke}/><path d="M74 104v28" {stroke}/>'
+    elif kind == "filter":
+        paths = f'<path d="M22 24h112L92 75v46l-28 16V75Z" {stroke}/><path d="M98 110h36" {stroke}/>'
+    elif kind == "puzzle":
+        paths = f'<path d="M30 42h34c-8-24 32-24 24 0h38v38c24-8 24 32 0 24v38H88c8-24-32-24-24 0H30v-34c24 8 24-32 0-24Z" {stroke}/>'
+    elif kind == "terminal":
+        paths = f'<rect x="22" y="34" width="116" height="88" rx="14" {stroke}/><path d="M46 62l24 18-24 18M82 100h34" {stroke}/>'
+    elif kind == "key":
+        paths = f'<circle cx="58" cy="72" r="28" {stroke}/><path d="M86 72h66M124 72v24M146 72v18" {stroke}/><path d="M52 72h1" {stroke}/>'
+    elif kind == "record":
+        paths = f'<circle cx="80" cy="78" r="52" {stroke}/><circle cx="80" cy="78" r="22" fill="{html.escape(color)}"/><path d="M126 114l28 22M32 42L12 22" {stroke}/>'
+    elif kind == "stack":
+        paths = f'<rect x="42" y="26" width="82" height="30" rx="8" {stroke}/><rect x="32" y="72" width="102" height="30" rx="8" {stroke}/><rect x="22" y="118" width="122" height="30" rx="8" {stroke}/>'
+    else:
+        paths = f'<circle cx="80" cy="80" r="52" {stroke}/><path d="M80 42v76M42 80h76" {stroke}/>'
+    return f'<svg class="icon" viewBox="0 0 160 160" aria-hidden="true">{paths}</svg>'
+
+
+def html_list_items(items: list[str], css_class: str = "") -> str:
+    cls = f' class="{css_class}"' if css_class else ""
+    return "".join(f"<li{cls}>{html.escape(str(item))}</li>" for item in items)
+
+
+def render_feature_diagram_html(plan: dict[str, Any], accent: str) -> str:
+    diagram = str(plan.get("diagram") or "default")
+    if diagram == "mcp-auth":
+        return """
+        <section class="diagram diagram-mcp">
+          <div class="terminal">
+            <div class="terminal-bar"><span></span><span></span><span></span></div>
+            <code>$ claude mcp login github</code>
+            <code>$ claude mcp logout github</code>
+            <small>SSH / CI / --no-browser</small>
+          </div>
+          <div class="big-arrow">→</div>
+          <div class="auth-card">
+            <strong>認証</strong>
+            <p>/mcpメニューを開かず完了</p>
+          </div>
+          <div class="big-arrow">→</div>
+          <div class="server-card">
+            <strong>MCPサーバー</strong>
+            <ul><li>GitHub</li><li>DB</li><li>社内API</li></ul>
+          </div>
+        </section>
+        """
+    if diagram == "status-filter":
+        return """
+        <section class="diagram diagram-filter">
+          <div class="list-card">
+            <strong>/workflows</strong>
+            <p class="row failed">failed</p>
+            <p class="row waiting">waiting</p>
+            <p class="row done">done</p>
+          </div>
+          <div class="filter-key">f</div>
+          <div class="funnel"></div>
+          <div class="list-card focused">
+            <strong>絞り込み後</strong>
+            <p class="row failed">failedだけ表示</p>
+            <p class="row waiting">待機中だけ確認</p>
+          </div>
+        </section>
+        """
+    if diagram == "plugin-skills":
+        return """
+        <section class="diagram diagram-plugin">
+          <div class="plugin-window">
+            <div class="tabs"><span>Installed</span><span>Marketplace</span></div>
+            <div class="plugin-name">my-plugin</div>
+          </div>
+          <div class="big-arrow">→</div>
+          <div class="skills-list">
+            <strong>Skills</strong>
+            <p>コードレビュー</p>
+            <p>手順生成</p>
+            <p>検証支援</p>
+          </div>
+          <div class="callout-mini">使う機能を<br>迷わず探す</div>
+        </section>
+        """
+    if diagram == "iterm2":
+        return """
+        <section class="diagram diagram-iterm">
+          <div class="setting-card">
+            <strong>teammateMode</strong>
+            <code>"iterm2"</code>
+          </div>
+          <div class="big-arrow">→</div>
+          <div class="terminal-app">iTerm2</div>
+          <div class="warning-card">
+            <strong>it2 CLIなし</strong>
+            <p>auto modeで警告</p>
+          </div>
+        </section>
+        """
+    if diagram == "aws-refresh":
+        return """
+        <section class="diagram diagram-aws">
+          <div class="log-card">
+            <strong>/log</strong>
+            <p>認証切れを確認</p>
+          </div>
+          <div class="big-arrow">→</div>
+          <div class="refresh-card">refresh credentials</div>
+          <div class="big-arrow">→</div>
+          <div class="aws-card">Claude Platform<br>on AWS</div>
+        </section>
+        """
+    if diagram == "record-replay":
+        return """
+        <section class="diagram diagram-record">
+          <div class="action-chain"><span>クリック</span><span>入力</span><span>確認</span></div>
+          <div class="record-dot">REC</div>
+          <div class="big-arrow">→</div>
+          <div class="skill-card">再利用できる<br>Skill</div>
+        </section>
+        """
+    if diagram == "bulk-actions":
+        return """
+        <section class="diagram diagram-bulk">
+          <div class="history-list"><p>☑ run #128</p><p>☑ run #129</p><p>☑ run #130</p></div>
+          <div class="bulk-button">bulk action</div>
+          <div class="big-arrow">→</div>
+          <div class="archive-card">既読化<br>アーカイブ</div>
+        </section>
+        """
+    steps = list(plan["steps"])[:3]
+    step_cards = []
+    for idx, (label, caption, detail) in enumerate(steps, 1):
+        step_cards.append(f"""
+          <section class="step">
+            <div class="step-head"><span>{idx}</span><strong>{html.escape(str(label))}</strong></div>
+            <p>{html.escape(str(caption))}</p>
+            <small>{html.escape(str(detail))}</small>
+          </section>
+        """)
+    return f"""
+    <section class="flow">
+      {step_cards[0]}
+      <div class="arrow"></div>
+      {step_cards[1]}
+      <div class="arrow"></div>
+      {step_cards[2]}
+    </section>
+    """
+
+
+def render_infographic_html(route: str, fact: dict[str, Any]) -> str:
+    feature = str(fact["feature"])
+    infographic_title = str(fact.get("title") or feature)
+    plan = feature_visual_plan(fact)
+    accent = str(plan["accent"])
+    chips = [str(item) for item in list(plan["chips"])[:3]]
+    checks = [str(item) for item in list(plan["checks"])[:3]]
+    what_it_is = str(fact["what_it_is"])
+    use_case = str(fact["use_case"])
+    takeaway = str(plan["takeaway"])
+    chip_html = "".join(f"<span>{html.escape(chip)}</span>" for chip in chips)
+    diagram_html = render_feature_diagram_html(plan, accent)
+    return f"""<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1200, initial-scale=1">
+  <title>{html.escape(infographic_title)}</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    html, body {{ margin: 0; width: 1200px; height: 675px; overflow: hidden; }}
+    body {{
+      background:
+        repeating-linear-gradient(0deg, rgba(225, 205, 157, .22) 0 1px, transparent 1px 30px),
+        #fff8e8;
+      color: #172033;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }}
+    .page {{ width: 1200px; height: 675px; padding: 34px 46px 30px; position: relative; }}
+    .marker {{
+      position: absolute; left: 38px; right: 38px; top: 94px; height: 9px; border-radius: 99px;
+      background: #f2c94c; transform: rotate(-.25deg);
+    }}
+    h1 {{
+      margin: 0; max-width: 1040px; font-size: 37px; line-height: 1.12; font-weight: 800;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }}
+    .subtitle {{ margin-top: 36px; color: #475569; font-size: 18px; font-weight: 700; }}
+    .top {{ display: grid; grid-template-columns: 1fr 380px; gap: 20px; margin-top: 14px; }}
+    .card {{
+      background: rgba(255,255,255,.94); border: 3px solid #172033; border-radius: 18px;
+      box-shadow: 0 7px 16px rgba(91,70,49,.10); min-width: 0;
+    }}
+    .what {{ padding: 24px 34px; min-height: 126px; }}
+    .label {{ color: {accent}; font-weight: 800; font-size: 18px; margin-bottom: 10px; }}
+    .what p, .use p {{ margin: 0; font-size: 18px; line-height: 1.45; font-weight: 700; }}
+    .one {{ border-color: {accent}; padding: 18px 20px; display: grid; grid-template-columns: 118px 1fr; gap: 14px; align-items: center; min-height: 136px; }}
+    .one .icon {{ width: 112px; height: 112px; }}
+    .one p {{ margin: 7px 0 0; font-size: 16px; line-height: 1.45; font-weight: 700; }}
+    .flow-title {{ margin: 12px 0 8px 28px; font-size: 20px; font-weight: 800; }}
+    .flow {{ display: grid; grid-template-columns: 1fr 48px 1fr 48px 1fr; align-items: center; gap: 12px; padding: 0 28px; }}
+    .diagram {{
+      height: 124px; margin: 0 28px; display: grid; align-items: center; gap: 14px;
+      color: #172033;
+    }}
+    .diagram strong {{ display: block; font-size: 18px; font-weight: 800; margin-bottom: 7px; }}
+    .diagram p {{ margin: 0; font-size: 14px; line-height: 1.25; font-weight: 700; }}
+    .diagram small {{ color: #475569; font-size: 13px; font-weight: 700; }}
+    .big-arrow {{ color: {accent}; font-size: 48px; line-height: 1; font-weight: 800; text-align: center; }}
+    .terminal, .auth-card, .server-card, .list-card, .plugin-window, .skills-list,
+    .setting-card, .terminal-app, .warning-card, .log-card, .refresh-card, .aws-card,
+    .skill-card, .history-list, .archive-card {{
+      min-width: 0; background: rgba(255,255,255,.96); border: 3px solid {accent}; border-radius: 18px;
+      box-shadow: 0 7px 16px rgba(91,70,49,.10);
+    }}
+    .diagram-mcp {{ grid-template-columns: 320px 50px 245px 50px 260px; }}
+    .terminal {{ height: 124px; padding: 18px 24px; }}
+    .terminal-bar {{ display: flex; gap: 6px; margin-bottom: 14px; }}
+    .terminal-bar span {{ width: 10px; height: 10px; border-radius: 50%; background: {accent}; opacity: .75; }}
+    .terminal code, .setting-card code {{ display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; font-size: 14px; margin: 6px 0; }}
+    .auth-card {{ height: 104px; padding: 22px 24px; }}
+    .server-card {{ height: 112px; padding: 16px 24px; }}
+    .server-card ul {{ margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.22; font-weight: 700; }}
+    .diagram-filter {{ grid-template-columns: 265px 74px 96px 1fr; }}
+    .list-card {{ height: 124px; padding: 16px 22px; }}
+    .row {{ height: 22px; border-radius: 11px; padding: 3px 12px; margin: 7px 0 0 !important; color: white; font-size: 12px !important; }}
+    .failed {{ background: #dc2626; }} .waiting {{ background: #d97706; }} .done {{ background: #16a34a; }}
+    .filter-key {{ width: 58px; height: 58px; border-radius: 18px; display: grid; place-items: center; background: {accent}; color: white; font-size: 32px; font-weight: 900; }}
+    .funnel {{ width: 86px; height: 92px; background: {accent}; clip-path: polygon(0 0, 100% 0, 62% 48%, 62% 100%, 38% 100%, 38% 48%); opacity: .9; }}
+    .focused {{ border-width: 4px; }}
+    .diagram-plugin {{ grid-template-columns: 325px 50px 260px 1fr; }}
+    .plugin-window {{ height: 124px; padding: 18px 22px; }}
+    .tabs {{ display: flex; gap: 8px; margin-bottom: 18px; }}
+    .tabs span {{ padding: 7px 12px; border-radius: 999px; background: #f3e8ff; color: {accent}; font-size: 12px; font-weight: 800; }}
+    .plugin-name {{ font-size: 20px; font-weight: 800; }}
+    .skills-list {{ height: 124px; padding: 16px 22px; }}
+    .skills-list p {{ border-bottom: 2px solid #eee7dc; padding: 4px 0; }}
+    .callout-mini {{ align-self: stretch; display: grid; place-items: center; border: 3px dashed {accent}; border-radius: 18px; font-size: 20px; line-height: 1.35; font-weight: 800; color: {accent}; text-align: center; background: rgba(255,255,255,.74); }}
+    .diagram-iterm {{ grid-template-columns: 280px 60px 260px 1fr; }}
+    .setting-card, .warning-card {{ height: 116px; padding: 22px 24px; }}
+    .terminal-app {{ height: 116px; display: grid; place-items: center; font-size: 30px; font-weight: 900; }}
+    .warning-card {{ border-color: #f59e0b; }}
+    .diagram-aws {{ grid-template-columns: 250px 50px 285px 50px 280px; }}
+    .log-card, .refresh-card, .aws-card {{ height: 112px; padding: 22px 24px; }}
+    .refresh-card, .aws-card {{ display: grid; place-items: center; text-align: center; font-size: 22px; font-weight: 850; }}
+    .diagram-record {{ grid-template-columns: 390px 100px 60px 1fr; }}
+    .action-chain {{ display: flex; gap: 10px; }}
+    .action-chain span {{ height: 72px; min-width: 112px; display: grid; place-items: center; border: 3px solid {accent}; border-radius: 18px; background: white; font-weight: 800; }}
+    .record-dot {{ width: 86px; height: 86px; border-radius: 50%; display: grid; place-items: center; background: {accent}; color: white; font-weight: 900; font-size: 24px; }}
+    .skill-card {{ height: 112px; display: grid; place-items: center; text-align: center; font-size: 24px; line-height: 1.3; font-weight: 850; }}
+    .diagram-bulk {{ grid-template-columns: 300px 220px 60px 1fr; }}
+    .history-list {{ height: 116px; padding: 14px 22px; }}
+    .history-list p {{ margin: 7px 0; font-size: 16px; }}
+    .bulk-button {{ height: 62px; display: grid; place-items: center; background: {accent}; color: white; border-radius: 999px; font-size: 22px; font-weight: 900; }}
+    .archive-card {{ height: 112px; display: grid; place-items: center; text-align: center; font-size: 24px; line-height: 1.3; font-weight: 850; }}
+    .step {{
+      height: 124px; border: 3px solid {accent}; border-radius: 18px; background: rgba(255,255,255,.96);
+      padding: 21px 26px 18px; box-shadow: 0 7px 16px rgba(91,70,49,.10); min-width: 0;
+    }}
+    .step-head {{ display: flex; align-items: center; gap: 14px; }}
+    .step-head span {{ display: grid; place-items: center; width: 40px; height: 40px; border-radius: 999px; background: {accent}; color: white; font-size: 20px; font-weight: 800; flex: none; }}
+    .step-head strong {{ font-size: 20px; font-weight: 800; }}
+    .step p {{ margin: 14px 0 2px; font-size: 15px; line-height: 1.25; font-weight: 700; }}
+    .step small {{ display: block; color: #475569; font-size: 13px; line-height: 1.25; font-weight: 700; }}
+    .arrow {{ position: relative; height: 5px; background: {accent}; border-radius: 99px; }}
+    .arrow:after {{ content: ""; position: absolute; right: -2px; top: 50%; width: 17px; height: 17px; border-right: 5px solid {accent}; border-top: 5px solid {accent}; transform: translateY(-50%) rotate(45deg); }}
+    .bottom {{ display: grid; grid-template-columns: 1fr 1fr; gap: 38px; margin-top: 20px; }}
+    .use, .check {{ height: 132px; padding: 16px 32px; border-radius: 18px; box-shadow: 0 7px 16px rgba(91,70,49,.10); overflow: hidden; }}
+    .use {{ background: #f0fdf4; border: 3px solid #22c55e; }}
+    .check {{ background: #fff7ed; border: 3px solid #fb923c; }}
+    .use h2, .check h2 {{ margin: 0 0 11px; font-size: 20px; line-height: 1; font-weight: 800; }}
+    .use h2 {{ color: #166534; }} .check h2 {{ color: #9a3412; }}
+    .chips {{ display: flex; gap: 10px; margin-bottom: 12px; }}
+    .chips span {{ min-width: 140px; max-width: 146px; height: 30px; display: grid; place-items: center; padding: 0 12px; border: 2px solid #22c55e; border-radius: 999px; background: white; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    .use p {{
+      font-size: 13px; line-height: 1.25; max-width: 448px; font-weight: 700;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }}
+    .check ul {{ margin: 2px 0 0; padding: 0; list-style: none; display: grid; gap: 7px; }}
+    .check li {{ position: relative; padding-left: 34px; font-size: 16px; line-height: 1.2; font-weight: 700; }}
+    .check li:before {{ content: "✓"; position: absolute; left: 0; top: -2px; width: 23px; height: 23px; border-radius: 999px; display: grid; place-items: center; background: {accent}; color: white; font-size: 15px; font-weight: 800; }}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="marker"></div>
+    <h1>{html.escape(infographic_title)}</h1>
+    <div class="subtitle">入口 → 操作 → 結果で見る、新機能の使いどころ</div>
+    <section class="top">
+      <article class="card what">
+        <div class="label">これは何？</div>
+        <p>{html.escape(what_it_is)}</p>
+      </article>
+      <article class="card one">
+        {infographic_icon_html(str(plan["icon"]), accent)}
+        <div>
+          <div class="label">一言でいうと</div>
+          <p>{html.escape(takeaway)}</p>
+        </div>
+      </article>
+    </section>
+    <div class="flow-title">使い方の流れ</div>
+    {diagram_html}
+    <section class="bottom">
+      <article class="use">
+        <h2>使える場面</h2>
+        <div class="chips">{chip_html}</div>
+        <p>{html.escape(use_case)}</p>
+      </article>
+      <article class="check">
+        <h2>確認すること</h2>
+        <ul>{html_list_items(checks)}</ul>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
+"""
 
 
 def render_infographic_svg(route: str, fact: dict[str, Any]) -> str:
@@ -1468,6 +1799,35 @@ def render_infographic_svg(route: str, fact: dict[str, Any]) -> str:
   <path d="M44 646 C280 636 510 650 742 642 C910 636 1032 650 1156 640" stroke="{accent}" stroke-width="4" stroke-linecap="round" opacity=".55"/>
 </svg>
 """
+
+
+def render_infographic_png(html_path: Path, png_path: Path, settings: dict[str, Any]) -> None:
+    renderer = os.environ.get("HERMES_SUMMARY_PNG_RENDERER") or settings.get("summary_png_renderer", "playwright")
+    if renderer == "playwright":
+        npx = shutil.which("npx")
+        if npx:
+            try:
+                subprocess.run(
+                    [
+                        npx,
+                        "-y",
+                        "playwright@latest",
+                        "screenshot",
+                        "--browser",
+                        "chromium",
+                        "--viewport-size=1200,675",
+                        html_path.resolve().as_uri(),
+                        str(png_path),
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=int(settings.get("summary_png_timeout_seconds", 45)),
+                    check=True,
+                )
+                return
+            except Exception:
+                pass
+    write_fallback_png(png_path)
 
 
 def render_summary_png(svg_path: Path, png_path: Path, settings: dict[str, Any]) -> None:

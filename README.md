@@ -216,10 +216,12 @@ intended split is:
 - AI latest artifacts: for `ai-latest-trigger`, the signal watcher also writes
   local run artifacts under `~/.hermes/state/ai-latest/`, including
   `signals.json`, `analysis.md`, and `summary.html`. New-feature signals are
-  split into one fact-checked infographic per feature
-  (`infographic-01.png`, `infographic-02.png`, ...), with the first image also
-  copied to `infographic.png` for previews. Discord posts attach all generated
-  feature infographic images. `facts.json` and `factcheck.md`
+  split into one fact-checked HTML/CSS infographic per feature
+  (`infographic-01.html` plus `infographic-01.png`,
+  `infographic-02.html` plus `infographic-02.png`, ...), with the first image
+  also copied to `infographic.png` for previews. The PNGs are rendered from
+  the HTML with Playwright when `summary_png_renderer` is `playwright`.
+  Discord posts attach all generated feature infographic images. `facts.json` and `factcheck.md`
   record the official-source evidence used before rendering. Version-only
   release notes stay in HTML/Markdown without a separate summary image. The
   route is split by provider, so OpenAI and Anthropic produce separate payloads
