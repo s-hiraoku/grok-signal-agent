@@ -559,6 +559,8 @@ STUB
   assert_contains "${output}" "Skipped webhook registration because Hermes webhook platform is not enabled"
   assert_file_contains "${tmp_home}/hermes-calls.log" "gateway restart"
   [[ -x "${tmp_home}/.hermes/bin/hermes-digest-lint.sh" ]] || fail "digest linter should be installed"
+  [[ -x "${tmp_home}/.hermes/bin/hermes-mnemo-memory.py" ]] || fail "mnemo memory helper should be installed"
+  [[ -x "${tmp_home}/.hermes/bin/hermes-mnemo-memory-hook.sh" ]] || fail "mnemo memory hook should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-discord-feedback.sh" ]] || fail "feedback hook should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-alert.sh" ]] || fail "alert helper should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-obsidian-mcp-setup.sh" ]] || fail "obsidian MCP setup helper should be installed"
@@ -588,8 +590,10 @@ STUB
   [[ -f "${tmp_home}/.hermes/prompts/nightly-dreaming.md" ]] || fail "dreaming prompt should be installed"
   [[ -f "${tmp_home}/.hermes/prompts/webhooks/signal-catchup.md" ]] || fail "webhook prompt should be installed"
   assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-mnemo-memory-hook.sh"
   assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-discord-feedback.sh"
   assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-mnemo-memory-hook.sh"
   assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-discord-feedback.sh"
   assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.signal-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
   assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.x-pulse-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
@@ -643,8 +647,10 @@ STUB
   assert_file_contains "${tmp_home}/hermes-calls.log" "gateway install"
   assert_file_contains "${tmp_home}/hermes-calls.log" "gateway restart"
   assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-mnemo-memory-hook.sh"
   assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-discord-feedback.sh"
   assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-mnemo-memory-hook.sh"
   assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-discord-feedback.sh"
 }
 
@@ -2827,6 +2833,75 @@ STUB
   assert_file_contains "${capture_log}" "event string safe memory"
 }
 
+test_mnemo_memory_captures_only_configured_channel_and_recalls() {
+  local tmp_home db export_dir output status
+  tmp_home="$(mktemp -d)"
+  db="${tmp_home}/mnemo.sqlite"
+  export_dir="${tmp_home}/knowledge"
+
+  output="$(
+    printf '%s\n' '{"text":"朝の通知は少なめが好き [[discord-posting]]","user_id":"u1","channel_id":"memory-channel","message_id":"m1"}' \
+      | HERMES_MNEMO_MEMORY_CHANNEL_IDS="memory-channel" \
+        "${REPO_DIR}/scripts/hermes-mnemo-memory.py" \
+          --db "${db}" \
+          --export-dir "${export_dir}" \
+          capture-event \
+          --print-slug
+  )"
+
+  assert_contains "${output}" "memory"
+  [[ -f "${db}" ]] || fail "mnemo sqlite database should be created"
+  find "${export_dir}/memory" -type f -name '*.md' -print -quit | grep -q . || fail "expected exported memory markdown"
+
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" recall "朝の通知")"
+  assert_contains "${output}" "覚えていること"
+  assert_contains "${output}" "朝の通知は少なめが好き"
+
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" backlinks "discord-posting")"
+  assert_contains "${output}" "[[discord-posting]] backlinks"
+  assert_contains "${output}" "memory:"
+
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" red-links)"
+  assert_contains "${output}" "[[discord-posting]]"
+
+  printf '%s\n' '{"text":"保存されないはず","user_id":"u1","channel_id":"ordinary-channel","message_id":"m2"}' \
+    | HERMES_MNEMO_MEMORY_CHANNEL_IDS="memory-channel" \
+      "${REPO_DIR}/scripts/hermes-mnemo-memory.py" \
+        --db "${db}" \
+        --export-dir "${export_dir}" \
+        capture-event
+
+  set +e
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" recall "保存されない" --strict 2>&1)"
+  status=$?
+  set -e
+  [[ "${status}" -ne 0 ]] || fail "recall should not find ignored ordinary-channel message"
+  assert_contains "${output}" "覚えている記憶は見つかりませんでした"
+}
+
+test_mnemo_memory_classifies_source_notes_as_knowledge() {
+  local tmp_home db export_dir output
+  tmp_home="$(mktemp -d)"
+  db="${tmp_home}/mnemo.sqlite"
+  export_dir="${tmp_home}/knowledge"
+
+  output="$(
+    printf '%s\n' '{"text":"Source: Discord\nWhy captured: Codex設定の判断に関係する\nConnections: [[codex]] [[agent-memory]]\nCodexの通知は公式更新を優先する","user_id":"u1","channel_id":"memory-channel"}' \
+      | HERMES_MNEMO_MEMORY_CHANNEL_IDS="memory-channel" \
+        "${REPO_DIR}/scripts/hermes-mnemo-memory.py" \
+          --db "${db}" \
+          --export-dir "${export_dir}" \
+          capture-event \
+          --print-slug
+  )"
+
+  assert_contains "${output}" "knowledge"
+  find "${export_dir}/knowledge" -type f -name '*.md' -print -quit | grep -q . || fail "expected exported knowledge markdown"
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" graph --format mermaid)"
+  assert_contains "${output}" "flowchart LR"
+  assert_contains "${output}" "codex"
+}
+
 test_tech_digest_cron_falls_back_to_jina_reader_when_x_search_fails() {
   local tmp_home hermes_stub output digest_file log_file metadata_file
   tmp_home="$(mktemp -d)"
@@ -3318,6 +3393,8 @@ main() {
     test_digest_linter_ignores_placeholder_x_urls_without_arithmetic_error
     test_discord_feedback_hook_writes_fallback_artifact
     test_discord_feedback_and_remember_hooks_accept_string_event_payloads
+    test_mnemo_memory_captures_only_configured_channel_and_recalls
+    test_mnemo_memory_classifies_source_notes_as_knowledge
     test_tech_digest_cron_falls_back_to_jina_reader_when_x_search_fails
     test_tech_digest_cron_uses_direct_jina_reader_when_mcp_returns_invalid_digest
     test_tech_digest_cron_skips_x_search_when_xai_is_blocked

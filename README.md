@@ -393,6 +393,43 @@ Run the shell regression tests:
 tests/run.sh
 ```
 
+## Mnemo-like Memory Layer (Optional)
+
+ヘルメスちゃん can keep an on-demand, mnemo-inspired local memory without
+requiring `覚えて:` / `/remember` prefixes. The Gateway hook
+`scripts/hermes-mnemo-memory-hook.sh` captures only messages posted in
+explicitly configured memory channels, stores them in a local SQLite database,
+exports Markdown copies, and lets you search them later.
+
+This is **off until a memory channel is configured**. Normal conversation is
+not captured.
+
+```bash
+# Install the helper and Gateway hook.
+./scripts/install-macos-launchagent.sh
+
+# Configure the Discord channel IDs that should behave as memory inboxes.
+export HERMES_MNEMO_MEMORY_CHANNEL_IDS="123456789012345678"
+
+# Ask from the shell, or wire the command into a Hermes tool/prompt flow later.
+~/.hermes/bin/hermes-mnemo-memory.py recall "朝の通知"
+~/.hermes/bin/hermes-mnemo-memory.py backlinks codex
+~/.hermes/bin/hermes-mnemo-memory.py red-links
+~/.hermes/bin/hermes-mnemo-memory.py graph --format mermaid
+~/.hermes/bin/hermes-mnemo-memory.py curator status
+```
+
+Captured data lives under:
+
+- `~/.hermes/mnemo/mnemo.sqlite`: primary local store.
+- `~/.hermes/mnemo/knowledge/memory/*.md`: exported memory notes.
+- `~/.hermes/mnemo/knowledge/knowledge/*.md`: exported source-style notes.
+
+Short messages become `memory`. Messages with the mnemo-style sections
+`Source:`, `Why captured:`, and `Connections:` become `knowledge`. `[[slug]]`
+links are indexed for backlinks, red-link detection, graph output, and curator
+status. Recall increments `view_count` and records a `session` audit row.
+
 ## gbrain Memory Backend (Optional)
 
 ヘルメスちゃん's self-growth loop can use [`garrytan/gbrain`](https://github.com/garrytan/gbrain)
@@ -434,7 +471,7 @@ repository helper scripts prepend `~/.bun/bin` to `PATH` before invoking
 | `HERMES_GBRAIN_RECONCILE=1` | weekly | Upsert a `learnings-<ts>` page, export the brain to `~/.hermes/brain/pages`, `git commit` it, then run `gbrain dream`. |
 | `GBRAIN_SEARCH_MODE=query` | digest trigger | Switch retrieval from keyword search to hybrid (vector) search. Requires an embedding provider key configured in the brain (default is keyword `search`). |
 
-### Remember things from Discord (optional)
+### Legacy remember-prefix hook (optional)
 
 You can tell ヘルメスちゃん to remember something straight from Discord. A
 `pre_gateway_dispatch` shell hook (`scripts/hermes-gbrain-remember.sh`) watches
@@ -449,7 +486,8 @@ notes first, as instructions to follow:
 
 Recognized prefixes: `覚えて` / `おぼえて` / `記憶して` / `/remember` /
 `remember` (followed by an optional `:` or `：`). Normal conversation is never
-captured.
+captured. Prefer the mnemo-like memory-channel flow above when you do not want
+to type a remember prefix.
 
 The macOS installer registers and approves the memory/feedback hooks. To do it
 manually:
@@ -459,6 +497,8 @@ manually:
 #    hooks:
 #      pre_gateway_dispatch:
 #        - command: ~/.hermes/bin/hermes-gbrain-remember.sh
+#          timeout: 30
+#        - command: ~/.hermes/bin/hermes-mnemo-memory-hook.sh
 #          timeout: 30
 #        - command: ~/.hermes/bin/hermes-discord-feedback.sh
 #          timeout: 30

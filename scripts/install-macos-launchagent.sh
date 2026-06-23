@@ -34,6 +34,7 @@ mkdir -p \
   "${HOME}/.hermes/state/signal-watcher" \
   "${HOME}/.hermes/state/x-pulse-watcher" \
   "${HOME}/.hermes/state/weekly-reflections" \
+  "${HOME}/.hermes/mnemo/knowledge" \
   "${RUNTIME_DIR}/config" \
   "${RUNTIME_DIR}/scripts" \
   "${HOME}/Library/LaunchAgents"
@@ -46,6 +47,12 @@ install -m 755 \
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-gbrain-remember.sh" \
   "${HOME}/.hermes/bin/hermes-gbrain-remember.sh"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-mnemo-memory.py" \
+  "${HOME}/.hermes/bin/hermes-mnemo-memory.py"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-mnemo-memory-hook.sh" \
+  "${HOME}/.hermes/bin/hermes-mnemo-memory-hook.sh"
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-discord-feedback.sh" \
   "${HOME}/.hermes/bin/hermes-discord-feedback.sh"
@@ -159,6 +166,7 @@ ensure_gateway_hooks() {
     File.write(config_file, YAML.dump(config))
   ' "${config_file}" \
     "${HOME}/.hermes/bin/hermes-gbrain-remember.sh" \
+    "${HOME}/.hermes/bin/hermes-mnemo-memory-hook.sh" \
     "${HOME}/.hermes/bin/hermes-discord-feedback.sh"
 }
 
@@ -193,6 +201,7 @@ approve_gateway_hooks() {
     File.write(allowlist_file, JSON.pretty_generate(data) + "\n")
   ' "${allowlist_file}" \
     "${HOME}/.hermes/bin/hermes-gbrain-remember.sh" \
+    "${HOME}/.hermes/bin/hermes-mnemo-memory-hook.sh" \
     "${HOME}/.hermes/bin/hermes-discord-feedback.sh"
 }
 

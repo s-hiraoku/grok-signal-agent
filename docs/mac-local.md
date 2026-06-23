@@ -276,9 +276,14 @@ hooks:
   pre_gateway_dispatch:
     - command: ~/.hermes/bin/hermes-gbrain-remember.sh
       timeout: 30
+    - command: ~/.hermes/bin/hermes-mnemo-memory-hook.sh
+      timeout: 30
     - command: ~/.hermes/bin/hermes-discord-feedback.sh
       timeout: 30
 ```
+
+`hermes-mnemo-memory-hook.sh` only records messages from channel IDs listed in
+`HERMES_MNEMO_MEMORY_CHANNEL_IDS`; ordinary chat channels are ignored.
 
 If you add hooks manually, approve them once:
 

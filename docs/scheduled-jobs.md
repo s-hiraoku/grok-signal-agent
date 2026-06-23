@@ -249,6 +249,9 @@ That keeps event triggers extensible without adding a second scheduler.
 
 Current event-trigger helpers:
 
+- `hermes-mnemo-memory-hook.sh`: captures messages posted in configured memory
+  inbox channels (`HERMES_MNEMO_MEMORY_CHANNEL_IDS`) into the local mnemo-like
+  SQLite/Markdown store. It does not capture normal conversation channels.
 - `hermes-gbrain-remember.sh`: captures explicit "remember this" messages as
   `note` pages.
 - `hermes-discord-feedback.sh`: captures explicit feedback and follow-up/deep
