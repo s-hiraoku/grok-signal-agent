@@ -24,6 +24,7 @@
     "summary_latest_dir": "~/.hermes/public/ai-latest/latest",
     "summary_artifact_routes": ["ai-latest-trigger"],
     "summary_png_renderer": "playwright",
+    "summary_cooldown_bypass_min_score": 100,
     "provider_split_routes": ["ai-latest-trigger"]
   },
   "keyword_weights": {
@@ -257,6 +258,7 @@
       "route": "ai-latest-trigger",
       "max_items": 3,
       "cooldown_minutes": 360,
+      "fetch_item_summary": true,
       "include_url_patterns": ["/news/"],
       "exclude_url_patterns": [],
       "tags": ["anthropic", "ai", "official"]
@@ -272,6 +274,7 @@
       "route": "ai-latest-trigger",
       "max_items": 3,
       "cooldown_minutes": 360,
+      "fetch_item_summary": true,
       "include_url_patterns": ["/engineering/"],
       "exclude_url_patterns": [],
       "tags": ["anthropic", "claude", "engineering", "ai-agent"]
@@ -287,6 +290,7 @@
       "route": "ai-latest-trigger",
       "max_items": 3,
       "cooldown_minutes": 360,
+      "fetch_item_summary": true,
       "include_url_patterns": ["/research/"],
       "exclude_url_patterns": ["/research/team/"],
       "tags": ["anthropic", "claude", "research", "ai"]

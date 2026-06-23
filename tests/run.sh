@@ -1553,6 +1553,137 @@ JSON
   assert_file_contains "${tmp_home}/watcher.log" "dry-run route=signal-catchup candidates=2"
 }
 
+test_signal_watcher_fetches_official_news_body_and_bypasses_ai_latest_cooldown() {
+  local tmp_home index article hn_feed config state log_file output artifact_dir
+  tmp_home="$(mktemp -d)"
+  index="${tmp_home}/news.html"
+  article="${tmp_home}/introducing-claude-tag.html"
+  hn_feed="${tmp_home}/hn.xml"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${index}" <<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <a href="introducing-claude-tag.html">
+      <span>Product</span>
+      <span>Jun 23, 2026</span>
+      <strong>Introducing Claude Tag</strong>
+      <span>Claude Tag is a new way for teams to work with Claude.</span>
+    </a>
+  </body>
+</html>
+HTML
+  cat > "${article}" <<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <main>
+      <h1>Introducing Claude Tag</h1>
+      <p>Claude Tag is a new way for teams to work with Claude directly in Slack.</p>
+      <p>Teams can tag @Claude in a channel or thread, and Claude responds with context from the conversation.</p>
+      <p>Claude Tag is available today in beta for Claude Enterprise and Team customers.</p>
+      <h2>Related content</h2>
+    </main>
+  </body>
+</html>
+HTML
+  cat > "${hn_feed}" <<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>HN</title>
+    <item>
+      <title>Claude Tag</title>
+      <link>file://${article}</link>
+      <description>Discussion link that should not suppress the official source.</description>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "last_sent_routes": {
+    "ai-latest-trigger:anthropic": 9999999999
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": "",
+    "summary_cooldown_bypass_min_score": 100,
+    "provider_split_routes": ["ai-latest-trigger"]
+  },
+  "keyword_weights": {
+    "anthropic": 24,
+    "claude": 24,
+    "ai": 14,
+    "slack": 12
+  },
+  "sources": [
+    {
+      "id": "hn-frontpage-local",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${hn_feed}",
+      "base_score": 10,
+      "min_score": 999,
+      "route": "signal-catchup",
+      "prime_existing": true,
+      "tags": ["hacker news"]
+    },
+    {
+      "id": "anthropic-news-local",
+      "enabled": true,
+      "type": "html_links",
+      "url": "file://${index}",
+      "base_score": 48,
+      "min_score": 78,
+      "route": "ai-latest-trigger",
+      "max_items": 3,
+      "cooldown_minutes": 360,
+      "fetch_item_summary": true,
+      "include_url_patterns": ["introducing-claude-tag"],
+      "tags": ["anthropic", "claude", "ai", "official"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_file_contains "${log_file}" "cooldown bypass route=ai-latest-trigger group=Anthropic"
+  assert_file_contains "${artifact_dir}/signals.json" "available today in beta"
+  assert_file_contains "${artifact_dir}/facts.json" "Introducing Claude Tag"
+  assert_file_contains "${artifact_dir}/infographic-01.html" "Claude Tag"
+  [[ ! -e "${artifact_dir}/infographic-02.html" ]] || fail "official news article should produce one infographic"
+  assert_file_contains "${tmp_home}/public/latest/anthropic/index.html" "Claude Tag"
+}
+
 test_signal_watcher_retries_candidates_blocked_by_cooldown() {
   local tmp_home feed config state output log_file seen_count
   tmp_home="$(mktemp -d)"
@@ -1850,6 +1981,7 @@ test_signal_watcher_writes_one_infographic_per_new_feature() {
 - Added Record & Replay for reusable skills.
 - Added bulk actions to automation run history.
 - Fixed small UI issues.
+- Fixed startup delay after proxy support was added.
 MD
   cat > "${state}" <<'JSON'
 {
@@ -3169,6 +3301,7 @@ main() {
     test_signal_watcher_scores_local_feed
     test_signal_watcher_reads_env_file_for_secret
     test_signal_watcher_parses_nested_html_links
+    test_signal_watcher_fetches_official_news_body_and_bypasses_ai_latest_cooldown
     test_signal_watcher_retries_candidates_blocked_by_cooldown
     test_signal_watcher_keeps_custom_routes_out_of_batch
     test_signal_watcher_writes_ai_latest_summary_artifacts_for_snapshot_changes

@@ -292,6 +292,53 @@ def parse_html_links(source: dict[str, Any], text: str) -> list[SignalItem]:
     return items
 
 
+def enrich_html_link_items(items: list[SignalItem], timeout: int, user_agent: str) -> list[SignalItem]:
+    for item in items:
+        try:
+            text = fetch_text(item.url, timeout, user_agent)
+        except Exception:
+            continue
+        summary = html_page_summary(text, item.url, item.title)
+        if summary:
+            item.summary = summary
+    return items
+
+
+def html_page_summary(text: str, url: str, title: str) -> str:
+    body = snapshot_text({"snapshot_format": "html"}, text)
+    if not body:
+        return ""
+    lines = [line for line in body.splitlines() if line]
+    slug_words = [
+        word for word in re.split(r"[^a-z0-9]+", urllib.parse.urlparse(url).path.rsplit("/", 1)[-1].lower())
+        if len(word) >= 3
+    ]
+    title_words = [
+        word for word in re.split(r"[^a-z0-9]+", title.lower())
+        if len(word) >= 4
+    ]
+    start = 0
+    for idx, line in enumerate(lines):
+        lowered = line.lower()
+        slug_matches = sum(1 for word in slug_words if word in lowered)
+        title_matches = sum(1 for word in title_words[:8] if word in lowered)
+        if slug_words and slug_matches >= min(2, len(slug_words)):
+            start = idx
+            break
+        if title_words and title_matches >= min(2, len(title_words[:8])):
+            start = idx
+            break
+    selected = []
+    for line in lines[start:]:
+        lowered = line.lower()
+        if lowered in {"related content", "products", "models", "solutions", "resources"}:
+            break
+        selected.append(line)
+        if len(selected) >= 22:
+            break
+    return "\n".join(selected)[:2400]
+
+
 def parse_snapshot(
     source: dict[str, Any],
     text: str,
@@ -717,17 +764,24 @@ def candidate_summary(candidate: dict[str, Any]) -> str:
     return str(candidate.get("summary_full") or candidate.get("summary") or "")
 
 
+def is_official_item(item: SignalItem) -> bool:
+    return any(str(tag).lower() == "official" for tag in item.tags or [])
+
+
 def is_new_feature_candidate(candidate: dict[str, Any]) -> bool:
     text = candidate_text(candidate)
     patterns = [
         r"\bnew features?\b",
+        r"\bnew way\b",
         r"\badd\b",
         r"\badded\b",
         r"\badds\b",
         r"\bcan now\b",
+        r"\bintroducing\b",
         r"\bintroduced\b",
         r"\blaunched\b",
         r"\bsupport for\b",
+        r"\bavailable (?:today|now)\b",
         r"新機能",
         r"追加",
     ]
@@ -757,6 +811,10 @@ def candidate_feature_lines(candidate: dict[str, Any]) -> list[str]:
         if feature and is_feature_statement(feature, candidate):
             features.append(feature)
     if not features:
+        article_feature = official_article_feature(candidate)
+        if article_feature:
+            return [article_feature]
+    if not features:
         summary = candidate_summary(candidate)
         summary_text = snapshot_text({"snapshot_format": "html" if looks_like_html(summary) else "text"}, summary)
         for raw_line in summary_text.splitlines():
@@ -768,6 +826,35 @@ def candidate_feature_lines(candidate: dict[str, Any]) -> list[str]:
         if title and is_feature_statement(title, candidate):
             features.append(title)
     return features
+
+
+def official_article_feature(candidate: dict[str, Any]) -> str:
+    tags = {str(tag).lower() for tag in candidate.get("tags", [])}
+    source_id = str(candidate.get("source_id", "")).lower()
+    url_path = urllib.parse.urlparse(str(candidate.get("url", ""))).path
+    article_source = re.search(r"(?:news|blog|engineering|research)", source_id) or re.search(
+        r"/(?:news|blog|engineering|research)/", url_path
+    )
+    if "official" not in tags or not article_source:
+        return ""
+    summary = candidate_summary(candidate)
+    summary_text = snapshot_text({"snapshot_format": "html" if looks_like_html(summary) else "text"}, summary)
+    for raw_line in summary_text.splitlines()[:20]:
+        line = clean_article_title(raw_line)
+        if line and is_feature_statement(line, candidate):
+            return line
+    title = clean_article_title(str(candidate.get("title", "")))
+    return title if title and is_feature_statement(title, candidate) else ""
+
+
+def clean_article_title(value: str) -> str:
+    cleaned = clean_feature_line(value)
+    cleaned = re.sub(r"\s+\\\s+Anthropic$", "", cleaned)
+    cleaned = re.sub(r"^(?:Product|Research|Engineering|Company)\s+", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^[A-Z][a-z]{2}\s+\d{1,2},\s+\d{4}\s+", "", cleaned)
+    if cleaned.lower() in {"skip to main contentskip to footer", "news", "try claude"}:
+        return ""
+    return cleaned
 
 
 def clean_feature_line(line: str) -> str:
@@ -792,6 +879,8 @@ def is_feature_statement(value: str, candidate: dict[str, Any]) -> bool:
         "bug fixes",
         "performance improvements and bug fixes",
     }:
+        return False
+    if lowered.startswith(("fix ", "fixes ", "fixed ", "bug fix ", "bug fixes ")):
         return False
     if len(value) < 12:
         return False
@@ -1564,6 +1653,9 @@ def main() -> int:
                 items = parse_feed(source, text)
             elif source.get("type") == "html_links":
                 items = parse_html_links(source, text)
+                source_max_items = int(source.get("max_items", max_items))
+                if source.get("fetch_item_summary", False):
+                    items = enrich_html_link_items(items[:source_max_items], timeout, user_agent)
             elif source.get("type") == "snapshot":
                 items, source_snapshot_updates = parse_snapshot(source, text, state)
                 snapshot_updates.update(source_snapshot_updates)
@@ -1581,7 +1673,7 @@ def main() -> int:
         )
         for item in items[:source_max_items]:
             url_key = canonical_url_key(item.url)
-            if url_key in observed_url_keys:
+            if url_key in observed_url_keys and not is_official_item(item):
                 continue
             observed_url_keys.add(url_key)
             observed.append(item)
@@ -1712,6 +1804,25 @@ def main() -> int:
     return 0 if observed or not errors else 1
 
 
+def should_bypass_route_cooldown(
+    route: str,
+    candidates: list[dict[str, Any]],
+    settings: dict[str, Any],
+    state: dict[str, Any],
+) -> bool:
+    artifact_routes = settings.get("summary_artifact_routes", [])
+    if artifact_routes and route not in artifact_routes:
+        return False
+    min_score = int(settings.get("summary_cooldown_bypass_min_score", 0))
+    if min_score <= 0:
+        return False
+    sent = state.get("sent", {})
+    return any(
+        candidate.get("stable_key") not in sent and int(candidate.get("score", 0)) >= min_score
+        for candidate in candidates
+    )
+
+
 def send_candidates(
     route: str,
     candidates: list[dict[str, Any]],
@@ -1735,9 +1846,12 @@ def send_candidates(
     log_group = f" group={group_label}" if group_label else ""
     last_sent = state.setdefault("last_sent_routes", {}).get(delivery_key, 0)
     now_ts = time.time()
-    if last_sent and now_ts - float(last_sent) < cooldown_minutes * 60:
+    bypass_cooldown = should_bypass_route_cooldown(route, candidates, settings, state)
+    if last_sent and now_ts - float(last_sent) < cooldown_minutes * 60 and not bypass_cooldown:
         log_line(log_path, f"cooldown route={route}{log_group} candidates={len(candidates)} minutes={cooldown_minutes}")
         return 0
+    if last_sent and now_ts - float(last_sent) < cooldown_minutes * 60 and bypass_cooldown:
+        log_line(log_path, f"cooldown bypass route={route}{log_group} candidates={len(candidates)} minutes={cooldown_minutes}")
     artifact = write_summary_artifacts(route, candidates, settings, group_slug, group_label)
     if artifact:
         payload["artifact"] = artifact
