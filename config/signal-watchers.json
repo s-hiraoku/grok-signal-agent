@@ -20,6 +20,8 @@
     "default_route": "signal-catchup",
     "summary_artifacts": true,
     "summary_artifact_dir": "~/.hermes/state/ai-latest",
+    "summary_archive_dir": "~/.hermes/archive/ai-latest",
+    "summary_latest_dir": "~/.hermes/public/ai-latest/latest",
     "summary_artifact_routes": ["ai-latest-trigger"],
     "summary_png_renderer": "magick"
   },

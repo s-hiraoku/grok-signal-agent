@@ -1727,7 +1727,7 @@ JSON
 }
 
 test_signal_watcher_writes_ai_latest_summary_artifacts_for_snapshot_changes() {
-  local tmp_home snapshot config state log_file output artifact_dir summary_signature infographic_signature
+  local tmp_home snapshot config state log_file output artifact_dir archive_dir latest_dir infographic_signature
   tmp_home="$(mktemp -d)"
   snapshot="${tmp_home}/changelog.md"
   config="${tmp_home}/watchers.json"
@@ -1773,6 +1773,8 @@ JSON
     "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
     "summary_artifacts": true,
     "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
     "summary_artifact_routes": ["ai-latest-trigger"],
     "summary_png_renderer": ""
   },
@@ -1803,7 +1805,8 @@ JSON
   output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
   artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
   [[ -n "${artifact_dir}" ]] || fail "expected ai-latest artifact directory"
-  summary_signature="$(od -An -tx1 -N8 "${artifact_dir}/summary.png" | tr -d ' \n')"
+  archive_dir="$(find "${tmp_home}/archive" -mindepth 3 -maxdepth 3 -type d -print -quit)"
+  latest_dir="${tmp_home}/public/latest"
   infographic_signature="$(od -An -tx1 -N8 "${artifact_dir}/infographic.png" | tr -d ' \n')"
 
   assert_json_eq "${output}" ".candidates" "1"
@@ -1811,8 +1814,103 @@ JSON
   assert_file_contains "${artifact_dir}/analysis.md" "Local changelog changed"
   assert_file_contains "${artifact_dir}/signals.json" "+- Added Claude Code MCP release tracking."
   assert_file_contains "${artifact_dir}/summary.html" "AI最新"
-  assert_eq "${summary_signature}" "89504e470d0a1a0a" "summary.png signature"
+  assert_file_contains "${artifact_dir}/index.html" "AI最新"
+  [[ -n "${archive_dir}" ]] || fail "expected archived ai-latest artifact"
+  assert_file_contains "${archive_dir}/analysis.md" "Local changelog changed"
+  assert_file_contains "${tmp_home}/archive/index.jsonl" "local_path"
+  assert_file_contains "${latest_dir}/index.html" "AI最新"
+  [[ ! -e "${artifact_dir}/summary.png" ]] || fail "summary.png should not be generated"
+  [[ ! -e "${latest_dir}/summary.png" ]] || fail "latest summary.png should not be generated"
   assert_eq "${infographic_signature}" "89504e470d0a1a0a" "infographic.png signature"
+}
+
+test_signal_watcher_skips_images_for_version_only_ai_latest_changes() {
+  local tmp_home snapshot config state log_file output artifact_dir latest_dir
+  tmp_home="$(mktemp -d)"
+  snapshot="${tmp_home}/changelog.md"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${snapshot}" <<'MD'
+# Changelog
+
+## 2.1.164
+- Fixed CLI error handling.
+- Updated dependency pins.
+MD
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "snapshots": {
+    "local-version-changelog": {
+      "hash": "old",
+      "content": "# Changelog\n\n## 2.1.163\n- Fixed previous issue.",
+      "url": "https://example.com/changelog",
+      "title": "Local version changelog",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    }
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": ""
+  },
+  "keyword_weights": {
+    "claude code": 30,
+    "release": 15,
+    "fixed": 15
+  },
+  "sources": [
+    {
+      "id": "local-version-changelog",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${snapshot}",
+      "link_url": "https://example.com/changelog",
+      "title": "Local version bump",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["claude code", "release"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+  latest_dir="${tmp_home}/public/latest"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  [[ -n "${artifact_dir}" ]] || fail "expected ai-latest artifact directory"
+  assert_file_contains "${artifact_dir}/summary.html" "AI最新"
+  assert_file_contains "${latest_dir}/index.html" "AI最新"
+  [[ ! -e "${artifact_dir}/summary.png" ]] || fail "summary.png should not be generated"
+  [[ ! -e "${artifact_dir}/infographic.png" ]] || fail "infographic.png should not be generated"
+  [[ ! -e "${latest_dir}/summary.png" ]] || fail "latest summary.png should not be generated"
+  [[ ! -e "${latest_dir}/infographic.png" ]] || fail "latest infographic.png should not be generated"
 }
 
 test_x_pulse_watcher_primes_sample_urls() {
@@ -2748,6 +2846,7 @@ main() {
     test_signal_watcher_retries_candidates_blocked_by_cooldown
     test_signal_watcher_keeps_custom_routes_out_of_batch
     test_signal_watcher_writes_ai_latest_summary_artifacts_for_snapshot_changes
+    test_signal_watcher_skips_images_for_version_only_ai_latest_changes
     test_x_pulse_watcher_primes_sample_urls
     test_x_pulse_watcher_detects_sample_pulse
     test_x_pulse_watcher_rejects_low_engagement_url_bundle

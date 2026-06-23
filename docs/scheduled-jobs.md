@@ -272,9 +272,11 @@ Face, LangChain, GitHub Changelog, OpenAI News, OpenAI Codex/API changelog
 snapshot diffs, Cloudflare Changelog, Hacker News frontpage/best, Publickey,
 and release feeds. For `ai-latest-trigger`, the watcher writes local artifacts
 under `~/.hermes/state/ai-latest/`: `signals.json`, `analysis.md`,
-`summary.html`, and conditional image summaries. New-feature signals create
-`infographic.png`; version or release-note signals create `summary.png`. If both
-kinds are present, both images are written. Snapshot sources store the previous
+`summary.html`, and `index.html`. It mirrors the latest artifact to
+`~/.hermes/public/ai-latest/latest/` and archives every run under
+`~/.hermes/archive/ai-latest/`. New-feature signals also create a Japanese
+`infographic.png`; version-only release notes stay in the HTML and Markdown
+artifact without a separate summary image. Snapshot sources store the previous
 normalized page content in watcher state and emit a signal only when the fetched
 Markdown or HTML text changes.
 The batch trigger threshold is intentionally set out of normal reach so source

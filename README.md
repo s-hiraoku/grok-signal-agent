@@ -216,8 +216,10 @@ intended split is:
 - AI latest artifacts: for `ai-latest-trigger`, the signal watcher also writes
   local run artifacts under `~/.hermes/state/ai-latest/`, including
   `signals.json`, `analysis.md`, and `summary.html`. New-feature signals also
-  create `infographic.png`; version or release-note signals create
-  `summary.png`. If both kinds are present, both images are written.
+  create `infographic.png`; version-only release notes stay in HTML/Markdown
+  without a separate summary image. The latest artifact is mirrored to
+  `~/.hermes/public/ai-latest/latest/` for static hosting, while every run is
+  archived under `~/.hermes/archive/ai-latest/`.
   Anthropic and OpenAI changelog-style pages are watched as snapshots, so
   Markdown/HTML diffs can be preserved even when a source has no RSS feed.
 - X pulse watcher: sample recent X discussion with `x_search`; trigger a short

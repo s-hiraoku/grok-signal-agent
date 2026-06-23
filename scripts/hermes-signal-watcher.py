@@ -507,33 +507,81 @@ def write_summary_artifacts(route: str, candidates: list[dict[str, Any]], settin
     signals_path = artifact_dir / "signals.json"
     analysis_path = artifact_dir / "analysis.md"
     html_path = artifact_dir / "summary.html"
+    index_path = artifact_dir / "index.html"
 
     signals_path.write_text(json.dumps(candidates, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     analysis_path.write_text(render_summary_markdown(route, candidates), encoding="utf-8")
-    html_path.write_text(render_summary_html(route, candidates), encoding="utf-8")
+    html = render_summary_html(route, candidates)
+    html_path.write_text(html, encoding="utf-8")
+    index_path.write_text(html, encoding="utf-8")
 
     artifact = {
         "artifact_dir": str(artifact_dir),
         "signals_json": str(signals_path),
         "analysis_md": str(analysis_path),
         "summary_html": str(html_path),
+        "index_html": str(index_path),
     }
-    image_kinds = artifact_image_kinds(candidates)
-    if "summary" in image_kinds:
-        svg_path = artifact_dir / "summary.svg"
-        png_path = artifact_dir / "summary.png"
-        svg_path.write_text(render_summary_svg(route, candidates), encoding="utf-8")
-        render_summary_png(svg_path, png_path, settings)
-        artifact["summary_svg"] = str(svg_path)
-        artifact["summary_png"] = str(png_path)
-    if "infographic" in image_kinds:
+    if should_write_infographic(candidates):
         svg_path = artifact_dir / "infographic.svg"
         png_path = artifact_dir / "infographic.png"
         svg_path.write_text(render_infographic_svg(route, candidates), encoding="utf-8")
         render_summary_png(svg_path, png_path, settings)
         artifact["infographic_svg"] = str(svg_path)
         artifact["infographic_png"] = str(png_path)
+    archive_dir = archive_artifact(artifact_dir, artifact_id, settings)
+    if archive_dir:
+        artifact["archive_dir"] = str(archive_dir)
+    latest_dir = publish_latest_artifact(artifact_dir, settings)
+    if latest_dir:
+        artifact["latest_dir"] = str(latest_dir)
+        artifact["latest_index_html"] = str(latest_dir / "index.html")
     return artifact
+
+
+def archive_artifact(artifact_dir: Path, artifact_id: str, settings: dict[str, Any]) -> Path | None:
+    archive_root_value = settings.get("summary_archive_dir", "~/.hermes/archive/ai-latest")
+    if not archive_root_value:
+        return None
+    archive_root = expand_path(str(archive_root_value))
+    run_date = artifact_id[:8]
+    year = run_date[:4] if len(run_date) >= 4 else "unknown"
+    month = run_date[4:6] if len(run_date) >= 6 else "unknown"
+    target = archive_root / year / month / artifact_id
+    if target.exists():
+        shutil.rmtree(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(artifact_dir, target)
+    append_archive_index(archive_root, artifact_id, target)
+    return target
+
+
+def append_archive_index(archive_root: Path, artifact_id: str, target: Path) -> None:
+    index_path = archive_root / "index.jsonl"
+    record = {
+        "run_id": artifact_id,
+        "created_at": now_iso(),
+        "local_path": str(target),
+    }
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    with index_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def publish_latest_artifact(artifact_dir: Path, settings: dict[str, Any]) -> Path | None:
+    latest_dir_value = settings.get("summary_latest_dir", "~/.hermes/public/ai-latest/latest")
+    if not latest_dir_value:
+        return None
+    latest_dir = expand_path(str(latest_dir_value))
+    tmp_dir = latest_dir.with_name(latest_dir.name + ".tmp")
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    tmp_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(artifact_dir, tmp_dir)
+    if latest_dir.exists():
+        shutil.rmtree(latest_dir)
+    tmp_dir.replace(latest_dir)
+    return latest_dir
 
 
 def safe_slug(value: str) -> str:
@@ -587,20 +635,8 @@ def is_new_feature_candidate(candidate: dict[str, Any]) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
 
 
-def is_version_candidate(candidate: dict[str, Any]) -> bool:
-    text = candidate_text(candidate)
-    if re.search(r"\bv?\d+\.\d+(?:\.\d+)?(?:[-.][0-9a-z]+)*\b", text):
-        return True
-    return any(word in text for word in ["release notes", "releases.atom", "changelog", "リリース"])
-
-
-def artifact_image_kinds(candidates: list[dict[str, Any]]) -> list[str]:
-    kinds: list[str] = []
-    if any(is_new_feature_candidate(candidate) for candidate in candidates):
-        kinds.append("infographic")
-    if any(is_version_candidate(candidate) for candidate in candidates) or not kinds:
-        kinds.append("summary")
-    return kinds
+def should_write_infographic(candidates: list[dict[str, Any]]) -> bool:
+    return any(is_new_feature_candidate(candidate) for candidate in candidates)
 
 
 def provider_label(candidate: dict[str, Any]) -> str:
@@ -753,29 +789,6 @@ def render_svg_text(value: str, x: int, y: int, size: int, color: str, max_lines
     return f'<text x="{x}" y="{y}" font-size="{size}" fill="{color}">' + "".join(tspans) + "</text>"
 
 
-def render_summary_svg(route: str, candidates: list[dict[str, Any]]) -> str:
-    cards = []
-    positions = [(44, 150), (612, 150), (44, 346), (612, 346), (44, 542)]
-    for idx, candidate in enumerate(candidates[:5]):
-        x, y = positions[idx]
-        width = 520
-        height = 158 if idx < 4 else 88
-        cards.append(f'<rect x="{x}" y="{y}" width="{width}" height="{height}" rx="10" fill="#ffffff" stroke="#ded8ca"/>')
-        cards.append(f'<text x="{x + 22}" y="{y + 34}" font-size="16" font-weight="700" fill="#2f6f73">{html.escape(candidate["source_id"])} · スコア {candidate["score"]}</text>')
-        cards.append(render_svg_text(candidate["title"], x + 22, y + 70, 25, "#202124", 2, 34))
-        cards.append(render_svg_text(candidate["url"], x + 22, y + 130, 13, "#5f6368", 1, 62))
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
-  <rect width="1200" height="675" fill="#f6f3ea"/>
-  <rect x="0" y="0" width="1200" height="12" fill="#2f6f73"/>
-  <text x="44" y="74" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="46" font-weight="800" fill="#202124">AI最新</text>
-  <text x="44" y="110" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" fill="#5f6368">{html.escape(route)} · {html.escape(now_iso())}</text>
-  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
-    {''.join(cards)}
-  </g>
-</svg>
-"""
-
-
 def render_infographic_svg(route: str, candidates: list[dict[str, Any]]) -> str:
     top_candidates = candidates[:3]
     providers = sorted({provider_label(candidate) for candidate in top_candidates})
@@ -794,7 +807,7 @@ def render_infographic_svg(route: str, candidates: list[dict[str, Any]]) -> str:
         stat_cards.append(f'<text x="{x + 18}" y="193" font-size="12" fill="#5f6368">{html.escape(caption)}</text>')
 
     rows = []
-    y = 250
+    y = 270
     for idx, candidate in enumerate(top_candidates, 1):
         rows.append(f'<circle cx="74" cy="{y + 4}" r="18" fill="#2f6f73"/>')
         rows.append(f'<text x="74" y="{y + 11}" font-size="18" font-weight="800" text-anchor="middle" fill="#ffffff">{idx}</text>')
@@ -811,7 +824,7 @@ def render_infographic_svg(route: str, candidates: list[dict[str, Any]]) -> str:
   <text x="44" y="102" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="17" fill="#5f6368">公式ソースの変化を、何が重要か・次に何を見るかで整理</text>
   <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
     {''.join(stat_cards)}
-    <text x="44" y="228" font-size="18" font-weight="800" fill="#202124">注目ポイント（上位3件）</text>
+    <text x="44" y="232" font-size="18" font-weight="800" fill="#202124">注目ポイント（上位3件）</text>
     {''.join(rows)}
     <rect x="800" y="246" width="332" height="300" rx="12" fill="#ffffff" stroke="#ded8ca"/>
     <text x="826" y="282" font-size="22" font-weight="800" fill="#202124">読み方</text>
