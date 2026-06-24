@@ -85,6 +85,9 @@ class SignalItem:
     published_at: str = ""
     author: str = ""
     tags: list[str] | None = None
+    content_hash: str = ""
+    content_type: str = ""
+    etag: str = ""
 
     @property
     def stable_key(self) -> str:
@@ -107,9 +110,23 @@ def save_json(path: Path, data: Any) -> None:
     tmp.replace(path)
 
 
+def file_url_path(url: str) -> Path:
+    return Path(urllib.request.url2pathname(urllib.parse.urlparse(url).path))
+
+
+def fetch_bytes(url: str, timeout: int, user_agent: str) -> tuple[bytes, dict[str, str], str]:
+    if url.startswith("file://"):
+        return file_url_path(url).read_bytes(), {}, url
+    req = urllib.request.Request(url, headers={"User-Agent": user_agent})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+        headers = {key.lower(): value for key, value in resp.headers.items()}
+        return raw, headers, resp.geturl()
+
+
 def fetch_text(url: str, timeout: int, user_agent: str) -> str:
     if url.startswith("file://"):
-        return Path(urllib.parse.urlparse(url).path).read_text(encoding="utf-8")
+        return file_url_path(url).read_text(encoding="utf-8")
     req = urllib.request.Request(url, headers={"User-Agent": user_agent})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read()
@@ -249,6 +266,48 @@ def parse_html_links(source: dict[str, Any], text: str) -> list[SignalItem]:
             )
         )
     return items
+
+
+def document_title(source: dict[str, Any], url: str) -> str:
+    title = normalize_space(str(source.get("title") or ""))
+    if title:
+        return title
+    path = urllib.parse.urlparse(url).path.rstrip("/")
+    filename = urllib.parse.unquote(path.rsplit("/", 1)[-1])
+    return filename or source["id"]
+
+
+def parse_document(source: dict[str, Any], raw: bytes, headers: dict[str, str], final_url: str) -> list[SignalItem]:
+    content_hash = hashlib.sha256(raw).hexdigest()
+    content_type = headers.get("content-type") or source.get("content_type", "")
+    etag = headers.get("etag", "")
+    content_length = headers.get("content-length") or str(len(raw))
+    last_modified = parse_date(headers.get("last-modified", ""))
+    summary_parts = [
+        normalize_space(str(source.get("description") or "")),
+        f"content_sha256:{content_hash}",
+        f"bytes:{content_length}",
+    ]
+    if content_type:
+        summary_parts.append(f"content_type:{content_type}")
+    if etag:
+        summary_parts.append(f"etag:{etag}")
+
+    return [
+        SignalItem(
+            source_id=source["id"],
+            source_url=source["url"],
+            item_id=f"{canonical_url_key(final_url)}#{content_hash}",
+            title=document_title(source, final_url),
+            url=final_url,
+            summary=" ".join(part for part in summary_parts if part),
+            published_at=last_modified,
+            tags=list(source.get("tags", [])),
+            content_hash=content_hash,
+            content_type=content_type,
+            etag=etag,
+        )
+    ]
 
 
 def score_item(item: SignalItem, source: dict[str, Any], keyword_weights: dict[str, int]) -> tuple[int, list[str]]:
@@ -395,13 +454,18 @@ def main() -> int:
         if not source.get("enabled", True):
             continue
         try:
-            text = fetch_text(source["url"], timeout, user_agent)
-            if source.get("type") == "feed":
+            source_type = source.get("type")
+            if source_type == "feed":
+                text = fetch_text(source["url"], timeout, user_agent)
                 items = parse_feed(source, text)
-            elif source.get("type") == "html_links":
+            elif source_type == "html_links":
+                text = fetch_text(source["url"], timeout, user_agent)
                 items = parse_html_links(source, text)
+            elif source_type == "document":
+                raw, headers, final_url = fetch_bytes(source["url"], timeout, user_agent)
+                items = parse_document(source, raw, headers, final_url)
             else:
-                errors.append(f"{source.get('id')}: unsupported type {source.get('type')}")
+                errors.append(f"{source.get('id')}: unsupported type {source_type}")
                 continue
         except (urllib.error.URLError, TimeoutError, ET.ParseError, OSError, ValueError) as exc:
             errors.append(f"{source.get('id')}: {exc}")
@@ -419,7 +483,7 @@ def main() -> int:
             score, reasons = score_item(item, source, config.get("keyword_weights", {}))
             min_score = int(source.get("min_score", settings.get("default_min_score", 70)))
             if score >= min_score:
-                candidates.append({
+                candidate = {
                     "source_id": item.source_id,
                     "source_url": item.source_url,
                     "title": item.title,
@@ -434,7 +498,14 @@ def main() -> int:
                     "stable_key": key,
                     "route": source.get("route") or settings.get("default_route", "signal-catchup"),
                     "cooldown_minutes": int(source.get("cooldown_minutes", settings.get("default_cooldown_minutes", 90))),
-                })
+                }
+                if item.content_hash:
+                    candidate["content_hash"] = item.content_hash
+                if item.content_type:
+                    candidate["content_type"] = item.content_type
+                if item.etag:
+                    candidate["etag"] = item.etag
+                candidates.append(candidate)
 
     candidates.sort(key=lambda c: c["score"], reverse=True)
     candidate_keys = {c["stable_key"] for c in candidates}

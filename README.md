@@ -197,8 +197,9 @@ intended split is:
 
 - Hermes built-in service: keep Hermes Gateway running.
 - Signal watcher: monitor Zenn, wbsb.dev, Anthropic, GitHub Changelog, OpenAI
-  News, Cloudflare Changelog, Hacker News, Publickey, release feeds, and other
-  sources; score/dedupe/cooldown changes before any Discord post is triggered.
+  News, Cloudflare Changelog, Hacker News, Publickey, release feeds,
+  standalone PDFs, and other sources; score/dedupe/cooldown changes before any
+  Discord post is triggered.
 - X pulse watcher: sample recent X discussion with `x_search`; trigger a short
   `x-buzz-trigger` post only when engagement-qualified X posts appear.
 - Hermes webhook platform: event ingress and delivery targets.
@@ -216,9 +217,12 @@ The watcher configuration is in
 [config/signal-watchers.json](config/signal-watchers.json). It currently
 monitors Zenn, wbsb.dev, Anthropic News/Engineering/Research, GitHub Changelog,
 OpenAI News, Cloudflare Changelog, Hacker News frontpage/best, Publickey, and
-Hermes Agent releases. First run primes state only so old articles are not
-posted in bulk; later runs post only threshold-crossing new signals. The macOS
-installer copies the watcher runtime to
+Hermes Agent releases, plus the OpenAI Codex maxxing whitepaper PDF as a
+standalone document source. For `document` sources, the watcher stores a
+content hash so a later PDF replacement at the same URL can still become a new
+signal. First run primes state only so old articles/documents are not posted in
+bulk; later runs post only threshold-crossing new signals. The macOS installer
+copies the watcher runtime to
 `~/.hermes/runtime/grok-signal-agent/`; re-run the installer after changing the
 watcher code or config.
 

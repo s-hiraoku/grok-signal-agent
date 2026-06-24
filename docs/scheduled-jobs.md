@@ -222,15 +222,17 @@ repository keeps dynamic webhook subscriptions in
 registers them with `hermes webhook subscribe`.
 
 `scripts/hermes-signal-watcher.py` is the default upstream watcher. It reads
-`config/signal-watchers.json`, fetches configured feeds/pages, dedupes stable
-URLs, scores new items with keyword weights, applies route cooldowns, and sends
-only threshold-crossing payloads to Hermes webhooks. Zenn signals route to
+`config/signal-watchers.json`, fetches configured feeds/pages/documents,
+dedupes stable URLs or document content hashes, scores new items with keyword
+weights, applies route cooldowns, and sends only threshold-crossing payloads to
+Hermes webhooks. Zenn signals route to
 `zenn-dev-trigger`, wbsb.dev signals route to `wbsb-trigger`, and generic
 technical signals route to `signal-catchup` as `#tech-signals` posts. Generic
 sources include Anthropic News/Engineering/Research, GitHub Changelog, OpenAI
-News, Cloudflare Changelog, Hacker News frontpage/best, Publickey, and release
-feeds. When enough generic signals arrive together, the watcher can also route
-to `tech-digest-trigger`. The macOS installer runs it through
+News, the OpenAI Codex maxxing whitepaper PDF, Cloudflare Changelog, Hacker
+News frontpage/best, Publickey, and release feeds. When enough generic signals
+arrive together, the watcher can also route to `tech-digest-trigger`. The macOS
+installer runs it through
 `com.shiraoku.grok-signal-agent.signal-watcher` every 10 minutes. The periodic
 check is mechanical, but Discord posting is not: posts happen only when new
 signals cross the configured thresholds.

@@ -1306,6 +1306,73 @@ JSON
   assert_file_contains "${tmp_home}/watcher.log" "dry-run route=signal-catchup candidates=2"
 }
 
+test_signal_watcher_tracks_standalone_document_hash_changes() {
+  local tmp_home document config state log_file output seen_count
+  tmp_home="$(mktemp -d)"
+  document="${tmp_home}/codex-whitepaper.pdf"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  printf '%s\n' '%PDF-1.7 test codex whitepaper v1' > "${document}"
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": true,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET"
+  },
+  "keyword_weights": {
+    "openai": 22,
+    "codex": 28,
+    "whitepaper": 12
+  },
+  "sources": [
+    {
+      "id": "local-document",
+      "enabled": true,
+      "type": "document",
+      "url": "file://${document}",
+      "title": "OpenAI Codex maxxing whitepaper",
+      "description": "Standalone OpenAI Codex whitepaper PDF.",
+      "content_type": "application/pdf",
+      "base_score": 30,
+      "min_score": 70,
+      "route": "signal-catchup",
+      "tags": ["openai", "codex", "whitepaper", "pdf"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}")"
+  seen_count="$(jq -r '.seen | length' "${state}")"
+
+  assert_json_eq "${output}" ".observed" "1"
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_json_eq "${output}" ".sent" "0"
+  assert_json_eq "${output}" ".prime_only" "true"
+  assert_eq "${seen_count}" "1" "seen_count"
+  assert_file_contains "${log_file}" "primed 1 observed items; no webhook sent"
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  assert_json_eq "${output}" ".observed" "1"
+  assert_json_eq "${output}" ".candidates" "0"
+
+  printf '%s\n' 'updated document bytes' >> "${document}"
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+
+  assert_json_eq "${output}" ".observed" "1"
+  assert_json_eq "${output}" ".candidates" "1"
+}
+
 test_signal_watcher_retries_candidates_blocked_by_cooldown() {
   local tmp_home feed config state output log_file seen_count
   tmp_home="$(mktemp -d)"
@@ -2168,6 +2235,7 @@ main() {
     test_signal_watcher_scores_local_feed
     test_signal_watcher_reads_env_file_for_secret
     test_signal_watcher_parses_nested_html_links
+    test_signal_watcher_tracks_standalone_document_hash_changes
     test_signal_watcher_retries_candidates_blocked_by_cooldown
     test_signal_watcher_keeps_custom_routes_out_of_batch
     test_x_pulse_watcher_primes_sample_urls
