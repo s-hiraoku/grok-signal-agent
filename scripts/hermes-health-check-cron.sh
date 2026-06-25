@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -o pipefail
+set -euo pipefail
 
 HERMES_HOME_DIR="${HERMES_HOME:-${HOME}/.hermes}"
 HERMES_BIN="${HERMES_BIN:-${HOME}/.local/bin/hermes}"
@@ -151,12 +151,16 @@ check_xai_auth_hint
 
 {
   printf '%s issues=%s notes=%s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" "${#issues[@]}" "${#notes[@]}"
-  for item in "${issues[@]}"; do
-    printf 'issue: %s\n' "${item}"
-  done
-  for item in "${notes[@]}"; do
-    printf 'note: %s\n' "${item}"
-  done
+  if [[ "${#issues[@]}" -gt 0 ]]; then
+    for item in "${issues[@]}"; do
+      printf 'issue: %s\n' "${item}"
+    done
+  fi
+  if [[ "${#notes[@]}" -gt 0 ]]; then
+    for item in "${notes[@]}"; do
+      printf 'note: %s\n' "${item}"
+    done
+  fi
 } >> "${LOG_FILE}" 2>/dev/null || true
 
 if [[ "${#issues[@]}" -eq 0 && "${FORCE_REPORT}" != "1" ]]; then
@@ -168,9 +172,11 @@ if [[ "${#issues[@]}" -eq 0 ]]; then
 else
   printf 'Hermes health check: attention needed\n\n'
   printf 'Issues:\n'
-  for item in "${issues[@]}"; do
-    printf -- '- %s\n' "${item}"
-  done
+  if [[ "${#issues[@]}" -gt 0 ]]; then
+    for item in "${issues[@]}"; do
+      printf -- '- %s\n' "${item}"
+    done
+  fi
   printf '\n'
 fi
 

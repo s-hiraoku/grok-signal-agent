@@ -1515,14 +1515,12 @@ def render_infographic_html(route: str, fact: dict[str, Any]) -> str:
 def render_infographic_png(html_path: Path, png_path: Path, settings: dict[str, Any]) -> None:
     renderer = os.environ.get("HERMES_SUMMARY_PNG_RENDERER") or settings.get("summary_png_renderer", "playwright")
     if renderer == "playwright":
-        npx = shutil.which("npx")
-        if npx:
+        playwright = shutil.which("playwright")
+        if playwright:
             try:
                 subprocess.run(
                     [
-                        npx,
-                        "-y",
-                        "playwright@latest",
+                        playwright,
                         "screenshot",
                         "--browser",
                         "chromium",
@@ -1640,6 +1638,7 @@ def main() -> int:
 
     observed: list[SignalItem] = []
     observed_url_official: dict[str, bool] = {}
+    observed_by_url: dict[str, SignalItem] = {}
     candidates: list[dict[str, Any]] = []
     snapshot_updates: dict[str, dict[str, Any]] = {}
     errors: list[str] = []
@@ -1680,7 +1679,21 @@ def main() -> int:
             existing_is_official = observed_url_official.get(url_key)
             if existing_is_official is not None and (existing_is_official or not item_is_official):
                 continue
+            if existing_is_official is False and item_is_official:
+                previous = observed_by_url.get(url_key)
+                if previous:
+                    observed = [
+                        observed_item
+                        for observed_item in observed
+                        if observed_item.stable_key != previous.stable_key
+                    ]
+                    candidates = [
+                        candidate
+                        for candidate in candidates
+                        if candidate["stable_key"] != previous.stable_key
+                    ]
             observed_url_official[url_key] = item_is_official
+            observed_by_url[url_key] = item
             observed.append(item)
             if prime_existing:
                 mark_seen_item(state, item)
@@ -1857,14 +1870,7 @@ def send_candidates(
         return 0
     if last_sent and now_ts - float(last_sent) < cooldown_minutes * 60 and bypass_cooldown:
         log_line(log_path, f"cooldown bypass route={route}{log_group} candidates={len(candidates)} minutes={cooldown_minutes}")
-    artifact = write_summary_artifacts(route, candidates, settings, group_slug, group_label)
-    if artifact:
-        payload["artifact"] = artifact
-        log_line(log_path, f"summary artifacts route={route}{log_group} dir={artifact['artifact_dir']}")
-    if dry_run:
-        log_line(log_path, f"dry-run route={route}{log_group} candidates={len(candidates)}")
-        return 0
-    if not secret:
+    if not dry_run and not secret:
         log_line(log_path, f"missing secret env for route={route} env={secret_env}")
         send_alert(
             settings,
@@ -1872,6 +1878,13 @@ def send_candidates(
             f"route={route}\nenv={secret_env}\ncandidates={len(candidates)}",
             log_path,
         )
+        return 0
+    artifact = write_summary_artifacts(route, candidates, settings, group_slug, group_label)
+    if artifact:
+        payload["artifact"] = artifact
+        log_line(log_path, f"summary artifacts route={route}{log_group} dir={artifact['artifact_dir']}")
+    if dry_run:
+        log_line(log_path, f"dry-run route={route}{log_group} candidates={len(candidates)}")
         return 0
     try:
         status, body = post_webhook(url, secret, payload, timeout)

@@ -53,7 +53,7 @@ Return the briefing in this exact structure:
 2. Two short intro paragraphs, warm, bright, and approachable, like a young colleague sharing useful links. The opening should feel friendly and energetic from the first sentence, and lightly match the digest timing.
 3. One sentence exactly: `それじゃ、気になった話題を一緒に見ていこう！`.
 4. Insert a separator line containing only `---`.
-5. A `目次` section listing 4-6 topic titles, one per line, prefixed with `- `.
+5. A `目次` section listing 4-6 topic titles, one per line, prefixed with `-`.
 6. Insert a separator line containing only `---`.
 7. Detailed sections in the same order. Put a separator line containing only `---` before every detailed section. Each section starts with `### <title>` on its own line, then 2-4 concise paragraphs explaining what happened, why it matters for developers/AI-agent builders/Web engineers/IT watchers, and the observed traction. Aim for 4-6 sections on normal days and do not pad the digest with weak topics.
 8. Use `【続報】` in a title only when the post is clearly a continuation of an already ongoing topic.

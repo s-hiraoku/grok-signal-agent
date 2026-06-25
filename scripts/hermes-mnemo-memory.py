@@ -89,7 +89,7 @@ def extract_text_field(data: object) -> str:
         value = data.get(key)
         if isinstance(value, str):
             return value
-    for key in ("event", "extra"):
+    for key in ("event", "extra", "message"):
         value = data.get(key)
         text = extract_text_field(value)
         if text:

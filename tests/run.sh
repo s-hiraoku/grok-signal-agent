@@ -1500,6 +1500,77 @@ JSON
   assert_file_contains "${alert_log}" "Hermes signal watcher webhook send failed"
 }
 
+test_signal_watcher_skips_artifacts_when_secret_missing() {
+  local tmp_home feed config log_file output
+  tmp_home="$(mktemp -d)"
+  feed="${tmp_home}/feed.xml"
+  config="${tmp_home}/watchers.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${feed}" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Local Feed</title>
+    <item>
+      <title>OpenAI Codex release</title>
+      <link>https://example.com/codex-release</link>
+      <guid>codex-release</guid>
+      <description>New Codex release for AI agent workflows.</description>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${tmp_home}/state.json",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_TEST_MISSING_SIGNAL_SECRET",
+    "post_trigger_secret_env": "HERMES_TEST_MISSING_POST_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": ""
+  },
+  "keyword_weights": {
+    "openai": 22,
+    "codex": 28,
+    "release": 16,
+    "ai": 14
+  },
+  "sources": [
+    {
+      "id": "local-openai",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${feed}",
+      "base_score": 60,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["openai", "official"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --allow-first-run-send)"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_json_eq "${output}" ".sent" "0"
+  assert_file_contains "${log_file}" "missing secret env for route=ai-latest-trigger"
+  [[ ! -d "${tmp_home}/artifacts" ]] || fail "missing secret should not write summary artifacts"
+  [[ ! -d "${tmp_home}/public/latest" ]] || fail "missing secret should not publish latest artifacts"
+}
+
 test_signal_watcher_parses_nested_html_links() {
   local tmp_home page config output
   tmp_home="$(mktemp -d)"
@@ -1654,11 +1725,10 @@ JSON
       "enabled": true,
       "type": "feed",
       "url": "file://${hn_feed}",
-      "base_score": 10,
-      "min_score": 999,
+      "base_score": 80,
+      "min_score": 50,
       "route": "signal-catchup",
-      "prime_existing": true,
-      "tags": ["hacker news"]
+      "tags": ["hacker news", "claude", "ai"]
     },
     {
       "id": "anthropic-news-local",
@@ -1683,6 +1753,7 @@ JSON
 
   assert_json_eq "${output}" ".candidates" "1"
   assert_file_contains "${log_file}" "cooldown bypass route=ai-latest-trigger group=Anthropic"
+  assert_file_not_contains "${log_file}" "dry-run route=signal-catchup"
   assert_file_contains "${artifact_dir}/signals.json" "available today in beta"
   assert_file_contains "${artifact_dir}/facts.json" "Introducing Claude Tag"
   assert_file_contains "${artifact_dir}/infographic-01.html" "Claude Tag"
@@ -2990,6 +3061,16 @@ test_mnemo_memory_captures_only_configured_channel_and_recalls() {
   assert_contains "${output}" "覚えていること"
   assert_contains "${output}" "朝の通知は少なめが好き"
 
+  printf '%s\n' '{"message":{"content":"ネストしたmessage本文も記憶する [[nested-message]]"},"user_id":"u1","channel_id":"memory-channel","message_id":"m1-nested"}' \
+    | HERMES_MNEMO_MEMORY_CHANNEL_IDS="memory-channel" \
+      "${REPO_DIR}/scripts/hermes-mnemo-memory.py" \
+        --db "${db}" \
+        --export-dir "${export_dir}" \
+        capture-event
+
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" recall "ネストしたmessage")"
+  assert_contains "${output}" "ネストしたmessage本文も記憶する"
+
   output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" backlinks "discord-posting")"
   assert_contains "${output}" "[[discord-posting]] backlinks"
   assert_contains "${output}" "memory:"
@@ -3508,6 +3589,7 @@ main() {
     test_posting_admin_escapes_test_payload_and_rejects_unknown_routes
     test_signal_watcher_scores_local_feed
     test_signal_watcher_reads_env_file_for_secret
+    test_signal_watcher_skips_artifacts_when_secret_missing
     test_signal_watcher_parses_nested_html_links
     test_signal_watcher_fetches_official_news_body_and_bypasses_ai_latest_cooldown
     test_signal_watcher_fetches_openai_feed_body_and_dedupes_official_pages
