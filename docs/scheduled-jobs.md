@@ -1,9 +1,9 @@
 # Scheduled And Triggered Jobs Design
 
 Discord posting work uses both Hermes webhooks and Hermes cron. Webhooks own
-signal-driven posts; cron is reserved for intentionally time-based operational
-posts such as the X tech digest, weekday morning brief, and daily/weekly
-reviews.
+high-signal event posts; cron is reserved for intentionally time-based
+operational posts such as the weekday evening X tech digest, weekday morning
+brief, and weekly reviews.
 
 Hermes' built-in LaunchAgent is only process supervision. It starts and
 restarts Hermes Gateway. It must not contain business schedules, channel
@@ -11,9 +11,10 @@ routing, prompt text, or job-specific behavior.
 
 User-visible Discord posts should share the voice rules in
 `prompts/hermes-post-style.md`: friendly, recognizably ヘルメスちゃん, but still
-accurate and source-linked. Script-backed jobs inject this file at runtime;
-prompt-backed cron/webhook jobs carry the same rules directly in their prompt
-text.
+accurate and source-linked. Script-backed jobs inject this file at runtime.
+Prompt-backed webhook jobs reference `prompts/webhooks/*.md` from
+`config/hermes-webhooks.json`, and `scripts/register-hermes-webhooks.sh`
+appends the shared post style when `include_post_style` is true.
 
 ## Responsibilities
 
@@ -22,7 +23,7 @@ text.
 | Hermes built-in LaunchAgent | Gateway process lifecycle | schedules, channels, prompts |
 | Hermes Gateway | runtime host for webhooks, cron, and hooks | job-specific business logic |
 | Hermes webhook platform | event ingress and delivery target | deciding when external events happen |
-| `config/hermes-webhooks.json` | trigger declarations: route, channel, mode | shell control flow |
+| `config/hermes-webhooks.json` | trigger declarations: route, channel, mode, prompt file | shell control flow or long prompt text |
 | `scripts/register-hermes-webhooks.sh` | generic JSON-to-Hermes-webhook registration | hardcoded trigger definitions |
 | `config/hermes-cronjobs.json` | explicit time-based jobs and disabled legacy cleanup declarations | signal-driven event detection |
 | `scripts/register-hermes-cronjobs.sh` | creates/updates enabled cron jobs and removes disabled legacy jobs by name | deciding external event significance |
@@ -34,19 +35,28 @@ text.
 `config/hermes-webhooks.json` declares:
 
 - `signal-catchup`
+- `ai-latest-trigger`
 - `tech-digest-trigger`
 - `x-buzz-trigger`
-- `zenn-dev-trigger`
-- `wbsb-trigger`
+- `github-pr-review-trigger`
 - `nightly-dreaming-trigger`
+
+`zenn-dev-trigger` and `wbsb-trigger` remain as disabled cleanup entries for
+old subscriptions. Zenn watcher sources now route through `signal-catchup` so
+article notifications are consolidated into `#tech-signals` instead of
+creating source-specific channel noise. wbsb.dev is no longer monitored.
 
 The `tech-digest-trigger` route uses `mode: "script"` and calls
 `hermes-tech-digest-cron.sh`. This is now a manual/script route for exceptional
-full digest runs outside the normal 08:00/12:30/18:00 cron schedule. The script
-generates the digest, saves digest/evaluation artifacts, lints the digest,
-emits structured metadata, optionally writes back to gbrain, and prints the
-final Discord message to stdout. Hermes' webhook CLI currently accepts prompt
-subscriptions rather than native script subscriptions, so
+full digest runs outside the normal weekday 18:00 cron schedule. The script
+generates the digest, saves digest and quality artifacts, lints the digest,
+emits structured metadata, and prints the final Discord message to stdout. It
+does not run the self-evaluation or gbrain write-back inline; those are handled
+by `hermes-tech-digest-evaluate-cron.sh` so delivery does not spend the full
+cron timeout budget after the post has already been generated.
+
+Hermes' webhook CLI currently accepts prompt subscriptions rather than native
+script subscriptions, so
 `scripts/register-hermes-webhooks.sh` renders a deterministic shell prompt for
 script-mode routes. Registration fails if the referenced repository script is
 missing, and the rendered command checks that the runtime copy exists before
@@ -57,7 +67,18 @@ routes.
 The `x-buzz-trigger` route uses `mode: "prompt"` and receives X pulse watcher
 signals. It does not run the full digest. It posts a short Hermes-chan style
 introduction to the engagement-qualified X/Twitter posts in
-`payload.qualified_candidates`.
+`payload.qualified_candidates`. It delivers to `#tech-signals`, and the X
+pulse watcher uses stricter engagement thresholds and a longer cooldown so
+silence is the default.
+
+The `ai-latest-trigger` route uses `mode: "prompt"` and receives official AI,
+model, agent, and tooling source signals. It posts only source-backed official
+or engineering-focused updates to `#ai-latest`.
+
+The `github-pr-review-trigger` route uses `mode: "prompt"` and receives GitHub
+webhook or external PR monitor payloads. It is intentionally event-driven: it
+summarizes review requests, CI failures, merge conflicts, and stale-review
+signals only when an upstream GitHub event or monitor sends a payload.
 
 The `nightly-dreaming-trigger` route uses `mode: "script"` and calls
 `hermes-dreaming-cron.sh`. That script is an internal memory maintenance
@@ -67,6 +88,10 @@ dreaming report under `~/.hermes/state/dreaming/`. It does not delete raw
 memory; it replaces only the current working memory view
 `~/.hermes/state/hermes-chan-memory.md` with the recomposed section from the
 report.
+
+`hermes-chat` is the main conversation channel for direct interaction. Runtime
+health and operational failures are kept out of the conversation channel and
+sent to `#hermes-info` only when attention is needed.
 
 ## Quality Gate
 
@@ -112,23 +137,37 @@ scripts/register-hermes-webhooks.sh
 different override file in tests or automation. Any channel missing from the
 override falls back to the committed `channels` entry.
 
+The committed default maps `ai-latest` and `tech-signals` to separate Discord
+channels. Keep official AI/model/tooling updates in `#ai-latest`; route broader
+technical signals and X buzz to `#tech-signals`.
+
 ## Current Cron Jobs
 
 `config/hermes-cronjobs.json` declares these active time-based posts:
 
-- `平日9:50リマインダー`: weekday 09:50 `#morning-brief`, using
+- `平日8:00リマインダー`: weekday 08:00 `#morning-brief`, using
   `hermes-morning-brief-cron.sh` to fetch direct RSS/Atom sources and Google
   Workspace Calendar events before posting. Monday posts include both today's
   schedule and the current week's schedule.
-- `tech-digest 08:00`: daily 08:00 `#tech-digest`.
-- `tech-digest 12:30`: daily 12:30 `#tech-digest`.
-- `tech-digest 18:00`: daily 18:00 `#tech-digest`.
+- `tech-digest 18:00`: weekday 18:00 `#tech-digest`.
+- `tech-digest evaluation 18:20`: weekday 18:20 `#hermes-info`, normally
+  silent. It evaluates the latest digest and performs optional gbrain write-back
+  after the Discord delivery path has completed.
+- `Hermes health check`: daily 08:30 `#hermes-info`, using
+  `hermes-health-check-cron.sh`. Normal runs emit no stdout, so Hermes cron
+  delivers nothing; failures produce an operational health report.
+- `Hermes disk watchdog`: every 15 minutes `#hermes-info`, using
+  `hermes-disk-watchdog-cron.sh`. Normal runs emit no stdout; set
+  `HERMES_DISK_WATCHDOG_THRESHOLD` and `HERMES_DISK_WATCHDOG_PATHS` to tune it.
+- `Hermes SSL expiry watchdog`: daily 09:10 `#hermes-info`, using
+  `hermes-ssl-expiry-watchdog-cron.sh`. It is silent unless
+  `HERMES_SSL_WATCH_HOSTS` is set and a certificate is near expiry or cannot be
+  checked.
 - `金曜17時gbrainサマリー`: Friday 17:00 `#weekly-review`, using
   `hermes-weekly-review-cron.sh` to summarize gbrain and honcho updates/status.
-- `毎晩23:30 gbrain/honcho daily review`: nightly 23:30 `#daily-review`, using
-  `hermes-daily-review-cron.sh`.
 
-The old nightly dreaming post remains disabled in the same file so
+The old morning/lunch tech digests, nightly dreaming post, and daily
+gbrain/honcho review remain disabled in the same file so
 `scripts/register-hermes-cronjobs.sh` can remove stale registered jobs by name.
 
 ## Source Links
@@ -210,6 +249,9 @@ That keeps event triggers extensible without adding a second scheduler.
 
 Current event-trigger helpers:
 
+- `hermes-mnemo-memory-hook.sh`: captures messages posted in configured memory
+  inbox channels (`HERMES_MNEMO_MEMORY_CHANNEL_IDS`) into the local mnemo-like
+  SQLite/Markdown store. It does not capture normal conversation channels.
 - `hermes-gbrain-remember.sh`: captures explicit "remember this" messages as
   `note` pages.
 - `hermes-discord-feedback.sh`: captures explicit feedback and follow-up/deep
@@ -224,13 +266,34 @@ registers them with `hermes webhook subscribe`.
 `scripts/hermes-signal-watcher.py` is the default upstream watcher. It reads
 `config/signal-watchers.json`, fetches configured feeds/pages, dedupes stable
 URLs, scores new items with keyword weights, applies route cooldowns, and sends
-only threshold-crossing payloads to Hermes webhooks. Zenn signals route to
-`zenn-dev-trigger`, wbsb.dev signals route to `wbsb-trigger`, and generic
-technical signals route to `signal-catchup` as `#tech-signals` posts. Generic
-sources include Anthropic News/Engineering/Research, GitHub Changelog, OpenAI
-News, Cloudflare Changelog, Hacker News frontpage/best, Publickey, and release
-feeds. When enough generic signals arrive together, the watcher can also route
-to `tech-digest-trigger`. The macOS installer runs it through
+only threshold-crossing payloads to Hermes webhooks. Official AI sources route
+to `ai-latest-trigger` as `#ai-latest` posts. Zenn and generic technical
+signals route to `signal-catchup` as consolidated `#tech-signals` posts.
+Generic sources include Anthropic News/Engineering/Research, Anthropic Claude
+Code and Claude Platform snapshot diffs, Google AI, Mistral, Meta AI, Hugging
+Face, LangChain, GitHub Changelog, OpenAI News, OpenAI Codex/API changelog
+snapshot diffs, Cloudflare Changelog, Hacker News frontpage/best, Publickey,
+and release feeds. For `ai-latest-trigger`, the watcher writes local artifacts
+under `~/.hermes/state/ai-latest/`: `signals.json`, `analysis.md`,
+`summary.html`, and `index.html`. It splits `ai-latest-trigger` by provider, so
+OpenAI and Anthropic create separate Discord payloads and separate latest
+directories such as `~/.hermes/public/ai-latest/latest/openai/` and
+`~/.hermes/public/ai-latest/latest/anthropic/`. Every run is archived under
+`~/.hermes/archive/ai-latest/`. New-feature signals are split into one Japanese
+HTML/CSS feature card per feature (`infographic-01.html` plus
+`infographic-01.png`, `infographic-02.html` plus `infographic-02.png`, ...),
+and the first image is copied to `infographic.png` for preview compatibility.
+The PNGs are rendered from the HTML with Playwright when `summary_png_renderer`
+is `playwright`.
+Discord posts attach all generated feature card images. Before
+rendering images, the watcher re-checks the official source URL and stores the
+evidence in `facts.json` and `factcheck.md`. Version-only release notes stay in
+the HTML and Markdown artifact without a separate summary image. Snapshot
+sources store the previous normalized page content in watcher state and emit a
+signal only when the fetched Markdown or HTML text changes.
+The batch trigger threshold is intentionally set out of normal reach so source
+movement does not automatically start a full tech digest. The macOS installer
+runs it through
 `com.shiraoku.grok-signal-agent.signal-watcher` every 10 minutes. The periodic
 check is mechanical, but Discord posting is not: posts happen only when new
 signals cross the configured thresholds.
@@ -257,11 +320,11 @@ and is posted by Hermes cron in the morning, at lunch, and in the evening.
 The default `signal-catchup` route is intentionally generic: an upstream
 watcher decides that something changed, POSTs the event to
 `/webhooks/signal-catchup`, and Hermes summarizes the payload into the
-`tech-signals` channel. Zenn and wbsb.dev use dedicated routes and channels so
-operational checks can see those sources separately. X pulse signals use
-`x-buzz-trigger` and `#x-buzz-info` for short buzzing-post introductions. Full
-tech digest, morning, and review posts are cron jobs because their value is
-tied to a specific local time.
+`tech-signals` channel. Zenn uses the same consolidated route, and wbsb.dev has
+been removed as a source. X pulse signals use
+`x-buzz-trigger` and `#tech-signals` for short buzzing-post introductions. Full
+tech digest, morning, and weekly review posts are cron jobs because their value
+is tied to a specific local time.
 
 Setup outline:
 

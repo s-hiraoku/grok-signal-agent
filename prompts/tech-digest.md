@@ -13,16 +13,18 @@ Prefer posts since the previous digest window that are visibly getting traction.
 
 Rank candidates by engagement and conversation signals: reposts, likes, replies, quote posts, bookmark/share-like signals if available, notable builders commenting, or the same topic being discussed by multiple independent developer/AI/Web/IT accounts.
 
-Use a soft traction gate before writing the digest. Prefer posts with at least
-30 likes, 5 reposts, 4 replies+quotes, 2,000 views/impressions, or equivalent
-visible discussion. Official releases, security/incident updates,
-primary-source maintainer announcements, release notes, and hands-on technical
-experiments can be included with lower reaction counts when they are clearly
-useful to builders.
+Use a strict traction gate before writing the digest. Prefer posts with at
+least 100 likes, 15 reposts, 20 replies+quotes, 10,000 views/impressions, or
+equivalent visible discussion from notable builders. Official releases,
+security/incident updates, primary-source maintainer announcements, release
+notes, and hands-on technical experiments can be included with lower reaction
+counts only when they are clearly useful to this operator's AI-agent,
+developer-tooling, Hermes, Codex, Claude Code, MCP, Web, or infrastructure
+work.
 
 Do not publish an empty "no qualifying posts" digest just because the day is
 quiet. If high-traction posts are scarce, produce a compact low-signal digest
-with the best 4-8 source-backed items you can find, and clearly label their
+with the best 4-6 source-backed items you can find, and clearly label their
 reaction line as early traction, quiet but primary-source, or maintainer signal.
 Only return zero topics when x_search finds no direct X/Twitter source URLs at
 all across the requested categories.
@@ -51,9 +53,9 @@ Return the briefing in this exact structure:
 2. Two short intro paragraphs, warm, bright, and approachable, like a young colleague sharing useful links. The opening should feel friendly and energetic from the first sentence, and lightly match the digest timing.
 3. One sentence exactly: `それじゃ、気になった話題を一緒に見ていこう！`.
 4. Insert a separator line containing only `---`.
-5. A `目次` section listing 4-10 topic titles, one per line, prefixed with `- `.
+5. A `目次` section listing 4-6 topic titles, one per line, prefixed with `-`.
 6. Insert a separator line containing only `---`.
-7. Detailed sections in the same order. Put a separator line containing only `---` before every detailed section. Each section starts with `### <title>` on its own line, then 2-5 concise paragraphs explaining what happened, why it matters for developers/AI-agent builders/Web engineers/IT watchers, and the observed traction. Aim for 6-10 sections on normal days and 4-8 sections on quiet windows such as early morning.
+7. Detailed sections in the same order. Put a separator line containing only `---` before every detailed section. Each section starts with `### <title>` on its own line, then 2-4 concise paragraphs explaining what happened, why it matters for developers/AI-agent builders/Web engineers/IT watchers, and the observed traction. Aim for 4-6 sections on normal days and do not pad the digest with weak topics.
 8. Use `【続報】` in a title only when the post is clearly a continuation of an already ongoing topic.
 9. Under each section, include 1-3 related post entries in this style: `<account name>: <short Japanese summary or translated quote>` followed by the direct URL on the next line, then `反応: <likes/reposts/replies/quotes/views or the concrete visible traction signal>` on the next line. If the entry relies on an external quoted/linked page, add `参照ページ: <direct URL>` on the following line.
 

@@ -1,12 +1,12 @@
 ---
 name: hermes-posting-admin
-description: Use when the user asks Hermes to change, inspect, test, or operate Discord posting settings, cron posts, webhook triggers, Zenn/wbsb routes, watcher thresholds, or tech digest delivery.
+description: Use when the user asks Hermes to change, inspect, test, or operate Discord posting settings, cron posts, webhook triggers, Zenn routes, watcher thresholds, or tech digest delivery.
 version: 1.0.0
 author: s-hiraoku
 license: MIT
 metadata:
   hermes:
-    tags: [posting, discord, cron, webhook, zenn, wbsb, watcher, operations]
+    tags: [posting, discord, cron, webhook, zenn, watcher, operations]
     related_skills: [webhook-subscriptions]
 ---
 
@@ -34,7 +34,7 @@ Use this skill when the user asks in Japanese or English to:
 
 - 投稿設定を変える, 投稿の設定を追加する, Discord投稿を調整する
 - cron投稿, morning brief, weekly review, daily review を変更する
-- webhook trigger, event trigger, Zenn, wbsb, X tech digest, X buzz posts を設定する
+- webhook trigger, event trigger, Zenn, X tech digest, X buzz posts を設定する
 - 閾値, source route, watcher, 発火条件, cooldown を調整する
 - 今の投稿設定を確認する, 発火テストする, 運用開始する
 
@@ -47,7 +47,7 @@ Edit these repo files first:
 
 - `config/hermes-cronjobs.json`: time-based posting jobs.
 - `config/hermes-webhooks.json`: event-triggered Hermes routes.
-- `config/signal-watchers.json`: feed/page watchers such as Zenn and wbsb.dev.
+- `config/signal-watchers.json`: feed/page watchers such as Zenn and official AI/developer sources.
 - `config/x-pulse-watchers.json`: X/Twitter pulse watcher thresholds.
 - `prompts/tech-digest.md`: long-form X tech digest prompt.
 - `prompts/hermes-post-style.md`: shared Discord voice for Hermes-chan posts.
@@ -81,7 +81,7 @@ Do not edit runtime copies as the source of truth.
 5. Test relevant routes:
 
    ```bash
-   ~/.hermes/bin/hermes-posting-admin.sh test-webhooks zenn-dev-trigger wbsb-trigger
+   ~/.hermes/bin/hermes-posting-admin.sh test-webhooks signal-catchup ai-latest-trigger x-buzz-trigger
    ~/.hermes/bin/hermes-posting-admin.sh dry-run-watchers
    ```
 
@@ -92,14 +92,14 @@ Do not edit runtime copies as the source of truth.
 Change a watcher source route:
 
 ```bash
-~/.hermes/bin/hermes-posting-admin.sh set-source-route zenn-trending zenn-dev-trigger
+~/.hermes/bin/hermes-posting-admin.sh set-source-route zenn-trending signal-catchup
 ~/.hermes/bin/hermes-posting-admin.sh sync
 ```
 
 Change a watcher threshold:
 
 ```bash
-~/.hermes/bin/hermes-posting-admin.sh set-source-threshold wbsb-feed 45
+~/.hermes/bin/hermes-posting-admin.sh set-source-threshold zenn-trending 74
 ~/.hermes/bin/hermes-posting-admin.sh sync
 ~/.hermes/bin/hermes-posting-admin.sh dry-run-watchers
 ```
@@ -107,7 +107,7 @@ Change a watcher threshold:
 Test only lightweight webhook routes:
 
 ```bash
-~/.hermes/bin/hermes-posting-admin.sh test-webhooks signal-catchup x-buzz-trigger zenn-dev-trigger wbsb-trigger
+~/.hermes/bin/hermes-posting-admin.sh test-webhooks signal-catchup ai-latest-trigger x-buzz-trigger
 ```
 
 Test expensive routes only when the user clearly asks, because these can create
@@ -119,16 +119,17 @@ real Discord posts and may use X search or LLM calls:
 
 ## Current Posting Model
 
-- `morning-brief` stays as Hermes cron at weekday 09:50.
+- `morning-brief` stays as Hermes cron at weekday 08:00.
 - `weekly-review` stays as Hermes cron at Friday 17:00.
-- `daily-review` stays as Hermes cron at 23:30.
-- `tech-digest 08:00`, `tech-digest 12:30`, and `tech-digest 18:00` stay as Hermes cron posts.
+- `Hermes health check` stays as Hermes cron at daily 08:30 and posts to `#hermes-info` only when attention is needed.
+- `tech-digest 18:00` stays as the only scheduled tech digest, on weekdays.
+- `tech-digest 08:00`, `tech-digest 12:30`, `daily-review`, and nightly dreaming remain disabled cleanup cron entries.
 - `tech-digest-trigger` is a manual/script route for running the full digest outside the cron schedule.
-- `x-buzz-trigger` is event-driven and receives lightweight X pulse watcher signals.
-- `zenn-dev-trigger` is event-driven and receives Zenn watcher signals.
-- `wbsb-trigger` is event-driven and receives wbsb.dev watcher signals.
+- `ai-latest-trigger` is event-driven and receives high-signal official AI source signals.
+- `x-buzz-trigger` is event-driven and receives strongly engagement-qualified X pulse watcher signals.
+- `zenn-dev-trigger` and `wbsb-trigger` are disabled cleanup webhook entries. Zenn signals route through `signal-catchup`; wbsb.dev is no longer monitored.
 - `signal-catchup` is generic event-driven catch-up.
-- `nightly-dreaming-trigger` is memory maintenance, not a normal news post.
+- `nightly-dreaming-trigger` is memory maintenance, not a normal news post, and uses the main `#hermes-chat` conversation channel.
 
 ## Safety Rules
 
@@ -137,7 +138,7 @@ real Discord posts and may use X search or LLM calls:
 - Do not edit `~/.hermes/cron/jobs.json` directly; use sync or `hermes cron`.
 - Do not expose webhook secrets in replies.
 - For new Discord channels, require the channel ID before changing delivery.
-- For Zenn/wbsb changes, keep direct source URLs mandatory in prompts.
+- For Zenn changes, keep direct source URLs mandatory in prompts.
 - Preserve the Hermes-chan posting voice. User-visible Discord posts should not
   become anonymous reports; keep `prompts/hermes-post-style.md` synced.
 - If a route is expensive, say so before running a test unless the user asked

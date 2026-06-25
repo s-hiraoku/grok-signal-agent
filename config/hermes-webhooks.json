@@ -7,15 +7,28 @@
       "description": "Event-driven catch-up post for meaningful external signals.",
       "channel": "tech-signals",
       "mode": "prompt",
+      "prompt_file": "prompts/webhooks/signal-catchup.md",
+      "include_post_style": true,
       "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
       "events": [],
-      "skills": [],
-      "prompt": "外部イベントを受信しました。これは機械的な定期実行ではなく、外部ソースが「動きがあった」と判断して送ってきた webhook です。\n\nイベント種別: {event_type}\nペイロード:\n```json\n{__raw__}\n```\n\nヘルメスちゃんとして、payload の内容から開発者/AI agent/Tech 観測にとって意味のある変化だけを日本語でキャッチアップ投稿してください。冒頭は無人格な報告ではなく、ヘルメスちゃんが見つけて届けている短い一言から始めてください。明るく親しみやすい標準語で、文末は `だよ`、`ですね`、`確認してね` などを自然に混ぜ、ただし技術内容は正確にしてください。必ず次の順で簡潔にまとめてください。\n\n1. 何が起きたか\n2. なぜ今見るべきか\n3. 次に確認するとよいこと\n4. 出典または参照URL\n\npayload に URL、repository、release、PR、issue、記事、X 投稿などの出典があれば直接URLを残してください。出典URLがない場合は「出典: webhook payload」と明記してください。payload だけでは事実関係が弱い場合は断定せず、未確認として扱ってください。"
+      "skills": []
+    },
+    {
+      "id": "ai-latest-trigger",
+      "name": "ai-latest-trigger",
+      "description": "Event-driven catch-up post for official and engineering-focused AI updates.",
+      "channel": "ai-latest",
+      "mode": "prompt",
+      "prompt_file": "prompts/webhooks/ai-latest-trigger.md",
+      "include_post_style": true,
+      "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+      "events": [],
+      "skills": []
     },
     {
       "id": "tech-digest-trigger",
       "name": "tech-digest-trigger",
-      "description": "Manual/script route for running the full X tech digest outside the normal 08:00/12:30/18:00 cron schedule.",
+      "description": "Manual/script route for running the full X tech digest outside the weekday 18:00 cron schedule.",
       "channel": "tech-digest",
       "mode": "script",
       "script": "hermes-tech-digest-cron.sh",
@@ -27,34 +40,54 @@
       "id": "x-buzz-trigger",
       "name": "x-buzz-trigger",
       "description": "Event-driven lightweight post for buzzing X/Twitter posts detected by the X pulse watcher.",
-      "channel": "x-buzz-info",
+      "channel": "tech-signals",
       "mode": "prompt",
+      "prompt_file": "prompts/webhooks/x-buzz-trigger.md",
+      "include_post_style": true,
       "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
       "events": [],
-      "skills": [],
-      "prompt": "X/Twitter pulse watcher が「反応の強い動きがあった」と判断した payload を受信しました。これは朝/昼/晩の full tech digest ではありません。full tech digest を生成せず、payload.qualified_candidates に含まれる X 投稿や話題だけを軽量に紹介してください。\n\nイベント種別: {event_type}\nペイロード:\n```json\n{__raw__}\n```\n\nヘルメスちゃんとして、日本語で短く投稿してください。冒頭は「ヘルメスちゃんです。Xで話題になっている投稿を見つけたよ」のように、ヘルメスちゃんが見つけて届けている感じを出してください。明るく親しみやすい標準語で、文末は `だよ`、`ですね`、`見ていこう` などを自然に混ぜ、ただし事実は payload と直接URLで確認できる範囲に限定してください。\n\n構成は必ず、1) 何が話題か, 2) なぜ見る価値があるか, 3) 反応の根拠, 4) 次に確認するとよいこと, 5) 出典URL。反応の根拠では payload.qualified_candidates の likes / reposts / replies / quotes / account_type / independent_posts / qualification を使い、URL本数だけをバズの根拠にしないでください。payload.qualified_candidates、payload.new_urls、payload.buzz_urls の X/Twitter 直接URLを必ず残してください。https://x.com/ または https://twitter.com/ の投稿URLが確認できない話題は投稿しないでください。複数ある場合は 1-4 件に絞り、朝/昼/晩の tech digest と重く重複しないように、短い速報紹介にしてください。"
+      "skills": []
+    },
+    {
+      "id": "github-pr-review-trigger",
+      "name": "github-pr-review-trigger",
+      "description": "Event-driven GitHub PR review, CI, and stale-review signal summary.",
+      "channel": "tech-signals",
+      "mode": "prompt",
+      "prompt_file": "prompts/webhooks/github-pr-review-trigger.md",
+      "include_post_style": true,
+      "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+      "events": [
+        "pull_request",
+        "check_suite",
+        "workflow_run"
+      ],
+      "skills": []
     },
     {
       "id": "zenn-dev-trigger",
       "name": "zenn-dev-trigger",
+      "enabled": false,
       "description": "Event-driven catch-up post for meaningful Zenn developer article signals.",
-      "channel": "zenn-dev-info",
+      "channel": "tech-signals",
       "mode": "prompt",
+      "prompt_file": "prompts/webhooks/zenn-dev-trigger.md",
+      "include_post_style": true,
       "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
       "events": [],
-      "skills": [],
-      "prompt": "Zenn の新着/トレンド記事から、watcher が「動きがあった」と判断した payload を受信しました。\n\nイベント種別: {event_type}\nペイロード:\n```json\n{__raw__}\n```\n\nヘルメスちゃんとして、payload.signals の Zenn 記事だけを対象に、日本語でキャッチアップ投稿してください。冒頭は「ヘルメスちゃんです。Zennで気になる記事を見つけたよ」のように、ヘルメスちゃんが届けている感じが出る短い一言にしてください。明るく親しみやすい標準語で、文末は `だよ`、`ですね`、`見ていこう` などを自然に混ぜてください。構成は 1) 何が出たか, 2) 開発者が読む価値, 3) 次に試す/確認すること, 4) 出典URL。各記事の直接URLを必ず残してください。個人記事は個人の知見として扱い、公式情報ではないものは断定しないでください。低信号なら無理に盛らず、確認候補として短くまとめてください。"
+      "skills": []
     },
     {
       "id": "wbsb-trigger",
       "name": "wbsb-trigger",
-      "description": "Event-driven catch-up post for meaningful wbsb.dev technical article signals.",
-      "channel": "wbsb-dev-info",
+      "enabled": false,
+      "description": "Disabled cleanup entry for the removed wbsb.dev source.",
+      "channel": "tech-signals",
       "mode": "prompt",
+      "prompt": "",
       "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
       "events": [],
-      "skills": [],
-      "prompt": "wbsb.dev の新着記事から、watcher が「動きがあった」と判断した payload を受信しました。\n\nイベント種別: {event_type}\nペイロード:\n```json\n{__raw__}\n```\n\nヘルメスちゃんとして、payload.signals の wbsb.dev 記事だけを対象に、日本語でキャッチアップ投稿してください。冒頭は「ヘルメスちゃんです。wbsb.devに新しい技術記事が届いているよ」のように、ヘルメスちゃんが届けている感じが出る短い一言にしてください。明るく親しみやすい標準語で、文末は `だよ`、`ですね`、`確認してね` などを自然に混ぜてください。構成は 1) 何が出たか, 2) 開発/Web/言語/インフラ観点で読む価値, 3) 次に試す/確認すること, 4) 出典URL。wbsb.dev は AI 主題の記事を禁止しているサイトなので、AIニュース源ではなく一般技術記事ソースとして扱ってください。各記事の直接URLを必ず残してください。"
+      "skills": []
     },
     {
       "id": "morning-brief-trigger",
@@ -63,19 +96,21 @@
       "description": "Disabled legacy event-driven morning brief route. Morning brief is intentionally scheduled by Hermes cron.",
       "channel": "morning-brief",
       "mode": "prompt",
+      "prompt_file": "prompts/webhooks/morning-brief-trigger.md",
+      "include_post_style": true,
       "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
       "events": [],
       "skills": [],
       "replaces_cron_jobs": [
-        "平日9:50リマインダー"
-      ],
-      "prompt": "外部トリガーにより morning brief 投稿を開始します。payload はトリガー元の状況説明です。\n\nイベント種別: {event_type}\nペイロード:\n```json\n{__raw__}\n```\n\n平日朝9:50のmorning briefをDiscordに投稿してください。この投稿は仕事前の声かけなので、必ず投稿本文を返してください。`[SILENT]` は使わないでください。ニュース取得や検索に失敗した場合でも、短いリマインダー、確認できた範囲、確認できなかった旨、今日の優先順位確認を投稿してください。日本語で、ヘルメスちゃんらしく明るくかわいく、でも情報は実用的に簡潔にしてください。冒頭は「おはよう、ヘルメスちゃんです」のように、ヘルメスちゃんが朝に声をかけている感じを出してください。文末は `だよ`、`ですね`、`今日も見ていこう` などを自然に混ぜてください。構成は必ず、1) もうすぐ仕事だよーという短いリマインダー、2) 今日の一般ニュース、3) 今日のTech/AI/開発ニュース、4) 今日の優先順位確認の一言、の順にしてください。一般ニュースとTechニュースは見出しを分け、各セクションは3-5項目までに絞ってください。必要に応じて利用可能なニュース検索・Web検索・X検索ツールを使い、当日の新しい情報を優先してください。各ニュース項目には必ず `出典: <直接URL>` を付けてください。Google/Web検索で見つけた情報はGoogle検索結果URLではなく、元記事・公式発表・ドキュメントなど参照したページの直接URLを残してください。X由来の情報は https://x.com/ または https://twitter.com/ の投稿URLを残してください。URLを確認できない話題は投稿しないでください。未確認の噂は断定せず、重要度が低い話題は省いてください。確認できるニュース項目がない場合でも、セクションを省略せず「確認できる新規項目は少なめ」と明記してください。長文にしすぎず、Discordで読みやすい箇条書きにしてください。絵文字は控えめに1-3個まで。"
+        "平日9:50リマインダー",
+        "平日8:00リマインダー"
+      ]
     },
     {
       "id": "nightly-dreaming-trigger",
       "name": "nightly-dreaming-trigger",
       "description": "Event-driven replacement for the previous nightly dreaming cron post.",
-      "channel": "ask-hermes",
+      "channel": "hermes-chat",
       "mode": "script",
       "script": "hermes-dreaming-cron.sh",
       "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
@@ -92,14 +127,15 @@
       "description": "Disabled legacy event-driven weekly review route. Weekly review is intentionally scheduled by Hermes cron.",
       "channel": "weekly-review",
       "mode": "prompt",
+      "prompt_file": "prompts/webhooks/gbrain-weekly-summary-trigger.md",
+      "include_post_style": true,
       "workdir": "~/.hermes/brain",
       "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
       "events": [],
       "skills": [],
       "replaces_cron_jobs": [
         "金曜17時gbrainサマリー"
-      ],
-      "prompt": "外部トリガーにより gbrain 週次サマリー投稿を開始します。payload はトリガー元の状況説明です。\n\nイベント種別: {event_type}\nペイロード:\n```json\n{__raw__}\n```\n\n毎週金曜17:00のgbrain週次サマリー相当としてDiscordに投稿してください。~/.hermes/brain と ~/.hermes/brain/pages、必要なら gbrain CLI を確認し、この1週間に蓄積された digest、evaluation、note、reflection、learnings から重要な学びを日本語で要約してください。冒頭は「ヘルメスちゃんです。今週の学びをまとめるね」のように、ヘルメスちゃんが振り返っている感じを出してください。構成は、1) 今週の大きなテーマ、2) 開発/AI/運用で使える知見、3) gbrainに残った重要メモ、4) 来週見直すとよいTODO、の順にしてください。外部ページ、X投稿、Google/Web検索で見つけたページを参照した場合は、各項目に `参照: <直接URL>` を残してください。Google検索結果URLではなく、元記事・公式発表・ドキュメントなど実際に参照したページのURLを使ってください。ヘルメスちゃんらしい明るい口調で、ただし内容は実務的に簡潔にしてください。"
+      ]
     }
   ]
 }

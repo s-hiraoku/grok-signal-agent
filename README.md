@@ -50,6 +50,7 @@ scripts/hermes-gbrain-remember.sh
 scripts/hermes-discord-feedback.sh
 scripts/hermes-digest-lint.sh
 scripts/hermes-alert.sh
+scripts/hermes-health-check-cron.sh
 scripts/hermes-obsidian-mcp-setup.sh
 scripts/hermes-jina-mcp-setup.sh
 scripts/hermes-google-calendar-mcp-setup.sh
@@ -121,8 +122,6 @@ The optional Jina Reader connection is in
 [docs/jina-reader.md](docs/jina-reader.md).
 The optional Google Calendar connection is in
 [docs/google-calendar.md](docs/google-calendar.md).
-The wbsb.dev source note is in
-[docs/wbsb-dev.md](docs/wbsb-dev.md).
 The Zenn source note is in
 [docs/zenn-dev.md](docs/zenn-dev.md).
 The triggered job architecture is in
@@ -133,7 +132,7 @@ The older cloud VM notes are in [docs/setup.md](docs/setup.md).
 
 Discord jobs use two mechanisms:
 
-- Event-triggered webhooks for signal-driven tech digest posts.
+- Event-triggered webhooks for high-signal, source-backed alerts.
 - Hermes cron for intentionally time-based operational posts.
 
 ```bash
@@ -148,11 +147,15 @@ The webhook registration script reads
 routes:
 
 - `tech-digest-trigger` to `#tech-digest`
-- `x-buzz-trigger` to `#x-buzz-info`
-- `zenn-dev-trigger` to `#zenn-dev-info`
-- `wbsb-trigger` to `#wbsb-dev-info`
+- `ai-latest-trigger` to `#ai-latest`
+- `x-buzz-trigger` to `#tech-signals`
+- `github-pr-review-trigger` to `#tech-signals`
 - `signal-catchup` to `#tech-signals`
-- `nightly-dreaming-trigger` to `#ask-hermes`
+- `nightly-dreaming-trigger` to `#hermes-chat`
+
+The legacy source-specific route for Zenn remains as a disabled cleanup entry.
+Zenn watcher signals now flow through `signal-catchup` so low-signal article
+notifications do not scatter across multiple channels. wbsb.dev is no longer monitored.
 
 Channel IDs can be overridden locally without committing personal Discord
 targets. Copy [config/hermes-channels.example.json](config/hermes-channels.example.json)
@@ -161,10 +164,17 @@ registration or installer script. The local override file is ignored by git.
 
 The active cron jobs are:
 
-- `平日9:50リマインダー` to `#morning-brief`, using direct RSS/Atom feeds
+- `平日8:00リマインダー` to `#morning-brief`, using direct RSS/Atom feeds
   plus Google Workspace Calendar events
+- `tech-digest 18:00` to `#tech-digest` on weekdays only
+- `tech-digest evaluation 18:20` to `#hermes-info`, normally silent while it
+  evaluates the latest digest and updates memory/gbrain artifacts
+- `Hermes health check` to `#hermes-info`, posting only when attention is needed
+- `Hermes disk watchdog` to `#hermes-info`, posting only when disk usage crosses
+  the configured threshold
+- `Hermes SSL expiry watchdog` to `#hermes-info`, posting only when configured
+  certificates approach expiry
 - `金曜17時gbrainサマリー` to `#weekly-review`, using gbrain/honcho status
-- `毎晩23:30 gbrain/honcho daily review` to `#daily-review`
 
 The older `discord-heartbeat` LaunchAgent is treated as legacy and removed by
 the macOS installer.
@@ -176,19 +186,22 @@ channel, not by whether the post was started by cron or a webhook.
 
 | Channel | Purpose |
 | --- | --- |
-| `#tech-digest` | Scheduled full tech digests and manually triggered full digests. |
-| `#x-buzz-info` | Short X/Twitter discussion spikes from `x-buzz-trigger`. |
-| `#zenn-dev-info` | Zenn article signals from `zenn-dev-trigger`. |
-| `#wbsb-dev-info` | wbsb.dev article signals from `wbsb-trigger`. |
-| `#tech-signals` | Generic external technical signals from `signal-catchup`. |
+| `#tech-digest` | Weekday evening digest and manually triggered full digests. |
+| `#ai-latest` | High-signal official AI/model/agent/tooling updates. |
+| `#tech-signals` | Sparse X buzz, Zenn/dev article, and generic technical signals that pass stricter watcher gates. |
 | `#morning-brief` | Weekday morning work brief. |
 | `#weekly-review` | Weekly gbrain/honcho review. |
-| `#daily-review` | Daily gbrain/honcho operations review. |
-| `#ask-hermes` | Hermes memory, internal maintenance, and direct interaction. |
+| `#hermes-chat` | Main conversation channel for talking with Hermes and manual interaction. |
+| `#hermes-info` | Hermes health, failures, runtime sync status, and operational alerts only. |
 
-Keep `#tech-digest` focused on full digest posts. Source-specific automatic
-notifications should use their source channels, and broad webhook catch-up
-items should use `#tech-signals`.
+The current default config keeps `#ai-latest` and `#tech-signals` as separate
+Discord channels. Keep official AI/model/tooling updates in `#ai-latest`; route
+broader technical signals and X buzz to `#tech-signals`.
+
+Keep `#tech-digest` focused on deliberate summaries. Automatic notifications
+should be quiet by default: source watchers only post when a signal clears the
+stricter thresholds, and lower-signal source movement should remain in logs and
+runtime state rather than becoming Discord noise.
 
 External movement must come from an upstream event source such as GitHub,
 release monitors, uptime alerts, RSS-to-webhook bridges, or a custom watcher.
@@ -196,14 +209,36 @@ Hermes receives those signed webhook POSTs and posts the result to Discord. The
 intended split is:
 
 - Hermes built-in service: keep Hermes Gateway running.
-- Signal watcher: monitor Zenn, wbsb.dev, Anthropic, GitHub Changelog, OpenAI
+- Signal watcher: monitor Zenn, Anthropic, GitHub Changelog, OpenAI
   News, Cloudflare Changelog, Hacker News, Publickey, release feeds, and other
-  sources; score/dedupe/cooldown changes before any Discord post is triggered.
+  sources; score/dedupe/cooldown changes with high thresholds before any
+  Discord post is triggered.
+- AI latest artifacts: for `ai-latest-trigger`, the signal watcher also writes
+  local run artifacts under `~/.hermes/state/ai-latest/`, including
+  `signals.json`, `analysis.md`, and `summary.html`. New-feature signals are
+  split into one fact-checked HTML/CSS feature card per feature
+  (`infographic-01.html` plus `infographic-01.png`,
+  `infographic-02.html` plus `infographic-02.png`, ...), with the first image
+  also copied to `infographic.png` for previews. The PNGs are rendered from
+  the HTML with Playwright when `summary_png_renderer` is `playwright`.
+  Discord posts attach all generated feature card images. `facts.json` and `factcheck.md`
+  record the official-source evidence used before rendering. Version-only
+  release notes stay in HTML/Markdown without a separate summary image. The
+  route is split by provider, so OpenAI and Anthropic produce separate payloads
+  and latest directories such as
+  `~/.hermes/public/ai-latest/latest/openai/` and
+  `~/.hermes/public/ai-latest/latest/anthropic/`. Every run is archived under
+  `~/.hermes/archive/ai-latest/`.
+  Anthropic and OpenAI changelog-style pages are watched as snapshots, so
+  Markdown/HTML diffs can be preserved even when a source has no RSS feed.
 - X pulse watcher: sample recent X discussion with `x_search`; trigger a short
-  `x-buzz-trigger` post only when engagement-qualified X posts appear.
+  `x-buzz-trigger` post only when strongly engagement-qualified X posts appear.
+- GitHub PR event source: send review-request, CI, workflow, or stale-review
+  payloads to `github-pr-review-trigger` so Hermes summarizes action items only
+  when there is a concrete PR signal.
 - Hermes webhook platform: event ingress and delivery targets.
 - Handler scripts: job implementation details such as tech digest generation,
-  digest/evaluation persistence, digest quality linting/metadata, alerts, and
+  deferred digest evaluation, digest quality linting/metadata, alerts, and
   gbrain write-back, plus gbrain/honcho daily and weekly reviews.
 - Gateway hooks: Discord message/event-triggered actions.
 - Job prompts and channel targets: versioned in this repository, registered
@@ -214,11 +249,13 @@ trigger-driven behavior.
 
 The watcher configuration is in
 [config/signal-watchers.json](config/signal-watchers.json). It currently
-monitors Zenn, wbsb.dev, Anthropic News/Engineering/Research, GitHub Changelog,
-OpenAI News, Cloudflare Changelog, Hacker News frontpage/best, Publickey, and
-Hermes Agent releases. First run primes state only so old articles are not
-posted in bulk; later runs post only threshold-crossing new signals. The macOS
-installer copies the watcher runtime to
+monitors Zenn, Anthropic News/Engineering/Research, Google AI, Mistral, Meta
+AI, Hugging Face, LangChain, GitHub Changelog, OpenAI News,
+Cloudflare Changelog, Hacker News frontpage/best, Publickey, and Hermes Agent
+releases. First run primes state only so old articles are not posted in bulk;
+later runs post only threshold-crossing new signals. AI official sources route
+to `#ai-latest`; broader developer and article sources route to `#tech-signals`.
+The macOS installer copies the watcher runtime to
 `~/.hermes/runtime/grok-signal-agent/`; re-run the installer after changing the
 watcher code or config.
 
@@ -234,13 +271,16 @@ also have enough direct engagement. URL count alone is not treated as buzz.
 
 ## Digest Quality And Feedback
 
-Every `tech-digest` run now writes three runtime artifact types under
-`~/.hermes/state/`:
+The 18:00 `tech-digest` run writes the user-facing digest and quality artifacts
+under `~/.hermes/state/`. The 18:20 `tech-digest evaluation` job then evaluates
+the latest digest and performs optional gbrain write-back outside the delivery
+timeout path.
 
 - `digests/<ts>.md`: the delivered briefing.
 - `digest-metadata/<ts>.json`: section titles, inferred categories, source
   URLs, accounts, duplicate counts, and lint status.
 - `digest-quality/<ts>.md`: human-readable lint errors and warnings.
+- `evaluations/<ts>.md`: delayed self-evaluation of the delivered digest.
 - `dreaming/<ts>.md`: nightly memory recomposition report; raw inputs are kept,
   while the current working memory view is regenerated.
 
@@ -260,6 +300,8 @@ HERMES_ALERT_COMMAND='your-command-that-reads-stdin'
 
 The signal and X pulse watchers call the same alert helper when webhook
 delivery fails, required webhook secrets are missing, or X search cannot run.
+The `Hermes health check` cron job also reports gateway, cron, webhook, watcher,
+and xAI/Grok access issues to `#hermes-info`; normal runs stay silent.
 
 Explicit Discord feedback and follow-up requests can be captured with the
 Gateway hook `~/.hermes/bin/hermes-discord-feedback.sh`. Supported message
@@ -351,6 +393,43 @@ Run the shell regression tests:
 tests/run.sh
 ```
 
+## Mnemo-like Memory Layer (Optional)
+
+ヘルメスちゃん can keep an on-demand, mnemo-inspired local memory without
+requiring `覚えて:` / `/remember` prefixes. The Gateway hook
+`scripts/hermes-mnemo-memory-hook.sh` captures only messages posted in
+explicitly configured memory channels, stores them in a local SQLite database,
+exports Markdown copies, and lets you search them later.
+
+This is **off until a memory channel is configured**. Normal conversation is
+not captured.
+
+```bash
+# Install the helper and Gateway hook.
+./scripts/install-macos-launchagent.sh
+
+# Configure the Discord channel IDs that should behave as memory inboxes.
+export HERMES_MNEMO_MEMORY_CHANNEL_IDS="123456789012345678"
+
+# Ask from the shell, or wire the command into a Hermes tool/prompt flow later.
+~/.hermes/bin/hermes-mnemo-memory.py recall "朝の通知"
+~/.hermes/bin/hermes-mnemo-memory.py backlinks codex
+~/.hermes/bin/hermes-mnemo-memory.py red-links
+~/.hermes/bin/hermes-mnemo-memory.py graph --format mermaid
+~/.hermes/bin/hermes-mnemo-memory.py curator status
+```
+
+Captured data lives under:
+
+- `~/.hermes/mnemo/mnemo.sqlite`: primary local store.
+- `~/.hermes/mnemo/knowledge/memory/*.md`: exported memory notes.
+- `~/.hermes/mnemo/knowledge/knowledge/*.md`: exported source-style notes.
+
+Short messages become `memory`. Messages with the mnemo-style sections
+`Source:`, `Why captured:`, and `Connections:` become `knowledge`. `[[slug]]`
+links are indexed for backlinks, red-link detection, graph output, and curator
+status. Recall increments `view_count` and records a `session` audit row.
+
 ## gbrain Memory Backend (Optional)
 
 ヘルメスちゃん's self-growth loop can use [`garrytan/gbrain`](https://github.com/garrytan/gbrain)
@@ -392,7 +471,7 @@ repository helper scripts prepend `~/.bun/bin` to `PATH` before invoking
 | `HERMES_GBRAIN_RECONCILE=1` | weekly | Upsert a `learnings-<ts>` page, export the brain to `~/.hermes/brain/pages`, `git commit` it, then run `gbrain dream`. |
 | `GBRAIN_SEARCH_MODE=query` | digest trigger | Switch retrieval from keyword search to hybrid (vector) search. Requires an embedding provider key configured in the brain (default is keyword `search`). |
 
-### Remember things from Discord (optional)
+### Legacy remember-prefix hook (optional)
 
 You can tell ヘルメスちゃん to remember something straight from Discord. A
 `pre_gateway_dispatch` shell hook (`scripts/hermes-gbrain-remember.sh`) watches
@@ -407,7 +486,8 @@ notes first, as instructions to follow:
 
 Recognized prefixes: `覚えて` / `おぼえて` / `記憶して` / `/remember` /
 `remember` (followed by an optional `:` or `：`). Normal conversation is never
-captured.
+captured. Prefer the mnemo-like memory-channel flow above when you do not want
+to type a remember prefix.
 
 The macOS installer registers and approves the memory/feedback hooks. To do it
 manually:
@@ -417,6 +497,8 @@ manually:
 #    hooks:
 #      pre_gateway_dispatch:
 #        - command: ~/.hermes/bin/hermes-gbrain-remember.sh
+#          timeout: 30
+#        - command: ~/.hermes/bin/hermes-mnemo-memory-hook.sh
 #          timeout: 30
 #        - command: ~/.hermes/bin/hermes-discord-feedback.sh
 #          timeout: 30

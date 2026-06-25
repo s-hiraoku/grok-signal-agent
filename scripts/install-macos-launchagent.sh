@@ -23,6 +23,7 @@ mkdir -p \
   "${HOME}/.hermes/bin" \
   "${HOME}/.hermes/logs" \
   "${HOME}/.hermes/prompts" \
+  "${HOME}/.hermes/prompts/webhooks" \
   "${HOME}/.hermes/skills/devops/hermes-posting-admin" \
   "${HOME}/.hermes/scripts" \
   "${HOME}/.hermes/state/digests" \
@@ -33,6 +34,7 @@ mkdir -p \
   "${HOME}/.hermes/state/signal-watcher" \
   "${HOME}/.hermes/state/x-pulse-watcher" \
   "${HOME}/.hermes/state/weekly-reflections" \
+  "${HOME}/.hermes/mnemo/knowledge" \
   "${RUNTIME_DIR}/config" \
   "${RUNTIME_DIR}/scripts" \
   "${HOME}/Library/LaunchAgents"
@@ -45,6 +47,12 @@ install -m 755 \
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-gbrain-remember.sh" \
   "${HOME}/.hermes/bin/hermes-gbrain-remember.sh"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-mnemo-memory.py" \
+  "${HOME}/.hermes/bin/hermes-mnemo-memory.py"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-mnemo-memory-hook.sh" \
+  "${HOME}/.hermes/bin/hermes-mnemo-memory-hook.sh"
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-discord-feedback.sh" \
   "${HOME}/.hermes/bin/hermes-discord-feedback.sh"
@@ -82,6 +90,9 @@ install -m 755 \
   "${REPO_DIR}/scripts/hermes-x-pulse-watcher.py" \
   "${RUNTIME_DIR}/scripts/hermes-x-pulse-watcher.py"
 install -m 644 \
+  "${REPO_DIR}/config/hermes-cronjobs.json" \
+  "${RUNTIME_DIR}/config/hermes-cronjobs.json"
+install -m 644 \
   "${REPO_DIR}/config/signal-watchers.json" \
   "${RUNTIME_DIR}/config/signal-watchers.json"
 install -m 644 \
@@ -100,6 +111,11 @@ install -m 644 \
   "${REPO_DIR}/prompts/nightly-dreaming.md" \
   "${REPO_DIR}/prompts/weekly-self-reflection.md" \
   "${HOME}/.hermes/prompts/"
+if compgen -G "${REPO_DIR}/prompts/webhooks/*.md" >/dev/null; then
+  for prompt_file in "${REPO_DIR}"/prompts/webhooks/*.md; do
+    install -m 644 "${prompt_file}" "${HOME}/.hermes/prompts/webhooks/"
+  done
+fi
 install -m 644 \
   "${REPO_DIR}/.agents/skills/hermes-posting-admin/SKILL.md" \
   "${HOME}/.hermes/skills/devops/hermes-posting-admin/SKILL.md"
@@ -150,6 +166,7 @@ ensure_gateway_hooks() {
     File.write(config_file, YAML.dump(config))
   ' "${config_file}" \
     "${HOME}/.hermes/bin/hermes-gbrain-remember.sh" \
+    "${HOME}/.hermes/bin/hermes-mnemo-memory-hook.sh" \
     "${HOME}/.hermes/bin/hermes-discord-feedback.sh"
 }
 
@@ -184,6 +201,7 @@ approve_gateway_hooks() {
     File.write(allowlist_file, JSON.pretty_generate(data) + "\n")
   ' "${allowlist_file}" \
     "${HOME}/.hermes/bin/hermes-gbrain-remember.sh" \
+    "${HOME}/.hermes/bin/hermes-mnemo-memory-hook.sh" \
     "${HOME}/.hermes/bin/hermes-discord-feedback.sh"
 }
 
