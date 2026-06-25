@@ -1631,7 +1631,7 @@ JSON
 }
 
 test_signal_watcher_fetches_official_news_body_and_bypasses_ai_latest_cooldown() {
-  local tmp_home index article hn_feed config state log_file output artifact_dir
+  local tmp_home index article hn_feed config state log_file output output2 artifact_dir
   tmp_home="$(mktemp -d)"
   index="${tmp_home}/news.html"
   article="${tmp_home}/introducing-claude-tag.html"
@@ -1702,8 +1702,8 @@ JSON
     "default_min_score": 70,
     "default_cooldown_minutes": 90,
     "default_webhook_base_url": "http://127.0.0.1:8644",
-    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
-    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "secret_env": "HERMES_TEST_MISSING_SIGNAL_SECRET",
+    "post_trigger_secret_env": "HERMES_TEST_MISSING_POST_SECRET",
     "summary_artifacts": true,
     "summary_artifact_dir": "${tmp_home}/artifacts",
     "summary_archive_dir": "${tmp_home}/archive",
@@ -1759,6 +1759,11 @@ JSON
   assert_file_contains "${artifact_dir}/infographic-01.html" "Claude Tag"
   [[ ! -e "${artifact_dir}/infographic-02.html" ]] || fail "official news article should produce one infographic"
   assert_file_contains "${tmp_home}/public/latest/anthropic/index.html" "Claude Tag"
+
+  output2="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}")"
+  assert_json_eq "${output2}" ".sent" "0"
+  assert_file_contains "${log_file}" "missing secret env for route=ai-latest-trigger"
+  assert_file_contains "${state}" "hn-frontpage-local:file://"
 }
 
 test_signal_watcher_fetches_openai_feed_body_and_dedupes_official_pages() {

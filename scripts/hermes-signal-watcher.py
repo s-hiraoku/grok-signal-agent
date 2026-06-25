@@ -1682,6 +1682,7 @@ def main() -> int:
             if existing_is_official is False and item_is_official:
                 previous = observed_by_url.get(url_key)
                 if previous:
+                    mark_seen_item(state, previous)
                     observed = [
                         observed_item
                         for observed_item in observed
