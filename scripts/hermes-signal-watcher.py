@@ -278,8 +278,16 @@ def document_title(source: dict[str, Any], url: str) -> str:
 
 
 def parse_document(source: dict[str, Any], raw: bytes, headers: dict[str, str], final_url: str) -> list[SignalItem]:
+    expected_content_type = str(source.get("content_type") or "").strip().lower()
+    actual_content_type = str(headers.get("content-type") or "").strip().lower()
+    if expected_content_type and actual_content_type:
+        expected_media_type = expected_content_type.split(";", 1)[0]
+        actual_media_type = actual_content_type.split(";", 1)[0]
+        if actual_media_type != expected_media_type:
+            raise ValueError(f"{source['id']}: unexpected content type {actual_content_type}")
+
     content_hash = hashlib.sha256(raw).hexdigest()
-    content_type = headers.get("content-type") or source.get("content_type", "")
+    content_type = actual_content_type or expected_content_type
     etag = headers.get("etag", "")
     content_length = headers.get("content-length") or str(len(raw))
     last_modified = parse_date(headers.get("last-modified", ""))
@@ -297,7 +305,7 @@ def parse_document(source: dict[str, Any], raw: bytes, headers: dict[str, str], 
         SignalItem(
             source_id=source["id"],
             source_url=source["url"],
-            item_id=f"{canonical_url_key(final_url)}#{content_hash}",
+            item_id=f"{canonical_url_key(source['url'])}#{content_hash}",
             title=document_title(source, final_url),
             url=final_url,
             summary=" ".join(part for part in summary_parts if part),

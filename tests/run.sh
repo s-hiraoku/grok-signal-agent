@@ -1373,6 +1373,50 @@ JSON
   assert_json_eq "${output}" ".candidates" "1"
 }
 
+test_signal_watcher_document_parser_validates_media_type_and_source_key() {
+  python3 - "${REPO_DIR}" <<'PY'
+import hashlib
+import importlib.util
+import sys
+
+repo_dir = sys.argv[1]
+module_path = f"{repo_dir}/scripts/hermes-signal-watcher.py"
+spec = importlib.util.spec_from_file_location("hermes_signal_watcher", module_path)
+watcher = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = watcher
+spec.loader.exec_module(watcher)
+
+raw = b"%PDF-1.7 test"
+source = {
+    "id": "document-source",
+    "url": "https://example.com/source.pdf?stable=1",
+    "content_type": "application/pdf",
+}
+items = watcher.parse_document(
+    source,
+    raw,
+    {"content-type": "application/pdf; charset=binary", "content-length": str(len(raw))},
+    "https://cdn.example.net/redirected/source.pdf?token=abc",
+)
+expected_hash = hashlib.sha256(raw).hexdigest()
+assert items[0].item_id == f"https://example.com/source.pdf?stable=1#{expected_hash}"
+assert items[0].url == "https://cdn.example.net/redirected/source.pdf?token=abc"
+
+try:
+    watcher.parse_document(
+        source,
+        b"<html>temporary error</html>",
+        {"content-type": "text/html; charset=utf-8"},
+        "https://cdn.example.net/redirected/source.pdf?token=abc",
+    )
+except ValueError as exc:
+    assert "unexpected content type text/html; charset=utf-8" in str(exc)
+else:
+    raise AssertionError("expected parse_document to reject text/html")
+PY
+}
+
 test_signal_watcher_retries_candidates_blocked_by_cooldown() {
   local tmp_home feed config state output log_file seen_count
   tmp_home="$(mktemp -d)"
@@ -2236,6 +2280,7 @@ main() {
     test_signal_watcher_reads_env_file_for_secret
     test_signal_watcher_parses_nested_html_links
     test_signal_watcher_tracks_standalone_document_hash_changes
+    test_signal_watcher_document_parser_validates_media_type_and_source_key
     test_signal_watcher_retries_candidates_blocked_by_cooldown
     test_signal_watcher_keeps_custom_routes_out_of_batch
     test_x_pulse_watcher_primes_sample_urls
