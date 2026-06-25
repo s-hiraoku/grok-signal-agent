@@ -129,23 +129,6 @@
       "tags": ["openai", "ai", "official"]
     },
     {
-      "id": "openai-engineering",
-      "enabled": true,
-      "type": "html_links",
-      "url": "https://openai.com/news/engineering/",
-      "description": "OpenAI official engineering articles and developer-focused implementation notes.",
-      "base_score": 58,
-      "min_score": 78,
-      "route": "ai-latest-trigger",
-      "max_items": 5,
-      "prime_existing": true,
-      "cooldown_minutes": 360,
-      "fetch_item_summary": true,
-      "include_url_patterns": ["/index/"],
-      "exclude_url_patterns": ["/research/index/"],
-      "tags": ["openai", "engineering", "ai-agent", "official"]
-    },
-    {
       "id": "openai-codex-releases",
       "enabled": true,
       "type": "feed",
