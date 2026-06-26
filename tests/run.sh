@@ -40,11 +40,38 @@ assert_file_not_contains() {
   ! LC_ALL=C grep -Fq -- "${needle}" "${file}" || fail "expected ${file} not to contain: ${needle}"
 }
 
+assert_file_occurrences() {
+  local file="$1"
+  local needle="$2"
+  local expected="$3"
+  local count
+  count="$(LC_ALL=C grep -F -- "${needle}" "${file}" 2>/dev/null | wc -l | tr -d ' ')"
+  assert_eq "${count}" "${expected}" "occurrences of ${needle}"
+}
+
 make_tmp_home() {
   local tmp_home
   tmp_home="$(mktemp -d)"
   mkdir -p "${tmp_home}/.local/bin" "${tmp_home}/Library/LaunchAgents"
   printf '%s\n' "${tmp_home}"
+}
+
+write_channels_config() {
+  local path="$1"
+  cat > "${path}" <<'JSON'
+{
+  "version": 1,
+  "channels": {
+    "tech-digest": "discord:900000000000000001",
+    "ai-latest": "discord:900000000000000002",
+    "tech-signals": "discord:900000000000000003",
+    "morning-brief": "discord:900000000000000004",
+    "weekly-review": "discord:900000000000000005",
+    "hermes-info": "discord:900000000000000006",
+    "hermes-chat": "discord:900000000000000007"
+  }
+}
+JSON
 }
 
 write_hermes_stub() {
@@ -124,16 +151,19 @@ STUB
 }
 
 test_register_cronjobs_syncs_enabled_tech_digest_jobs() {
-  local tmp_home output log_file
+  local tmp_home output log_file channels
   tmp_home="$(make_tmp_home)"
   write_hermes_stub "${tmp_home}" "tech-digest 18:00"
   log_file="${tmp_home}/hermes-calls.log"
+  channels="${tmp_home}/channels.json"
+  write_channels_config "${channels}"
 
   output="$(
     HOME="${tmp_home}" \
     HERMES_BIN="${tmp_home}/.local/bin/hermes" \
     HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
     HERMES_EXISTING_JOB="${HERMES_EXISTING_JOB}" \
+    HERMES_CHANNELS_CONFIG="${channels}" \
     "${REPO_DIR}/scripts/register-hermes-cronjobs.sh"
   )"
 
@@ -155,7 +185,7 @@ test_register_cronjobs_syncs_enabled_tech_digest_jobs() {
   assert_file_contains "${log_file}" "--script hermes-health-check-cron.sh"
   assert_file_contains "${log_file}" "--script hermes-disk-watchdog-cron.sh"
   assert_file_contains "${log_file}" "--script hermes-ssl-expiry-watchdog-cron.sh"
-  assert_file_contains "${log_file}" "--deliver discord:1518735846998675577"
+  assert_file_contains "${log_file}" "--deliver discord:900000000000000006"
   assert_file_not_contains "${log_file}" "--script hermes-daily-review-cron.sh"
   assert_file_not_contains "${log_file}" "cron remove stub-id"
 }
@@ -196,6 +226,25 @@ JSON
   assert_contains "${output}" "Unknown channel 'missing-channel' for job 'bad job'."
 }
 
+test_register_cronjobs_rejects_placeholder_channels() {
+  local tmp_home output status
+  tmp_home="$(make_tmp_home)"
+  write_hermes_stub "${tmp_home}" ""
+
+  set +e
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${tmp_home}/.local/bin/hermes" \
+    HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
+    "${REPO_DIR}/scripts/register-hermes-cronjobs.sh" 2>&1
+  )"
+  status=$?
+  set -e
+
+  [[ "${status}" -ne 0 ]] || fail "expected register script to fail for placeholder channels"
+  assert_contains "${output}" "Unknown channel 'tech-digest' for job 'tech-digest 08:00'."
+}
+
 test_register_cronjobs_uses_local_channel_overrides() {
   local tmp_home channels output log_file
   tmp_home="$(make_tmp_home)"
@@ -206,7 +255,13 @@ test_register_cronjobs_uses_local_channel_overrides() {
 {
   "version": 1,
   "channels": {
-    "tech-digest": "discord:999999999999999999"
+    "tech-digest": "discord:999999999999999999",
+    "ai-latest": "discord:900000000000000002",
+    "tech-signals": "discord:900000000000000003",
+    "morning-brief": "discord:900000000000000004",
+    "weekly-review": "discord:900000000000000005",
+    "hermes-info": "discord:900000000000000006",
+    "hermes-chat": "discord:900000000000000007"
   }
 }
 JSON
@@ -221,7 +276,7 @@ JSON
 
   assert_contains "${output}" "Cron registration complete:"
   assert_file_contains "${log_file}" "--name tech-digest\\ 18:00 --deliver discord:999999999999999999"
-  assert_file_contains "${log_file}" "--deliver discord:1510425534436212817"
+  assert_file_contains "${log_file}" "--deliver discord:900000000000000004"
 }
 
 test_morning_brief_cron_reads_direct_feeds() {
@@ -503,11 +558,13 @@ PY
 }
 
 test_installer_uses_builtin_gateway_only() {
-  local tmp_home stub_bin launchctl_log output
+  local tmp_home stub_bin launchctl_log output channels
   tmp_home="$(make_tmp_home)"
   write_hermes_stub "${tmp_home}" "*"
   stub_bin="${tmp_home}/stub-bin"
   launchctl_log="${tmp_home}/launchctl-calls.log"
+  channels="${tmp_home}/channels.json"
+  write_channels_config "${channels}"
   mkdir -p "${stub_bin}" "${tmp_home}/Library/LaunchAgents" "${tmp_home}/.hermes"
   cat > "${tmp_home}/.hermes/config.yaml" <<'YAML'
 hooks: {}
@@ -543,6 +600,7 @@ STUB
     HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
     HERMES_EXISTING_JOB="*" \
     HERMES_WEBHOOK_LIST_STATUS=1 \
+    HERMES_CHANNELS_CONFIG="${channels}" \
     LAUNCHCTL_STUB_LOG="${launchctl_log}" \
     "${REPO_DIR}/scripts/install-macos-launchagent.sh"
   )"
@@ -607,11 +665,13 @@ STUB
 }
 
 test_installer_installs_gateway_before_merging_hooks() {
-  local tmp_home stub_bin launchctl_log output
+  local tmp_home stub_bin launchctl_log output channels
   tmp_home="$(make_tmp_home)"
   write_hermes_stub "${tmp_home}" "*"
   stub_bin="${tmp_home}/stub-bin"
   launchctl_log="${tmp_home}/launchctl-calls.log"
+  channels="${tmp_home}/channels.json"
+  write_channels_config "${channels}"
   mkdir -p "${stub_bin}"
 
   cat > "${stub_bin}/launchctl" <<'STUB'
@@ -639,6 +699,7 @@ STUB
     HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
     HERMES_EXISTING_JOB="*" \
     HERMES_WEBHOOK_LIST_STATUS=1 \
+    HERMES_CHANNELS_CONFIG="${channels}" \
     LAUNCHCTL_STUB_LOG="${launchctl_log}" \
     "${REPO_DIR}/scripts/install-macos-launchagent.sh"
   )"
@@ -1117,10 +1178,10 @@ test_scheduled_prompts_require_direct_source_links() {
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "DEFAULT_GENERAL_FEEDS"
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "DEFAULT_TECH_FEEDS"
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "出典:"
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"ai-latest": "discord:1518734996544815126"'
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"tech-signals": "discord:1514063816093335653"'
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes-info": "discord:1518735846998675577"'
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes-chat": "discord:1510425922384167043"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"ai-latest": "discord:replace-with-ai-latest-channel-id"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"tech-signals": "discord:replace-with-tech-signals-channel-id"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes-info": "discord:replace-with-hermes-info-channel-id"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes-chat": "discord:replace-with-hermes-chat-channel-id"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-health-check-cron.sh"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-tech-digest-evaluate-cron.sh"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-disk-watchdog-cron.sh"'
@@ -1161,10 +1222,12 @@ test_scheduled_prompts_require_direct_source_links() {
 }
 
 test_register_webhooks_preserves_existing_secret() {
-  local tmp_home output log_file
+  local tmp_home output log_file channels
   tmp_home="$(make_tmp_home)"
   write_hermes_stub "${tmp_home}" ""
   log_file="${tmp_home}/hermes-calls.log"
+  channels="${tmp_home}/channels.json"
+  write_channels_config "${channels}"
   mkdir -p "${tmp_home}/.hermes"
   cat > "${tmp_home}/.hermes/.env" <<'ENV'
 HERMES_POST_TRIGGER_WEBHOOK_SECRET=post-secret-from-env-file
@@ -1181,6 +1244,7 @@ JSON
     HOME="${tmp_home}" \
     HERMES_BIN="${tmp_home}/.local/bin/hermes" \
     HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
+    HERMES_CHANNELS_CONFIG="${channels}" \
     "${REPO_DIR}/scripts/register-hermes-webhooks.sh"
   )"
 
@@ -1208,8 +1272,9 @@ JSON
   assert_file_contains "${log_file}" "script_path="
   assert_file_contains "${log_file}" "SCRIPT_UNAVAILABLE"
   assert_file_contains "${log_file}" 'bash "${script_path}"'
-  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1510425425971515503"
-  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1518734996544815126"
+  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 900000000000000001"
+  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 900000000000000002"
+  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 900000000000000003"
   assert_file_contains "${log_file}" "--secret existing-secret"
   assert_file_contains "${log_file}" "--secret post-secret-from-env-file"
 }
@@ -1229,7 +1294,13 @@ ENV
 {
   "version": 1,
   "channels": {
-    "tech-signals": "discord:888888888888888888"
+    "tech-digest": "discord:900000000000000001",
+    "ai-latest": "discord:900000000000000002",
+    "tech-signals": "discord:888888888888888888",
+    "morning-brief": "discord:900000000000000004",
+    "weekly-review": "discord:900000000000000005",
+    "hermes-info": "discord:900000000000000006",
+    "hermes-chat": "discord:900000000000000007"
   }
 }
 JSON
@@ -1247,7 +1318,7 @@ JSON
   assert_file_contains "${log_file}" "--deliver-chat-id 888888888888888888"
   assert_file_contains "${log_file}" "webhook subscribe signal-catchup"
   assert_file_contains "${log_file}" "webhook subscribe ai-latest-trigger"
-  assert_file_contains "${log_file}" "--deliver-chat-id 1518734996544815126"
+  assert_file_contains "${log_file}" "--deliver-chat-id 900000000000000002"
 }
 
 test_register_webhooks_rejects_script_names_outside_runtime_cron_pattern() {
@@ -1498,6 +1569,106 @@ JSON
   assert_file_contains "${log_file}" "send failed route=signal-catchup"
   assert_file_not_contains "${log_file}" "missing secret env"
   assert_file_contains "${alert_log}" "Hermes signal watcher webhook send failed"
+
+  output="$(
+    HERMES_ALERT_SCRIPT="${alert_script}" \
+    HERMES_TEST_ALERT_LOG="${alert_log}" \
+    "${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --allow-first-run-send
+  )"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_file_occurrences "${alert_log}" "Hermes signal watcher webhook send failed" "1"
+}
+
+test_signal_watcher_alerts_on_partial_source_failures() {
+  local tmp_home good_feed config output log_file alert_script alert_log
+  tmp_home="$(mktemp -d)"
+  good_feed="${tmp_home}/good.xml"
+  config="${tmp_home}/watchers.json"
+  log_file="${tmp_home}/watcher.log"
+  alert_script="${tmp_home}/alert.sh"
+  alert_log="${tmp_home}/alerts.log"
+  cat > "${alert_script}" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "${HERMES_TEST_ALERT_LOG}"
+cat >> "${HERMES_TEST_ALERT_LOG}"
+SH
+  chmod +x "${alert_script}"
+  cat > "${good_feed}" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Good Feed</title>
+    <item>
+      <title>Small developer note</title>
+      <link>https://example.com/small-note</link>
+      <guid>small-note</guid>
+      <description>Observed successfully.</description>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${tmp_home}/state.json",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 200,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET"
+  },
+  "keyword_weights": {},
+  "sources": [
+    {
+      "id": "good-feed",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${good_feed}",
+      "base_score": 20,
+      "min_score": 200,
+      "route": "signal-catchup",
+      "tags": ["test"]
+    },
+    {
+      "id": "missing-feed",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${tmp_home}/missing.xml",
+      "base_score": 20,
+      "min_score": 200,
+      "route": "signal-catchup",
+      "tags": ["test"]
+    }
+  ]
+}
+JSON
+
+  output="$(
+    HERMES_ALERT_SCRIPT="${alert_script}" \
+    HERMES_TEST_ALERT_LOG="${alert_log}" \
+    "${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --allow-first-run-send
+  )"
+
+  assert_json_eq "${output}" ".observed" "1"
+  assert_json_eq "${output}" ".candidates" "0"
+  assert_contains "${output}" "missing-feed"
+  assert_file_contains "${alert_log}" "Hermes signal watcher partial source failures"
+  assert_file_contains "${alert_log}" "missing-feed"
+
+  output="$(
+    HERMES_ALERT_SCRIPT="${alert_script}" \
+    HERMES_TEST_ALERT_LOG="${alert_log}" \
+    "${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --allow-first-run-send
+  )"
+
+  assert_json_eq "${output}" ".observed" "1"
+  assert_file_occurrences "${alert_log}" "Hermes signal watcher partial source failures" "1"
 }
 
 test_signal_watcher_skips_artifacts_when_secret_missing() {
@@ -2730,6 +2901,80 @@ JSON
   assert_json_eq "${output}" ".dry_run" "true"
 }
 
+test_x_pulse_watcher_missing_secret_alert_is_cooled_down() {
+  local tmp_home sample config state output alert_script alert_log
+  tmp_home="$(mktemp -d)"
+  sample="${tmp_home}/x-sample.txt"
+  config="${tmp_home}/x-pulse.json"
+  state="${tmp_home}/state.json"
+  alert_script="${tmp_home}/alert.sh"
+  alert_log="${tmp_home}/alerts.log"
+  cat > "${alert_script}" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "${HERMES_TEST_ALERT_LOG}"
+cat >> "${HERMES_TEST_ALERT_LOG}"
+SH
+  chmod +x "${alert_script}"
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen_urls": {},
+  "sent": {},
+  "runs": []
+}
+JSON
+  cat > "${sample}" <<'SAMPLE'
+CANDIDATE
+topic: Official agent release
+url: https://x.com/devrel/status/20001
+posted_minutes_ago: 35
+likes: 180
+reposts: 20
+replies: 12
+quotes: 9
+views: 14000
+account_type: official
+independent_posts: 2
+reason: official release with early engagement
+SAMPLE
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${tmp_home}/x-pulse.log",
+    "env_file": "${tmp_home}/.env",
+    "prime_only_on_first_run": false,
+    "route": "x-buzz-trigger",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "cooldown_minutes": 90,
+    "min_qualified_urls": 1,
+    "min_qualified_score": 40
+  },
+  "queries": ["AI agents"]
+}
+JSON
+
+  output="$(
+    HERMES_POST_TRIGGER_WEBHOOK_SECRET= \
+    HERMES_ALERT_SCRIPT="${alert_script}" \
+    HERMES_TEST_ALERT_LOG="${alert_log}" \
+    "${REPO_DIR}/scripts/hermes-x-pulse-watcher.py" --config "${config}" --sample-file "${sample}"
+  )"
+  assert_json_eq "${output}" ".should_trigger" "true"
+  assert_json_eq "${output}" ".sent" "0"
+  assert_file_contains "${alert_log}" "Hermes X pulse watcher missing webhook secret"
+
+  output="$(
+    HERMES_POST_TRIGGER_WEBHOOK_SECRET= \
+    HERMES_ALERT_SCRIPT="${alert_script}" \
+    HERMES_TEST_ALERT_LOG="${alert_log}" \
+    "${REPO_DIR}/scripts/hermes-x-pulse-watcher.py" --config "${config}" --sample-file "${sample}"
+  )"
+  assert_json_eq "${output}" ".should_trigger" "true"
+  assert_file_occurrences "${alert_log}" "Hermes X pulse watcher missing webhook secret" "1"
+}
+
 test_x_pulse_watcher_rejects_low_engagement_url_bundle() {
   local tmp_home sample config state output
   tmp_home="$(mktemp -d)"
@@ -3568,6 +3813,7 @@ main() {
   local tests=(
     test_register_cronjobs_syncs_enabled_tech_digest_jobs
     test_register_cronjobs_rejects_unknown_channel
+    test_register_cronjobs_rejects_placeholder_channels
     test_register_cronjobs_uses_local_channel_overrides
     test_morning_brief_cron_reads_direct_feeds
     test_morning_brief_time_label_comes_from_cron_config
@@ -3595,6 +3841,7 @@ main() {
     test_signal_watcher_scores_local_feed
     test_signal_watcher_reads_env_file_for_secret
     test_signal_watcher_skips_artifacts_when_secret_missing
+    test_signal_watcher_alerts_on_partial_source_failures
     test_signal_watcher_parses_nested_html_links
     test_signal_watcher_fetches_official_news_body_and_bypasses_ai_latest_cooldown
     test_signal_watcher_fetches_openai_feed_body_and_dedupes_official_pages
@@ -3607,6 +3854,7 @@ main() {
     test_signal_watcher_splits_ai_latest_artifacts_by_provider
     test_x_pulse_watcher_primes_sample_urls
     test_x_pulse_watcher_detects_sample_pulse
+    test_x_pulse_watcher_missing_secret_alert_is_cooled_down
     test_x_pulse_watcher_rejects_low_engagement_url_bundle
     test_x_pulse_watcher_treats_search_failure_as_nonfatal
     test_digest_linter_writes_metadata

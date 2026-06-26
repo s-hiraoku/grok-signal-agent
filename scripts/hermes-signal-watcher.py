@@ -525,6 +525,17 @@ def send_alert(settings: dict[str, Any], title: str, body: str, log_path: Path) 
         log_line(log_path, f"alert failed title={title!r} error={exc}")
 
 
+def should_send_alert(state: dict[str, Any], key: str, settings: dict[str, Any]) -> bool:
+    cooldown_seconds = int(settings.get("alert_cooldown_minutes", 60)) * 60
+    alerts = state.setdefault("alerts", {})
+    last_sent = alerts.get(key, 0)
+    now_ts = time.time()
+    if last_sent and now_ts - float(last_sent) < cooldown_seconds:
+        return False
+    alerts[key] = now_ts
+    return True
+
+
 def build_payload(
     route: str,
     candidates: list[dict[str, Any]],
@@ -1791,10 +1802,15 @@ def main() -> int:
                         if update_item:
                             apply_snapshot_update(state, update_item, snapshot_updates)
 
-    if errors and not observed:
+    if errors and should_send_alert(state, "source-failures", settings):
+        title = (
+            "Hermes signal watcher source failures"
+            if not observed
+            else "Hermes signal watcher partial source failures"
+        )
         send_alert(
             settings,
-            "Hermes signal watcher source failures",
+            title,
             "\n".join(errors[:10]),
             log_path,
         )
@@ -1873,12 +1889,13 @@ def send_candidates(
         log_line(log_path, f"cooldown bypass route={route}{log_group} candidates={len(candidates)} minutes={cooldown_minutes}")
     if not dry_run and not secret:
         log_line(log_path, f"missing secret env for route={route} env={secret_env}")
-        send_alert(
-            settings,
-            "Hermes signal watcher missing webhook secret",
-            f"route={route}\nenv={secret_env}\ncandidates={len(candidates)}",
-            log_path,
-        )
+        if should_send_alert(state, f"missing-secret:{route}", settings):
+            send_alert(
+                settings,
+                "Hermes signal watcher missing webhook secret",
+                f"route={route}\nenv={secret_env}\ncandidates={len(candidates)}",
+                log_path,
+            )
         return 0
     artifact = write_summary_artifacts(route, candidates, settings, group_slug, group_label)
     if artifact:
@@ -1900,12 +1917,13 @@ def send_candidates(
         return len(candidates)
     except Exception as exc:
         log_line(log_path, f"send failed route={route}{log_group} candidates={len(candidates)} error={exc}")
-        send_alert(
-            settings,
-            "Hermes signal watcher webhook send failed",
-            f"route={route}\ncandidates={len(candidates)}\nerror={exc}",
-            log_path,
-        )
+        if should_send_alert(state, f"send-failed:{delivery_key}", settings):
+            send_alert(
+                settings,
+                "Hermes signal watcher webhook send failed",
+                f"route={route}\ngroup={group_label or ''}\ncandidates={len(candidates)}\nerror={exc}",
+                log_path,
+            )
         return 0
 
 
