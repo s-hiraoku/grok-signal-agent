@@ -212,10 +212,11 @@ launchctl print gui/$(id -u)/ai.hermes.gateway
 launchctl print gui/$(id -u)/com.shiraoku.grok-signal-agent.x-pulse-watcher
 ```
 
-If this checkout is reused for another Discord server, copy
+Before running the registration scripts or installer, copy
 `config/hermes-channels.example.json` to `config/hermes-channels.local.json`
-and replace the channel IDs before running the registration scripts. The local
-file is ignored by git and overrides only the channels it contains.
+and replace the placeholders with your Discord channel IDs. The local file is
+ignored by git. Registration rejects placeholder targets so personal Discord
+IDs are not committed accidentally.
 
 The Gateway service starts immediately. Cron jobs wait for their next scheduled
 time; webhook jobs wait for the next matching signed POST.

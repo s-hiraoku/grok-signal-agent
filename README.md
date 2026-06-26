@@ -106,9 +106,11 @@ hermes gateway
 /sethome
 ```
 
-6. Install the macOS LaunchAgent:
+6. Configure local Discord channel IDs, then install the macOS LaunchAgent:
 
 ```bash
+cp config/hermes-channels.example.json config/hermes-channels.local.json
+$EDITOR config/hermes-channels.local.json
 chmod +x scripts/install-macos-launchagent.sh scripts/uninstall-macos-launchagent.sh
 ./scripts/install-macos-launchagent.sh
 ```
@@ -157,9 +159,11 @@ The legacy source-specific route for Zenn remains as a disabled cleanup entry.
 Zenn watcher signals now flow through `signal-catchup` so low-signal article
 notifications do not scatter across multiple channels. wbsb.dev is no longer monitored.
 
-Channel IDs can be overridden locally without committing personal Discord
-targets. Copy [config/hermes-channels.example.json](config/hermes-channels.example.json)
-to `config/hermes-channels.local.json`, replace the channel IDs, and rerun the
+Channel IDs must be configured locally before registration. The committed
+defaults are placeholders so personal Discord targets stay out of the
+repository. Copy
+[config/hermes-channels.example.json](config/hermes-channels.example.json) to
+`config/hermes-channels.local.json`, replace the channel IDs, and rerun the
 registration or installer script. The local override file is ignored by git.
 
 The active cron jobs are:

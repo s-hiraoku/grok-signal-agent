@@ -103,6 +103,17 @@ def send_alert(settings: dict[str, Any], title: str, body: str, log_path: Path) 
         log_line(log_path, f"alert failed title={title!r} error={exc}")
 
 
+def should_send_alert(state: dict[str, Any], key: str, settings: dict[str, Any]) -> bool:
+    cooldown_seconds = int(settings.get("alert_cooldown_minutes", 60)) * 60
+    alerts = state.setdefault("alerts", {})
+    last_sent = alerts.get(key, 0)
+    now_ts = time.time()
+    if last_sent and now_ts - float(last_sent) < cooldown_seconds:
+        return False
+    alerts[key] = now_ts
+    return True
+
+
 def canonical_x_url(url: str) -> str:
     cleaned = url.rstrip(".,;:!?)]}")
     parsed = urllib.parse.urlparse(cleaned)
@@ -390,12 +401,15 @@ def main() -> int:
         errors.extend(run_errors)
     except Exception as exc:
         log_line(log_path, f"x_search failed error={exc}")
-        send_alert(
-            settings,
-            "Hermes X pulse watcher x_search failed",
-            str(exc),
-            log_path,
-        )
+        if should_send_alert(state, "x-search-failed", settings):
+            send_alert(
+                settings,
+                "Hermes X pulse watcher x_search failed",
+                str(exc),
+                log_path,
+            )
+        if not args.dry_run:
+            save_json(state_path, state)
         print(json.dumps({"total_urls": 0, "new_urls": 0, "sent": 0, "errors": [str(exc)], "dry_run": args.dry_run}, ensure_ascii=False))
         return 1
 
@@ -440,12 +454,13 @@ def main() -> int:
             secret = env_value(settings.get("post_trigger_secret_env", ""), env_file_values)
             if not secret:
                 log_line(log_path, "missing post trigger secret")
-                send_alert(
-                    settings,
-                    "Hermes X pulse watcher missing webhook secret",
-                    f"route={route}\nqualified_urls={len(new_urls)}\nsecret_env={settings.get('post_trigger_secret_env', '')}",
-                    log_path,
-                )
+                if should_send_alert(state, f"missing-secret:{route}", settings):
+                    send_alert(
+                        settings,
+                        "Hermes X pulse watcher missing webhook secret",
+                        f"route={route}\nqualified_urls={len(new_urls)}\nsecret_env={settings.get('post_trigger_secret_env', '')}",
+                        log_path,
+                    )
             else:
                 payload = {
                     "event_type": "x.pulse",
@@ -474,12 +489,13 @@ def main() -> int:
                     log_line(log_path, f"sent route={route} qualified_urls={len(new_urls)} score={score} status={status} body={body[:200]}")
                 except Exception as exc:
                     log_line(log_path, f"send failed route={route} qualified_urls={len(new_urls)} error={exc}")
-                    send_alert(
-                        settings,
-                        "Hermes X pulse watcher webhook send failed",
-                        f"route={route}\nqualified_urls={len(new_urls)}\nerror={exc}",
-                        log_path,
-                    )
+                    if should_send_alert(state, f"send-failed:{route}", settings):
+                        send_alert(
+                            settings,
+                            "Hermes X pulse watcher webhook send failed",
+                            f"route={route}\nqualified_urls={len(new_urls)}\nerror={exc}",
+                            log_path,
+                        )
     else:
         log_line(log_path, f"below-threshold total_urls={len(urls)} candidates={len(parsed_candidates)} qualified_urls={len(new_urls)} score={score}")
 

@@ -110,20 +110,21 @@ Set `HERMES_DIGEST_LINT_STRICT=1` if you prefer failed lint to block delivery.
 Alerts are log-only unless an operator configures
 `HERMES_ALERT_DISCORD_WEBHOOK_URL` or `HERMES_ALERT_COMMAND`.
 
-The feed/page signal watcher and X pulse watcher also use
-`hermes-alert.sh` for operational failures that would otherwise be visible only
-in logs: missing webhook secrets, webhook delivery failures, source-wide feed
-failures, and `x_search` failures. Set `HERMES_ALERT_SCRIPT` only when you need
-to point a watcher at a non-default alert helper during tests or custom
-runtime layouts.
+The feed/page signal watcher and X pulse watcher also use `hermes-alert.sh` for
+operational failures that would otherwise be visible only in logs: missing
+webhook secrets, webhook delivery failures, partial or source-wide feed
+failures, and `x_search` failures. Repeated alerts for the same failure type
+are cooled down by watcher state. Set `HERMES_ALERT_SCRIPT` only when you need
+to point a watcher at a non-default alert helper during tests or custom runtime
+layouts.
 
 ## Local Channel Overrides
 
-`config/hermes-cronjobs.json` contains the default channel map used by both
+`config/hermes-cronjobs.json` contains placeholder channel targets used by both
 cron and webhook registration. To keep personal Discord channel IDs out of a
 reusable checkout, copy `config/hermes-channels.example.json` to
-`config/hermes-channels.local.json`, replace only the channels that differ, and
-rerun registration:
+`config/hermes-channels.local.json`, replace the placeholders, and rerun
+registration:
 
 ```bash
 cp config/hermes-channels.example.json config/hermes-channels.local.json
@@ -132,10 +133,11 @@ scripts/register-hermes-cronjobs.sh
 scripts/register-hermes-webhooks.sh
 ```
 
-`config/hermes-channels.local.json` is ignored by git. Set
+`config/hermes-channels.local.json` is ignored by git. Registration rejects
+placeholder targets, so every channel used by enabled cron and webhook jobs
+must resolve to a real `platform:chat_id` value. Set
 `HERMES_CHANNELS_CONFIG=/path/to/channels.json` when you want to use a
-different override file in tests or automation. Any channel missing from the
-override falls back to the committed `channels` entry.
+different override file in tests or automation.
 
 The committed default maps `ai-latest` and `tech-signals` to separate Discord
 channels. Keep official AI/model/tooling updates in `#ai-latest`; route broader

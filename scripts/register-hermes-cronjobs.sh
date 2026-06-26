@@ -74,6 +74,9 @@ channel_target() {
   if [[ -z "${target}" ]]; then
     target="$(jq -r --arg ch "${channel}" '.channels[$ch] // empty' "${CONFIG_FILE}")"
   fi
+  if [[ "${target}" == *"replace-with-"* ]]; then
+    target=""
+  fi
   printf '%s' "${target}"
 }
 

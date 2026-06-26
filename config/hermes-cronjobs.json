@@ -1,13 +1,13 @@
 {
   "version": 1,
   "channels": {
-    "tech-digest": "discord:1510425425971515503",
-    "ai-latest": "discord:1518734996544815126",
-    "tech-signals": "discord:1514063816093335653",
-    "morning-brief": "discord:1510425534436212817",
-    "weekly-review": "discord:1510425635745435648",
-    "hermes-info": "discord:1518735846998675577",
-    "hermes-chat": "discord:1510425922384167043"
+    "tech-digest": "discord:replace-with-tech-digest-channel-id",
+    "ai-latest": "discord:replace-with-ai-latest-channel-id",
+    "tech-signals": "discord:replace-with-tech-signals-channel-id",
+    "morning-brief": "discord:replace-with-morning-brief-channel-id",
+    "weekly-review": "discord:replace-with-weekly-review-channel-id",
+    "hermes-info": "discord:replace-with-hermes-info-channel-id",
+    "hermes-chat": "discord:replace-with-hermes-chat-channel-id"
   },
   "jobs": [
     {
