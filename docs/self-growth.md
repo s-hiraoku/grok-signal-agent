@@ -70,6 +70,10 @@ That memory is then included in future digest prompts.
 - `scripts/hermes-weekly-self-reflection.sh`: weekly memory update.
 - `scripts/hermes-gbrain-retrieval.sh`: prints high-priority guidance from
   prior digests/evaluations plus user notes, feedback, and follow-up requests.
+- `scripts/hermes-mnemo-memory.py`: local mnemo-like memory/knowledge store
+  with on-demand recall, backlinks, red links, graph, and curator status.
+- `scripts/hermes-mnemo-memory-hook.sh`: Gateway hook that captures only
+  configured memory-channel messages into the mnemo-like store.
 - `scripts/hermes-digest-lint.sh`: validates generated digest structure and
   writes machine-readable metadata for duplicate/topic-balance analysis.
 - `scripts/hermes-discord-feedback.sh`: captures explicit Discord feedback or

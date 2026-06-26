@@ -2,20 +2,18 @@
   "version": 1,
   "channels": {
     "tech-digest": "discord:1510425425971515503",
-    "x-buzz-info": "discord:1514063902529556491",
-    "zenn-dev-info": "discord:1513332081806147724",
-    "wbsb-dev-info": "discord:1514063970368229447",
+    "ai-latest": "discord:1518734996544815126",
     "tech-signals": "discord:1514063816093335653",
     "morning-brief": "discord:1510425534436212817",
     "weekly-review": "discord:1510425635745435648",
-    "daily-review": "discord:1513665059723808878",
-    "ask-hermes": "discord:1510425922384167043"
+    "hermes-info": "discord:1518735846998675577",
+    "hermes-chat": "discord:1510425922384167043"
   },
   "jobs": [
     {
       "id": "tech-digest-0800",
       "name": "tech-digest 08:00",
-      "enabled": true,
+      "enabled": false,
       "schedule": "0 8 * * *",
       "channel": "tech-digest",
       "mode": "script",
@@ -26,7 +24,7 @@
     {
       "id": "tech-digest-1230",
       "name": "tech-digest 12:30",
-      "enabled": true,
+      "enabled": false,
       "schedule": "30 12 * * *",
       "channel": "tech-digest",
       "mode": "script",
@@ -38,7 +36,7 @@
       "id": "tech-digest-1800",
       "name": "tech-digest 18:00",
       "enabled": true,
-      "schedule": "0 18 * * *",
+      "schedule": "0 18 * * 1-5",
       "channel": "tech-digest",
       "mode": "script",
       "script": "hermes-tech-digest-cron.sh",
@@ -46,10 +44,32 @@
       "prompt": "Run the tech digest script."
     },
     {
+      "id": "tech-digest-evaluate-1820",
+      "name": "tech-digest evaluation 18:20",
+      "enabled": true,
+      "schedule": "20 18 * * 1-5",
+      "channel": "hermes-info",
+      "mode": "script",
+      "script": "hermes-tech-digest-evaluate-cron.sh",
+      "no_agent": true,
+      "prompt": "Evaluate the latest tech digest and update memory artifacts silently."
+    },
+    {
       "id": "weekday-0950-reminder",
       "name": "平日9:50リマインダー",
-      "enabled": true,
+      "enabled": false,
       "schedule": "50 9 * * 1-5",
+      "channel": "morning-brief",
+      "mode": "script",
+      "script": "hermes-morning-brief-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the morning brief script."
+    },
+    {
+      "id": "weekday-0800-reminder",
+      "name": "平日8:00リマインダー",
+      "enabled": true,
+      "schedule": "0 8 * * 1-5",
       "channel": "morning-brief",
       "mode": "script",
       "script": "hermes-morning-brief-cron.sh",
@@ -61,7 +81,7 @@
       "name": "毎晩2:30 dreaming再合成",
       "enabled": false,
       "schedule": "30 2 * * *",
-      "channel": "ask-hermes",
+      "channel": "hermes-chat",
       "mode": "script",
       "script": "hermes-dreaming-cron.sh",
       "no_agent": true,
@@ -81,13 +101,46 @@
     {
       "id": "daily-2330-gbrain-honcho-review",
       "name": "毎晩23:30 gbrain/honcho daily review",
-      "enabled": true,
+      "enabled": false,
       "schedule": "30 23 * * *",
-      "channel": "daily-review",
+      "channel": "hermes-info",
       "mode": "script",
       "script": "hermes-daily-review-cron.sh",
       "no_agent": true,
       "prompt": "Run the daily gbrain/honcho review script."
+    },
+    {
+      "id": "hermes-health-0830",
+      "name": "Hermes health check",
+      "enabled": true,
+      "schedule": "30 8 * * *",
+      "channel": "hermes-info",
+      "mode": "script",
+      "script": "hermes-health-check-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the Hermes health check script."
+    },
+    {
+      "id": "hermes-disk-watchdog-15m",
+      "name": "Hermes disk watchdog",
+      "enabled": true,
+      "schedule": "*/15 * * * *",
+      "channel": "hermes-info",
+      "mode": "script",
+      "script": "hermes-disk-watchdog-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the disk usage watchdog script."
+    },
+    {
+      "id": "hermes-ssl-expiry-watchdog",
+      "name": "Hermes SSL expiry watchdog",
+      "enabled": true,
+      "schedule": "10 9 * * *",
+      "channel": "hermes-info",
+      "mode": "script",
+      "script": "hermes-ssl-expiry-watchdog-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the SSL certificate expiry watchdog script."
     }
   ]
 }

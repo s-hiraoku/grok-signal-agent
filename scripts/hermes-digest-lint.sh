@@ -16,6 +16,7 @@ MIN_SECTIONS="${HERMES_DIGEST_MIN_SECTIONS:-4}"
 MAX_SECTIONS="${HERMES_DIGEST_MAX_SECTIONS:-12}"
 RECENT_WINDOW="${HERMES_DIGEST_RECENT_WINDOW:-12}"
 METADATA_DIR="${HERMES_DIGEST_METADATA_DIR:-}"
+X_POST_URL_REGEX='https?://(x\.com|twitter\.com)/([^/?#[:space:]]+/status|i/web/status)/[0-9][0-9]*[^[:space:])>]*'
 
 if [[ -z "${DIGEST_FILE}" || ! -f "${DIGEST_FILE}" ]]; then
   echo "Usage: $0 DIGEST_FILE [METADATA_FILE] [REPORT_FILE]" >&2
@@ -86,7 +87,7 @@ if (( section_count < MIN_SECTIONS || section_count > MAX_SECTIONS )); then
   add_error "section count ${section_count} is outside expected range ${MIN_SECTIONS}-${MAX_SECTIONS}"
 fi
 
-grep -Eoi 'https?://(x\.com|twitter\.com)/[^[:space:])>]+' "${DIGEST_FILE}" \
+grep -Eoi "${X_POST_URL_REGEX}" "${DIGEST_FILE}" \
   | sed 's/[.,]$//' > "${urls_file}" || true
 total_x_urls="$(wc -l < "${urls_file}" | tr -d ' ')"
 unique_x_urls="$(sort -u "${urls_file}" | wc -l | tr -d ' ')"
@@ -142,7 +143,7 @@ for section_file in "${tmpdir}"/section-[0-9][0-9][0-9]; do
   lower="$(printf '%s\n%s\n' "${title}" "${body}" | tr '[:upper:]' '[:lower:]')"
 
   section_urls="$(printf '%s\n' "${body}" \
-    | grep -Eoi 'https?://(x\.com|twitter\.com)/[^[:space:])>]+' \
+    | grep -Eoi "${X_POST_URL_REGEX}" \
     | sed 's/[.,]$//' \
     | sort -u || true)"
   section_url_count="$(printf '%s\n' "${section_urls}" | sed '/^$/d' | wc -l | tr -d ' ')"
@@ -205,8 +206,10 @@ for count in \
   (( count > 0 )) && nonzero_categories=$((nonzero_categories + 1))
 done
 
-if (( section_count > 0 && category_counts_ai * 100 / section_count > 70 )); then
-  add_warning "AI/category sections exceed 70%; check for topic imbalance"
+if (( section_count > 0 )); then
+  if (( category_counts_ai * 100 / section_count > 70 )); then
+    add_warning "AI/category sections exceed 70%; check for topic imbalance"
+  fi
 fi
 
 if (( section_count >= 8 && nonzero_categories < 3 )); then

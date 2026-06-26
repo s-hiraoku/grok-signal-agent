@@ -61,7 +61,7 @@ printf '\n' >> "${HERMES_STUB_LOG}"
 
   if [[ "$1" == "cron" && "$2" == "list" ]]; then
   if [[ "${HERMES_EXISTING_JOB:-}" == "*" ]]; then
-    for name in "tech-digest 08:00" "tech-digest 12:30" "tech-digest 18:00" "平日9:50リマインダー" "毎晩2:30 dreaming再合成" "金曜17時gbrainサマリー"; do
+    for name in "tech-digest 08:00" "tech-digest 12:30" "tech-digest 18:00" "tech-digest evaluation 18:20" "平日9:50リマインダー" "平日8:00リマインダー" "毎晩2:30 dreaming再合成" "金曜17時gbrainサマリー" "毎晩23:30 gbrain/honcho daily review" "Hermes health check" "Hermes disk watchdog" "Hermes SSL expiry watchdog"; do
       printf '  stub-%s [active]\n' "${name// /-}"
       printf '    Name:      %s\n' "${name}"
     done
@@ -126,7 +126,7 @@ STUB
 test_register_cronjobs_syncs_enabled_tech_digest_jobs() {
   local tmp_home output log_file
   tmp_home="$(make_tmp_home)"
-  write_hermes_stub "${tmp_home}" "tech-digest 08:00"
+  write_hermes_stub "${tmp_home}" "tech-digest 18:00"
   log_file="${tmp_home}/hermes-calls.log"
 
   output="$(
@@ -137,16 +137,26 @@ test_register_cronjobs_syncs_enabled_tech_digest_jobs() {
     "${REPO_DIR}/scripts/register-hermes-cronjobs.sh"
   )"
 
-  assert_contains "${output}" "Synced existing: tech-digest 08:00"
+  assert_contains "${output}" "Skipped disabled cron job: tech-digest 08:00"
+  assert_contains "${output}" "Skipped disabled cron job: tech-digest 12:30"
+  assert_contains "${output}" "Synced existing: tech-digest 18:00"
+  assert_contains "${output}" "Skipped disabled cron job: 平日9:50リマインダー"
   assert_contains "${output}" "Skipped disabled cron job: 毎晩2:30 dreaming再合成"
-  assert_contains "${output}" "Cron registration complete: 5 created, 1 updated, 1 already existed, 1 disabled, 0 removed."
-  assert_file_contains "${log_file}" "cron edit --name tech-digest\\ 08:00"
+  assert_contains "${output}" "Skipped disabled cron job: 毎晩23:30 gbrain/honcho daily review"
+  assert_contains "${output}" "Cron registration complete: 6 created, 1 updated, 1 already existed, 5 disabled, 0 removed."
+  assert_file_contains "${log_file}" "cron edit --name tech-digest\\ 18:00"
   assert_file_contains "${log_file}" "--script hermes-tech-digest-cron.sh"
+  assert_file_contains "${log_file}" "--schedule 0\\ 18\\ \\*\\ \\*\\ 1-5"
+  assert_file_contains "${log_file}" "--script hermes-tech-digest-evaluate-cron.sh"
+  assert_file_contains "${log_file}" "--no-agent 20\\ 18\\ \\*\\ \\*\\ 1-5 Evaluate\\ the\\ latest\\ tech\\ digest"
   assert_file_contains "${log_file}" "--script hermes-morning-brief-cron.sh"
-  assert_file_contains "${log_file}" "--no-agent 50\\ 9\\ \\*\\ \\*\\ 1-5 Run\\ the\\ morning\\ brief\\ script."
+  assert_file_contains "${log_file}" "--no-agent 0\\ 8\\ \\*\\ \\*\\ 1-5 Run\\ the\\ morning\\ brief\\ script."
   assert_file_contains "${log_file}" "--script hermes-weekly-review-cron.sh"
-  assert_file_contains "${log_file}" "--script hermes-daily-review-cron.sh"
-  assert_file_contains "${log_file}" "--deliver discord:1513665059723808878"
+  assert_file_contains "${log_file}" "--script hermes-health-check-cron.sh"
+  assert_file_contains "${log_file}" "--script hermes-disk-watchdog-cron.sh"
+  assert_file_contains "${log_file}" "--script hermes-ssl-expiry-watchdog-cron.sh"
+  assert_file_contains "${log_file}" "--deliver discord:1518735846998675577"
+  assert_file_not_contains "${log_file}" "--script hermes-daily-review-cron.sh"
   assert_file_not_contains "${log_file}" "cron remove stub-id"
 }
 
@@ -210,7 +220,7 @@ JSON
   )"
 
   assert_contains "${output}" "Cron registration complete:"
-  assert_file_contains "${log_file}" "--name tech-digest\\ 08:00 --deliver discord:999999999999999999"
+  assert_file_contains "${log_file}" "--name tech-digest\\ 18:00 --deliver discord:999999999999999999"
   assert_file_contains "${log_file}" "--deliver discord:1510425534436212817"
 }
 
@@ -262,6 +272,119 @@ XML
   [[ "${output}" != *"大きな動きは見つからなかった"* ]] || fail "morning brief should not emit generic no-news filler"
 }
 
+test_morning_brief_time_label_comes_from_cron_config() {
+  local tmp_home feed config output
+  tmp_home="$(mktemp -d)"
+  feed="${tmp_home}/feed.xml"
+  config="${tmp_home}/cronjobs.json"
+  cat > "${feed}" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Brief Test</title>
+    <item>
+      <title>設定時刻テストニュース</title>
+      <link>https://example.com/configured-time</link>
+      <pubDate>Fri, 12 Jun 2026 08:10:00 +0900</pubDate>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${config}" <<'JSON'
+{
+  "version": 1,
+  "channels": {
+    "morning-brief": "discord:example"
+  },
+  "jobs": [
+    {
+      "name": "平日8:00リマインダー",
+      "enabled": false,
+      "schedule": "0 8 * * 1-5",
+      "channel": "morning-brief",
+      "mode": "script",
+      "script": "hermes-morning-brief-cron.sh",
+      "prompt": "Run the morning brief script."
+    },
+    {
+      "name": "平日9:50リマインダー",
+      "enabled": true,
+      "schedule": "50 9 * * 1-5",
+      "channel": "morning-brief",
+      "mode": "script",
+      "script": "hermes-morning-brief-cron.sh",
+      "prompt": "Run the morning brief script."
+    }
+  ]
+}
+JSON
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_CRONJOBS_CONFIG="${config}" \
+    HERMES_MORNING_CALENDAR_ENABLED=0 \
+    HERMES_MORNING_GENERAL_FEEDS="Brief Test|file://${feed}" \
+    HERMES_MORNING_TECH_FEEDS="Brief Test|file://${feed}" \
+    "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh"
+  )"
+
+  assert_contains "${output}" "9:50 の morning brief"
+  [[ "${output}" != *"8:00 の morning brief"* ]] || fail "morning brief should not use hard-coded 8:00"
+}
+
+test_runtime_morning_brief_time_label_comes_from_runtime_config() {
+  local tmp_home runtime_dir feed config output
+  tmp_home="$(mktemp -d)"
+  runtime_dir="${tmp_home}/.hermes/runtime/grok-signal-agent"
+  feed="${tmp_home}/feed.xml"
+  config="${runtime_dir}/config/hermes-cronjobs.json"
+  mkdir -p "${tmp_home}/.hermes/scripts" "${runtime_dir}/config"
+  install -m 755 "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "${tmp_home}/.hermes/scripts/hermes-morning-brief-cron.sh"
+  cat > "${feed}" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Runtime Brief Test</title>
+    <item>
+      <title>runtime 設定時刻テストニュース</title>
+      <link>https://example.com/runtime-configured-time</link>
+      <pubDate>Fri, 12 Jun 2026 08:10:00 +0900</pubDate>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${config}" <<'JSON'
+{
+  "version": 1,
+  "channels": {
+    "morning-brief": "discord:example"
+  },
+  "jobs": [
+    {
+      "name": "平日9:50リマインダー",
+      "enabled": true,
+      "schedule": "50 9 * * 1-5",
+      "channel": "morning-brief",
+      "mode": "script",
+      "script": "hermes-morning-brief-cron.sh",
+      "prompt": "Run the morning brief script."
+    }
+  ]
+}
+JSON
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_POSTING_RUNTIME="${runtime_dir}" \
+    HERMES_MORNING_CALENDAR_ENABLED=0 \
+    HERMES_MORNING_GENERAL_FEEDS="Runtime Brief Test|file://${feed}" \
+    HERMES_MORNING_TECH_FEEDS="Runtime Brief Test|file://${feed}" \
+    "${tmp_home}/.hermes/scripts/hermes-morning-brief-cron.sh"
+  )"
+
+  assert_contains "${output}" "9:50 の morning brief"
+}
+
 test_morning_brief_includes_today_calendar_events() {
   local tmp_home feed google_api output
   tmp_home="$(mktemp -d)"
@@ -299,7 +422,7 @@ PY
   output="$(
     TZ=Asia/Tokyo \
     HOME="${tmp_home}" \
-    HERMES_MORNING_NOW="2026-06-12T09:50:00+09:00" \
+    HERMES_MORNING_NOW="2026-06-12T08:00:00+09:00" \
     HERMES_GOOGLE_API_SCRIPT="${google_api}" \
     HERMES_GOOGLE_API_PYTHON="${PYTHON:-python3}" \
     HERMES_MORNING_GENERAL_FEEDS="Brief Test|file://${feed}" \
@@ -364,7 +487,7 @@ PY
   output="$(
     TZ=Asia/Tokyo \
     HOME="${tmp_home}" \
-    HERMES_MORNING_NOW="2026-06-15T09:50:00+09:00" \
+    HERMES_MORNING_NOW="2026-06-15T08:00:00+09:00" \
     HERMES_GOOGLE_API_SCRIPT="${google_api}" \
     HERMES_GOOGLE_API_PYTHON="${PYTHON:-python3}" \
     HERMES_MORNING_GENERAL_FEEDS="Brief Test|file://${feed}" \
@@ -436,6 +559,8 @@ STUB
   assert_contains "${output}" "Skipped webhook registration because Hermes webhook platform is not enabled"
   assert_file_contains "${tmp_home}/hermes-calls.log" "gateway restart"
   [[ -x "${tmp_home}/.hermes/bin/hermes-digest-lint.sh" ]] || fail "digest linter should be installed"
+  [[ -x "${tmp_home}/.hermes/bin/hermes-mnemo-memory.py" ]] || fail "mnemo memory helper should be installed"
+  [[ -x "${tmp_home}/.hermes/bin/hermes-mnemo-memory-hook.sh" ]] || fail "mnemo memory hook should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-discord-feedback.sh" ]] || fail "feedback hook should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-alert.sh" ]] || fail "alert helper should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-obsidian-mcp-setup.sh" ]] || fail "obsidian MCP setup helper should be installed"
@@ -447,6 +572,7 @@ STUB
   [[ -x "${tmp_home}/.hermes/bin/hermes-x-pulse-watcher.sh" ]] || fail "x pulse watcher helper should be installed"
   [[ -x "${tmp_home}/.hermes/runtime/grok-signal-agent/scripts/hermes-signal-watcher.py" ]] || fail "signal watcher runtime script should be installed"
   [[ -x "${tmp_home}/.hermes/runtime/grok-signal-agent/scripts/hermes-x-pulse-watcher.py" ]] || fail "x pulse watcher runtime script should be installed"
+  [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/hermes-cronjobs.json" ]] || fail "cronjobs runtime config should be installed"
   [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/signal-watchers.json" ]] || fail "signal watcher runtime config should be installed"
   [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/x-pulse-watchers.json" ]] || fail "x pulse watcher runtime config should be installed"
   [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/repo-path" ]] || fail "posting admin repo hint should be installed"
@@ -456,11 +582,18 @@ STUB
   [[ -x "${tmp_home}/.hermes/scripts/hermes-morning-brief-cron.sh" ]] || fail "morning brief cron script should be installed"
   [[ -x "${tmp_home}/.hermes/scripts/hermes-review-cron.sh" ]] || fail "review cron script should be installed"
   [[ -x "${tmp_home}/.hermes/scripts/hermes-daily-review-cron.sh" ]] || fail "daily review cron wrapper should be installed"
+  [[ -x "${tmp_home}/.hermes/scripts/hermes-health-check-cron.sh" ]] || fail "health check cron script should be installed"
+  [[ -x "${tmp_home}/.hermes/scripts/hermes-tech-digest-evaluate-cron.sh" ]] || fail "tech digest evaluation cron script should be installed"
+  [[ -x "${tmp_home}/.hermes/scripts/hermes-disk-watchdog-cron.sh" ]] || fail "disk watchdog cron script should be installed"
+  [[ -x "${tmp_home}/.hermes/scripts/hermes-ssl-expiry-watchdog-cron.sh" ]] || fail "ssl expiry watchdog cron script should be installed"
   [[ -x "${tmp_home}/.hermes/scripts/hermes-weekly-review-cron.sh" ]] || fail "weekly review cron wrapper should be installed"
   [[ -f "${tmp_home}/.hermes/prompts/nightly-dreaming.md" ]] || fail "dreaming prompt should be installed"
+  [[ -f "${tmp_home}/.hermes/prompts/webhooks/signal-catchup.md" ]] || fail "webhook prompt should be installed"
   assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-mnemo-memory-hook.sh"
   assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-discord-feedback.sh"
   assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-mnemo-memory-hook.sh"
   assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-discord-feedback.sh"
   assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.signal-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
   assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.x-pulse-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
@@ -514,8 +647,10 @@ STUB
   assert_file_contains "${tmp_home}/hermes-calls.log" "gateway install"
   assert_file_contains "${tmp_home}/hermes-calls.log" "gateway restart"
   assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-mnemo-memory-hook.sh"
   assert_file_contains "${tmp_home}/.hermes/config.yaml" "hermes-discord-feedback.sh"
   assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-gbrain-remember.sh"
+  assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-mnemo-memory-hook.sh"
   assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-discord-feedback.sh"
 }
 
@@ -697,7 +832,7 @@ cat <<'DREAM'
 - 最近の明示指示と評価を確認した。
 
 ## 再合成した変化
-- Zenn と wbsb.dev を技術記事ソースとして整理した。
+- Zenn と Jina Reader を技術記事ソースとして整理した。
 
 ## 矛盾解決
 - AI偏重を避けつつ、必要なAI情報は一次情報で扱う。
@@ -787,7 +922,7 @@ if [[ "${1:-}" == "memory" && "${2:-}" == "status" ]]; then
 fi
 if [[ "${1:-}" == "-z" ]]; then
   cat <<'REVIEW'
-daily-review
+hermes-info
 
 ## 今日の更新
 - gbrainとhonchoの状態を確認したよ。
@@ -816,7 +951,7 @@ STUB
     "${REPO_DIR}/scripts/hermes-review-cron.sh" --daily
   )"
 
-  assert_contains "${output}" "daily-review"
+  assert_contains "${output}" "hermes-info"
   assert_contains "${output}" "honcho は未設定"
   report_file="$(find "${tmp_home}/state/reviews/daily" -type f -name '*.md' -print -quit)"
   [[ -n "${report_file}" ]] || fail "expected daily review report"
@@ -871,43 +1006,157 @@ STUB
   assert_contains "${output}" "ヘルメスちゃんが届けている"
 }
 
+write_health_fixture() {
+  local tmp_home="$1" cron_status="${2:-ok}" include_legacy_webhook="${3:-0}"
+  mkdir -p "${tmp_home}/.hermes/cron" "${tmp_home}/.hermes/state"
+  cat > "${tmp_home}/.hermes/gateway_state.json" <<'JSON'
+{
+  "gateway_state": "running",
+  "platforms": {
+    "discord": {"state": "connected"},
+    "webhook": {"state": "connected"}
+  }
+}
+JSON
+  cat > "${tmp_home}/.hermes/cron/jobs.json" <<JSON
+{
+  "jobs": [
+    {
+      "name": "tech-digest 18:00",
+      "enabled": true,
+      "last_status": "${cron_status}",
+      "last_error": "Script timed out after 300s",
+      "last_delivery_error": null
+    },
+    {
+      "name": "Hermes health check",
+      "enabled": true,
+      "last_status": "ok",
+      "last_error": null,
+      "last_delivery_error": null
+    }
+  ]
+}
+JSON
+  if [[ "${include_legacy_webhook}" == "1" ]]; then
+    cat > "${tmp_home}/.hermes/webhook_subscriptions.json" <<'JSON'
+{
+  "signal-catchup": {},
+  "ai-latest-trigger": {},
+  "tech-digest-trigger": {},
+  "github-pr-review-trigger": {},
+  "x-buzz-trigger": {},
+  "nightly-dreaming-trigger": {},
+  "wbsb-trigger": {}
+}
+JSON
+  else
+    cat > "${tmp_home}/.hermes/webhook_subscriptions.json" <<'JSON'
+{
+  "signal-catchup": {},
+  "ai-latest-trigger": {},
+  "tech-digest-trigger": {},
+  "github-pr-review-trigger": {},
+  "x-buzz-trigger": {},
+  "nightly-dreaming-trigger": {}
+}
+JSON
+  fi
+  cat > "${tmp_home}/.hermes/state/signal-watcher-state.json" <<'JSON'
+{"runs":[{"errors":[]}]}
+JSON
+  cat > "${tmp_home}/.hermes/state/x-pulse-watcher-state.json" <<'JSON'
+{"runs":[{"errors":[]}]}
+JSON
+}
+
+test_health_check_cron_silent_when_healthy() {
+  local tmp_home output
+  tmp_home="$(mktemp -d)"
+  write_health_fixture "${tmp_home}" "ok" "0"
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_HOME="${tmp_home}/.hermes" \
+    HERMES_HEALTH_CHECK_LAUNCHD=0 \
+    "${REPO_DIR}/scripts/hermes-health-check-cron.sh"
+  )"
+
+  [[ -z "${output}" ]] || fail "healthy health check should be silent"
+  assert_file_contains "${tmp_home}/.hermes/logs/hermes-health-check.log" "issues=0"
+}
+
+test_health_check_cron_reports_failures() {
+  local tmp_home output
+  tmp_home="$(mktemp -d)"
+  write_health_fixture "${tmp_home}" "error" "1"
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_HOME="${tmp_home}/.hermes" \
+    HERMES_HEALTH_CHECK_LAUNCHD=0 \
+    "${REPO_DIR}/scripts/hermes-health-check-cron.sh"
+  )"
+
+  assert_contains "${output}" "Hermes health check: attention needed"
+  assert_contains "${output}" "Cron job last failure: tech-digest 18:00"
+  assert_contains "${output}" "Disabled legacy webhook route is still registered: wbsb-trigger"
+}
+
 test_scheduled_prompts_require_direct_source_links() {
   assert_file_contains "${REPO_DIR}/prompts/x-daily-summary.md" "handle だけの出典は不可"
   assert_file_contains "${REPO_DIR}/prompts/x-daily-summary.md" "Google の検索結果 URL ではなく"
   assert_file_contains "${REPO_DIR}/prompts/tech-digest.md" "参照ページ: <direct URL>"
-  assert_file_contains "${REPO_DIR}/prompts/tech-digest.md" "Use a soft traction gate"
+  assert_file_contains "${REPO_DIR}/prompts/tech-digest.md" "Use a strict traction gate"
   assert_file_contains "${REPO_DIR}/prompts/tech-digest.md" "反応: <likes/reposts/replies/quotes/views"
   assert_file_contains "${REPO_DIR}/prompts/tech-digest.md" "Posting Style"
   assert_file_contains "${REPO_DIR}/prompts/hermes-post-style.md" "ヘルメスちゃんが届けている"
-  assert_file_contains "${REPO_DIR}/config/x-pulse-watchers.json" '"min_likes_early": 100'
-  assert_file_contains "${REPO_DIR}/config/x-pulse-watchers.json" '"min_views_early": 10000'
+  assert_file_contains "${REPO_DIR}/config/x-pulse-watchers.json" '"min_likes_early": 250'
+  assert_file_contains "${REPO_DIR}/config/x-pulse-watchers.json" '"min_views_early": 30000'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-morning-brief-cron.sh"'
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "DEFAULT_GENERAL_FEEDS"
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "DEFAULT_TECH_FEEDS"
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "出典:"
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"x-buzz-info": "discord:1514063902529556491"'
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"zenn-dev-info": "discord:1513332081806147724"'
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"wbsb-dev-info": "discord:1514063970368229447"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"ai-latest": "discord:1518734996544815126"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"tech-signals": "discord:1514063816093335653"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes-info": "discord:1518735846998675577"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes-chat": "discord:1510425922384167043"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-health-check-cron.sh"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-tech-digest-evaluate-cron.sh"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-disk-watchdog-cron.sh"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-ssl-expiry-watchdog-cron.sh"'
   assert_file_contains "${REPO_DIR}/README.md" "Hermes channel routing is organized by what readers expect"
-  assert_file_contains "${REPO_DIR}/README.md" '`#zenn-dev-info`'
+  assert_file_contains "${REPO_DIR}/README.md" 'current default config keeps `#ai-latest` and `#tech-signals` as separate'
+  assert_file_contains "${REPO_DIR}/README.md" '`#ai-latest`'
+  assert_file_contains "${REPO_DIR}/README.md" '`#hermes-chat`'
+  assert_file_contains "${REPO_DIR}/README.md" '`#hermes-info`'
+  assert_file_contains "${REPO_DIR}/README.md" "wbsb.dev is no longer monitored"
   assert_file_contains "${REPO_DIR}/docs/scheduled-jobs.md" "Google/Web-derived items must include the original page URL"
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "signal-catchup"'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"channel": "tech-signals"'
+  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "ai-latest-trigger"'
+  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"channel": "ai-latest"'
+  assert_file_contains "${REPO_DIR}/prompts/webhooks/ai-latest-trigger.md" 'payload.artifact.infographics'
+  assert_file_contains "${REPO_DIR}/prompts/webhooks/ai-latest-trigger.md" 'MEDIA:<png>'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "tech-digest-trigger"'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "x-buzz-trigger"'
-  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"channel": "x-buzz-info"'
-  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" "full tech digest ではありません"
+  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "github-pr-review-trigger"'
+  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"prompt_file": "prompts/webhooks/x-buzz-trigger.md"'
+  assert_file_contains "${REPO_DIR}/prompts/webhooks/x-buzz-trigger.md" "full tech digest ではありません"
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "zenn-dev-trigger"'
-  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"channel": "zenn-dev-info"'
-  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "wbsb-trigger"'
-  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"channel": "wbsb-dev-info"'
-  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" "ヘルメスちゃんが届けている"
-  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" "ヘルメスちゃんです"
+  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"enabled": false'
+  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"description": "Disabled cleanup entry for the removed wbsb.dev source."'
+  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"include_post_style": true'
+  assert_file_contains "${REPO_DIR}/prompts/hermes-post-style.md" "ヘルメスちゃんが届けている"
+  assert_file_contains "${REPO_DIR}/prompts/webhooks/github-pr-review-trigger.md" "GitHub webhook"
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"replaces_cron_jobs"'
   assert_file_contains "${REPO_DIR}/config/signal-watchers.json" '"id": "zenn-trending"'
-  assert_file_contains "${REPO_DIR}/config/signal-watchers.json" '"id": "wbsb-feed"'
+  assert_file_not_contains "${REPO_DIR}/config/signal-watchers.json" '"id": "wbsb-feed"'
+  assert_file_not_contains "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh" "wbsb.dev"
   assert_file_contains "${REPO_DIR}/docs/scheduled-jobs.md" "Hermes' webhook platform"
+  assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"ai-latest"'
+  assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"hermes-info"'
+  assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"hermes-chat"'
   assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"tech-digest"'
 }
 
@@ -936,28 +1185,31 @@ JSON
   )"
 
   assert_contains "${output}" "Synced existing webhook: signal-catchup"
+  assert_contains "${output}" "Created webhook: ai-latest-trigger"
   assert_contains "${output}" "Created webhook: tech-digest-trigger"
   assert_contains "${output}" "Created webhook: x-buzz-trigger"
-  assert_contains "${output}" "Created webhook: zenn-dev-trigger"
-  assert_contains "${output}" "Created webhook: wbsb-trigger"
+  assert_contains "${output}" "Created webhook: github-pr-review-trigger"
   assert_contains "${output}" "Created webhook: nightly-dreaming-trigger"
+  assert_contains "${output}" "Skipped disabled webhook: zenn-dev-trigger"
+  assert_contains "${output}" "Skipped disabled webhook: wbsb-trigger"
   assert_contains "${output}" "Skipped disabled webhook: morning-brief-trigger"
   assert_contains "${output}" "Skipped disabled webhook: gbrain-weekly-summary-trigger"
-  assert_contains "${output}" "Webhook registration complete: 5 created, 1 updated, 2 disabled, 0 removed."
+  assert_contains "${output}" "Webhook registration complete: 5 created, 1 updated, 4 disabled, 0 removed."
   assert_file_contains "${log_file}" "webhook subscribe signal-catchup"
+  assert_file_contains "${log_file}" "webhook subscribe ai-latest-trigger"
   assert_file_contains "${log_file}" "webhook subscribe tech-digest-trigger"
   assert_file_contains "${log_file}" "webhook subscribe x-buzz-trigger"
-  assert_file_contains "${log_file}" "webhook subscribe zenn-dev-trigger"
-  assert_file_contains "${log_file}" "webhook subscribe wbsb-trigger"
+  assert_file_contains "${log_file}" "webhook subscribe github-pr-review-trigger"
+  assert_file_contains "${log_file}" "GitHub"
+  assert_file_contains "${log_file}" "Posting"
+  assert_file_not_contains "${log_file}" "webhook subscribe zenn-dev-trigger"
+  assert_file_not_contains "${log_file}" "webhook subscribe wbsb-trigger"
   assert_file_contains "${log_file}" "hermes-tech-digest-cron.sh"
   assert_file_contains "${log_file}" "script_path="
   assert_file_contains "${log_file}" "SCRIPT_UNAVAILABLE"
   assert_file_contains "${log_file}" 'bash "${script_path}"'
   assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1510425425971515503"
-  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1514063902529556491"
-  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1513332081806147724"
-  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1514063970368229447"
-  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1514063816093335653"
+  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 1518734996544815126"
   assert_file_contains "${log_file}" "--secret existing-secret"
   assert_file_contains "${log_file}" "--secret post-secret-from-env-file"
 }
@@ -977,7 +1229,7 @@ ENV
 {
   "version": 1,
   "channels": {
-    "x-buzz-info": "discord:888888888888888888"
+    "tech-signals": "discord:888888888888888888"
   }
 }
 JSON
@@ -994,7 +1246,8 @@ JSON
   assert_file_contains "${log_file}" "webhook subscribe x-buzz-trigger"
   assert_file_contains "${log_file}" "--deliver-chat-id 888888888888888888"
   assert_file_contains "${log_file}" "webhook subscribe signal-catchup"
-  assert_file_contains "${log_file}" "--deliver-chat-id 1514063816093335653"
+  assert_file_contains "${log_file}" "webhook subscribe ai-latest-trigger"
+  assert_file_contains "${log_file}" "--deliver-chat-id 1518734996544815126"
 }
 
 test_register_webhooks_rejects_script_names_outside_runtime_cron_pattern() {
@@ -1247,6 +1500,77 @@ JSON
   assert_file_contains "${alert_log}" "Hermes signal watcher webhook send failed"
 }
 
+test_signal_watcher_skips_artifacts_when_secret_missing() {
+  local tmp_home feed config log_file output
+  tmp_home="$(mktemp -d)"
+  feed="${tmp_home}/feed.xml"
+  config="${tmp_home}/watchers.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${feed}" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Local Feed</title>
+    <item>
+      <title>OpenAI Codex release</title>
+      <link>https://example.com/codex-release</link>
+      <guid>codex-release</guid>
+      <description>New Codex release for AI agent workflows.</description>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${tmp_home}/state.json",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_TEST_MISSING_SIGNAL_SECRET",
+    "post_trigger_secret_env": "HERMES_TEST_MISSING_POST_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": ""
+  },
+  "keyword_weights": {
+    "openai": 22,
+    "codex": 28,
+    "release": 16,
+    "ai": 14
+  },
+  "sources": [
+    {
+      "id": "local-openai",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${feed}",
+      "base_score": 60,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["openai", "official"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --allow-first-run-send)"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_json_eq "${output}" ".sent" "0"
+  assert_file_contains "${log_file}" "missing secret env for route=ai-latest-trigger"
+  [[ ! -d "${tmp_home}/artifacts" ]] || fail "missing secret should not write summary artifacts"
+  [[ ! -d "${tmp_home}/public/latest" ]] || fail "missing secret should not publish latest artifacts"
+}
+
 test_signal_watcher_parses_nested_html_links() {
   local tmp_home page config output
   tmp_home="$(mktemp -d)"
@@ -1415,6 +1739,275 @@ except ValueError as exc:
 else:
     raise AssertionError("expected parse_document to reject text/html")
 PY
+}
+
+test_signal_watcher_fetches_official_news_body_and_bypasses_ai_latest_cooldown() {
+  local tmp_home index article hn_feed config state log_file output output2 artifact_dir
+  tmp_home="$(mktemp -d)"
+  index="${tmp_home}/news.html"
+  article="${tmp_home}/introducing-claude-tag.html"
+  hn_feed="${tmp_home}/hn.xml"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${index}" <<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <a href="introducing-claude-tag.html">
+      <span>Product</span>
+      <span>Jun 23, 2026</span>
+      <strong>Introducing Claude Tag</strong>
+      <span>Claude Tag is a new way for teams to work with Claude.</span>
+    </a>
+  </body>
+</html>
+HTML
+  cat > "${article}" <<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <main>
+      <h1>Introducing Claude Tag</h1>
+      <p>Claude Tag is a new way for teams to work with Claude directly in Slack.</p>
+      <p>Teams can tag @Claude in a channel or thread, and Claude responds with context from the conversation.</p>
+      <p>Claude Tag is available today in beta for Claude Enterprise and Team customers.</p>
+      <h2>Related content</h2>
+    </main>
+  </body>
+</html>
+HTML
+  cat > "${hn_feed}" <<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>HN</title>
+    <item>
+      <title>Claude Tag</title>
+      <link>file://${article}</link>
+      <description>Discussion link that should not suppress the official source.</description>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "last_sent_routes": {
+    "ai-latest-trigger:anthropic": 9999999999
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_TEST_MISSING_SIGNAL_SECRET",
+    "post_trigger_secret_env": "HERMES_TEST_MISSING_POST_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": "",
+    "summary_cooldown_bypass_min_score": 100,
+    "provider_split_routes": ["ai-latest-trigger"]
+  },
+  "keyword_weights": {
+    "anthropic": 24,
+    "claude": 24,
+    "ai": 14,
+    "slack": 12
+  },
+  "sources": [
+    {
+      "id": "hn-frontpage-local",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${hn_feed}",
+      "base_score": 80,
+      "min_score": 50,
+      "route": "signal-catchup",
+      "tags": ["hacker news", "claude", "ai"]
+    },
+    {
+      "id": "anthropic-news-local",
+      "enabled": true,
+      "type": "html_links",
+      "url": "file://${index}",
+      "base_score": 48,
+      "min_score": 78,
+      "route": "ai-latest-trigger",
+      "max_items": 3,
+      "cooldown_minutes": 360,
+      "fetch_item_summary": true,
+      "include_url_patterns": ["introducing-claude-tag"],
+      "tags": ["anthropic", "claude", "ai", "official"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_file_contains "${log_file}" "cooldown bypass route=ai-latest-trigger group=Anthropic"
+  assert_file_not_contains "${log_file}" "dry-run route=signal-catchup"
+  assert_file_contains "${artifact_dir}/signals.json" "available today in beta"
+  assert_file_contains "${artifact_dir}/facts.json" "Introducing Claude Tag"
+  assert_file_contains "${artifact_dir}/infographic-01.html" "Claude Tag"
+  [[ ! -e "${artifact_dir}/infographic-02.html" ]] || fail "official news article should produce one infographic"
+  assert_file_contains "${tmp_home}/public/latest/anthropic/index.html" "Claude Tag"
+
+  output2="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}")"
+  assert_json_eq "${output2}" ".sent" "0"
+  assert_file_contains "${log_file}" "missing secret env for route=ai-latest-trigger"
+  assert_file_contains "${state}" "hn-frontpage-local:file://"
+}
+
+test_signal_watcher_fetches_openai_feed_body_and_dedupes_official_pages() {
+  local tmp_home feed index article config state log_file output artifact_dir
+  tmp_home="$(mktemp -d)"
+  feed="${tmp_home}/openai.xml"
+  index="${tmp_home}/product-releases.html"
+  article="${tmp_home}/introducing-gpt-codex.html"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${feed}" <<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>OpenAI News</title>
+    <item>
+      <title>Introducing GPT-Codex for agentic coding</title>
+      <link>file://${article}</link>
+      <guid>file://${article}</guid>
+      <description>Short feed summary.</description>
+    </item>
+  </channel>
+</rss>
+XML
+  cat > "${index}" <<HTML
+<!doctype html>
+<html>
+  <body>
+    <a href="file://${article}">
+      <span>Product</span>
+      <span>Jun 23, 2026</span>
+      <strong>Introducing GPT-Codex for agentic coding</strong>
+    </a>
+  </body>
+</html>
+HTML
+  cat > "${article}" <<'HTML'
+<!doctype html>
+<html>
+  <body>
+    <main>
+      <h1>Introducing GPT-Codex for agentic coding</h1>
+      <p>GPT-Codex is a new model for agentic coding workflows in the Responses API.</p>
+      <p>Developers can use it to run longer code editing sessions, review changes, and automate repository tasks.</p>
+      <p>It is available today for API and Codex users.</p>
+      <h2>Related content</h2>
+    </main>
+  </body>
+</html>
+HTML
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "last_sent_routes": {
+    "ai-latest-trigger:openai": 9999999999
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": "",
+    "summary_cooldown_bypass_min_score": 100,
+    "provider_split_routes": ["ai-latest-trigger"]
+  },
+  "keyword_weights": {
+    "openai": 22,
+    "codex": 28,
+    "gpt": 22,
+    "responses api": 26,
+    "ai": 14
+  },
+  "sources": [
+    {
+      "id": "openai-news-local",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${feed}",
+      "base_score": 54,
+      "min_score": 78,
+      "route": "ai-latest-trigger",
+      "max_items": 3,
+      "cooldown_minutes": 360,
+      "fetch_item_summary": true,
+      "tags": ["openai", "ai", "official"]
+    },
+    {
+      "id": "openai-product-releases-local",
+      "enabled": true,
+      "type": "html_links",
+      "url": "file://${index}",
+      "base_score": 54,
+      "min_score": 78,
+      "route": "ai-latest-trigger",
+      "max_items": 3,
+      "cooldown_minutes": 360,
+      "fetch_item_summary": true,
+      "include_url_patterns": ["introducing-gpt-codex"],
+      "tags": ["openai", "product", "official"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_file_contains "${log_file}" "cooldown bypass route=ai-latest-trigger group=OpenAI"
+  assert_file_contains "${artifact_dir}/signals.json" "longer code editing sessions"
+  assert_file_contains "${artifact_dir}/facts.json" "Introducing GPT-Codex for agentic coding"
+  [[ ! -e "${artifact_dir}/infographic-02.html" ]] || fail "duplicate OpenAI official pages should produce one infographic"
+  assert_file_contains "${tmp_home}/public/latest/openai/index.html" "GPT-Codex"
 }
 
 test_signal_watcher_retries_candidates_blocked_by_cooldown() {
@@ -1590,6 +2183,518 @@ JSON
   assert_file_contains "${log_file}" "dry-run route=tech-digest-trigger candidates=2"
   assert_file_contains "${log_file}" "dry-run route=zenn-dev-trigger candidates=1"
   assert_file_not_contains "${log_file}" "dry-run route=tech-digest-trigger candidates=3"
+}
+
+test_signal_watcher_writes_ai_latest_summary_artifacts_for_snapshot_changes() {
+  local tmp_home snapshot config state log_file output artifact_dir archive_dir latest_dir infographic_signature
+  tmp_home="$(mktemp -d)"
+  snapshot="${tmp_home}/changelog.md"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${snapshot}" <<'MD'
+# Changelog
+
+## 2.0.0
+- Added Claude Code MCP release tracking.
+- Fixed agent session handling.
+MD
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "snapshots": {
+    "local-changelog": {
+      "hash": "old",
+      "content": "# Changelog\n\n## 1.0.0\n- Initial release.",
+      "url": "https://example.com/changelog",
+      "title": "Local changelog",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    }
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": ""
+  },
+  "keyword_weights": {
+    "claude code": 30,
+    "mcp": 20,
+    "agent": 20,
+    "release": 15
+  },
+  "sources": [
+    {
+      "id": "local-changelog",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${snapshot}",
+      "link_url": "https://example.com/changelog",
+      "title": "Local changelog changed",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["claude code", "release"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+  [[ -n "${artifact_dir}" ]] || fail "expected ai-latest artifact directory"
+  archive_dir="$(find "${tmp_home}/archive" -mindepth 3 -maxdepth 3 -type d -print -quit)"
+  latest_dir="${tmp_home}/public/latest"
+  infographic_signature="$(od -An -tx1 -N8 "${artifact_dir}/infographic.png" | tr -d ' \n')"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_file_contains "${log_file}" "summary artifacts route=ai-latest-trigger"
+  assert_file_contains "${artifact_dir}/analysis.md" "Local changelog changed"
+  assert_file_contains "${artifact_dir}/signals.json" "+- Added Claude Code MCP release tracking."
+  assert_file_contains "${artifact_dir}/summary.html" "AI最新"
+  assert_file_contains "${artifact_dir}/index.html" "AI最新"
+  assert_file_contains "${artifact_dir}/facts.json" "Claude Code MCP release tracking"
+  assert_file_contains "${artifact_dir}/facts.json" '"detail"'
+  assert_file_contains "${artifact_dir}/factcheck.md" "Status:"
+  assert_file_contains "${artifact_dir}/infographic.html" "どういう場面で使えるか"
+  assert_file_contains "${artifact_dir}/infographic.html" "最初に確認すること"
+  assert_file_contains "${artifact_dir}/infographic.html" "詳細"
+  assert_file_not_contains "${artifact_dir}/infographic.html" "SOURCE LOCK"
+  assert_file_not_contains "${artifact_dir}/infographic.html" "公式ソース確認済み"
+  assert_file_not_contains "${artifact_dir}/infographic.html" "採用シグナル"
+  [[ -n "${archive_dir}" ]] || fail "expected archived ai-latest artifact"
+  assert_file_contains "${archive_dir}/analysis.md" "Local changelog changed"
+  assert_file_contains "${tmp_home}/archive/index.jsonl" "local_path"
+  assert_file_contains "${latest_dir}/index.html" "AI最新"
+  [[ ! -e "${artifact_dir}/summary.png" ]] || fail "summary.png should not be generated"
+  [[ ! -e "${latest_dir}/summary.png" ]] || fail "latest summary.png should not be generated"
+  [[ ! -e "${artifact_dir}/infographic.svg" ]] || fail "infographic.svg should not be generated"
+  assert_eq "${infographic_signature}" "89504e470d0a1a0a" "infographic.png signature"
+}
+
+test_signal_watcher_writes_one_infographic_per_new_feature() {
+  local tmp_home snapshot config state log_file output artifact_dir infographic_count
+  tmp_home="$(mktemp -d)"
+  snapshot="${tmp_home}/changelog.md"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${snapshot}" <<'MD'
+# Changelog
+
+## 3.0.0
+- Added Record & Replay for reusable skills.
+- Added bulk actions to automation run history.
+- Fixed small UI issues.
+- Fixed startup delay after proxy support was added.
+MD
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "snapshots": {
+    "local-multi-feature": {
+      "hash": "old",
+      "content": "# Changelog\n\n## 2.9.0\n- Previous release.",
+      "url": "https://example.com/changelog",
+      "title": "Local changelog",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    }
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": ""
+  },
+  "keyword_weights": {
+    "record": 20,
+    "automation": 20,
+    "release": 15
+  },
+  "sources": [
+    {
+      "id": "local-multi-feature",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${snapshot}",
+      "link_url": "file://${snapshot}",
+      "title": "Local multi-feature changelog changed",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["openai", "release"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+  infographic_count="$(find "${artifact_dir}" -maxdepth 1 -name 'infographic-[0-9][0-9].png' | wc -l | tr -d ' ')"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_eq "${infographic_count}" "2" "one infographic per new feature"
+  [[ -e "${artifact_dir}/infographic.png" ]] || fail "expected first infographic alias"
+  [[ -e "${artifact_dir}/infographic.html" ]] || fail "expected first infographic html alias"
+  [[ ! -e "${artifact_dir}/infographic-01.svg" ]] || fail "infographic svg should not be generated"
+  assert_file_contains "${artifact_dir}/facts.json" "Record & Replay"
+  assert_file_contains "${artifact_dir}/facts.json" "bulk actions"
+  assert_file_contains "${artifact_dir}/facts.json" '"detail"'
+  assert_file_contains "${artifact_dir}/facts.json" "official-source-confirmed"
+  assert_file_contains "${artifact_dir}/factcheck.md" "Evidence:"
+  assert_file_contains "${artifact_dir}/infographic-01.html" "操作手順をスキル化"
+  assert_file_contains "${artifact_dir}/infographic-02.html" "自動化履歴を一括操作"
+  assert_file_contains "${artifact_dir}/infographic-01.html" "反復作業をスキル化"
+  assert_file_contains "${artifact_dir}/infographic-02.html" "実行履歴"
+  assert_file_contains "${artifact_dir}/infographic-01.html" "どういう場面で使えるか"
+  assert_file_contains "${artifact_dir}/infographic-01.html" "詳細"
+  assert_file_contains "${artifact_dir}/infographic-01.html" "入口"
+  assert_file_contains "${artifact_dir}/infographic-01.html" "最初に確認すること"
+  assert_file_not_contains "${artifact_dir}/infographic-01.html" "採用シグナル"
+  assert_file_not_contains "${artifact_dir}/infographic-01.html" "公式ソース確認済み"
+  assert_file_not_contains "${artifact_dir}/infographic-01.html" "1/2"
+  assert_file_not_contains "${artifact_dir}/infographic-02.html" "2/2"
+}
+
+test_signal_watcher_uses_full_summary_for_infographic_features() {
+  local tmp_home snapshot config state log_file output artifact_dir
+  tmp_home="$(mktemp -d)"
+  snapshot="${tmp_home}/changelog.md"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  {
+    echo "# Changelog"
+    echo
+    for i in $(seq 1 45); do
+      echo "- Navigation filler line ${i} that is intentionally long enough to push the real feature past the short payload summary."
+    done
+    echo "- Added late feature extraction after a long release note preamble."
+  } > "${snapshot}"
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "snapshots": {
+    "local-long-summary": {
+      "hash": "old",
+      "content": "# Changelog\n\n## Previous\n- Existing entry.",
+      "url": "https://example.com/changelog",
+      "title": "Local changelog",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    }
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": ""
+  },
+  "keyword_weights": {
+    "release": 15,
+    "feature": 15
+  },
+  "sources": [
+    {
+      "id": "local-long-summary",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${snapshot}",
+      "link_url": "file://${snapshot}",
+      "title": "Local long changelog changed",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["openai", "release"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_file_contains "${artifact_dir}/facts.json" "late feature extraction"
+  assert_file_contains "${artifact_dir}/infographic-01.html" "late feature extraction"
+  assert_file_not_contains "${artifact_dir}/signals.json" "summary_full"
+}
+
+test_signal_watcher_skips_images_for_version_only_ai_latest_changes() {
+  local tmp_home snapshot config state log_file output artifact_dir latest_dir
+  tmp_home="$(mktemp -d)"
+  snapshot="${tmp_home}/changelog.md"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${snapshot}" <<'MD'
+# Changelog
+
+## 2.1.164
+- Fixed CLI error handling.
+- Updated dependency pins.
+MD
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "snapshots": {
+    "local-version-changelog": {
+      "hash": "old",
+      "content": "# Changelog\n\n## 2.1.163\n- Fixed previous issue.",
+      "url": "https://example.com/changelog",
+      "title": "Local version changelog",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    }
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": ""
+  },
+  "keyword_weights": {
+    "claude code": 30,
+    "release": 15,
+    "fixed": 15
+  },
+  "sources": [
+    {
+      "id": "local-version-changelog",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${snapshot}",
+      "link_url": "https://example.com/changelog",
+      "title": "Local version bump",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["claude code", "release"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_dir="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+  latest_dir="${tmp_home}/public/latest"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  [[ -n "${artifact_dir}" ]] || fail "expected ai-latest artifact directory"
+  assert_file_contains "${artifact_dir}/summary.html" "AI最新"
+  assert_file_contains "${latest_dir}/index.html" "AI最新"
+  [[ ! -e "${artifact_dir}/summary.png" ]] || fail "summary.png should not be generated"
+  [[ ! -e "${artifact_dir}/infographic.png" ]] || fail "infographic.png should not be generated"
+  [[ ! -e "${latest_dir}/summary.png" ]] || fail "latest summary.png should not be generated"
+  [[ ! -e "${latest_dir}/infographic.png" ]] || fail "latest infographic.png should not be generated"
+}
+
+test_signal_watcher_splits_ai_latest_artifacts_by_provider() {
+  local tmp_home openai_snapshot anthropic_snapshot config state log_file output artifact_count openai_latest anthropic_latest
+  tmp_home="$(mktemp -d)"
+  openai_snapshot="${tmp_home}/openai.md"
+  anthropic_snapshot="${tmp_home}/anthropic.md"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${openai_snapshot}" <<'MD'
+# Codex changelog
+
+## 26.616
+- Added Record & Replay for reusable skills.
+MD
+  cat > "${anthropic_snapshot}" <<'MD'
+# Claude Code changelog
+
+## 2.0.0
+- Added Claude Code MCP release tracking.
+MD
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "snapshots": {
+    "openai-local": {
+      "hash": "old-openai",
+      "content": "# Codex changelog\n\n## 26.615\n- Previous release.",
+      "url": "https://example.com/openai",
+      "title": "OpenAI previous",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    },
+    "anthropic-local": {
+      "hash": "old-anthropic",
+      "content": "# Claude Code changelog\n\n## 1.0.0\n- Previous release.",
+      "url": "https://example.com/anthropic",
+      "title": "Anthropic previous",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    }
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
+    "summary_artifacts": true,
+    "summary_artifact_dir": "${tmp_home}/artifacts",
+    "summary_archive_dir": "${tmp_home}/archive",
+    "summary_latest_dir": "${tmp_home}/public/latest",
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "summary_png_renderer": "",
+    "provider_split_routes": ["ai-latest-trigger"]
+  },
+  "keyword_weights": {
+    "codex": 30,
+    "claude code": 30,
+    "mcp": 20,
+    "release": 15,
+    "record": 20
+  },
+  "sources": [
+    {
+      "id": "openai-local",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${openai_snapshot}",
+      "link_url": "https://example.com/openai",
+      "title": "OpenAI changelog changed",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["openai", "codex", "release"]
+    },
+    {
+      "id": "anthropic-local",
+      "enabled": true,
+      "type": "snapshot",
+      "url": "file://${anthropic_snapshot}",
+      "link_url": "https://example.com/anthropic",
+      "title": "Anthropic changelog changed",
+      "snapshot_format": "text",
+      "base_score": 80,
+      "min_score": 70,
+      "route": "ai-latest-trigger",
+      "tags": ["anthropic", "claude code", "release"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  artifact_count="$(find "${tmp_home}/artifacts" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+  openai_latest="${tmp_home}/public/latest/openai"
+  anthropic_latest="${tmp_home}/public/latest/anthropic"
+
+  assert_json_eq "${output}" ".candidates" "2"
+  assert_eq "${artifact_count}" "2" "provider-specific artifact count"
+  assert_file_contains "${log_file}" "summary artifacts route=ai-latest-trigger group=Anthropic"
+  assert_file_contains "${log_file}" "summary artifacts route=ai-latest-trigger group=OpenAI"
+  assert_file_contains "${openai_latest}/signals.json" "openai-local"
+  assert_file_contains "${openai_latest}/index.html" "ai-latest-trigger / OpenAI"
+  assert_file_contains "${openai_latest}/infographic.html" "#2563eb"
+  assert_file_not_contains "${openai_latest}/infographic.html" "#16a34a"
+  assert_file_contains "${anthropic_latest}/signals.json" "anthropic-local"
+  assert_file_contains "${anthropic_latest}/index.html" "ai-latest-trigger / Anthropic"
+  assert_file_contains "${anthropic_latest}/infographic.html" "#c15f3c"
+  assert_file_not_contains "${anthropic_latest}/infographic.html" "#1d4ed8"
+  [[ -e "${openai_latest}/infographic.png" ]] || fail "expected OpenAI infographic"
+  [[ -e "${anthropic_latest}/infographic.png" ]] || fail "expected Anthropic infographic"
+  [[ ! -e "${tmp_home}/public/latest/infographic.png" ]] || fail "ungrouped latest infographic should not be written"
 }
 
 test_x_pulse_watcher_primes_sample_urls() {
@@ -1963,7 +3068,7 @@ https://x.com/example/status/1
 
 ---
 ### Bad section
-This section has no direct source URL.
+This section only mentions the required placeholder https://x.com/ URL format.
 DIGEST
 
   set +e
@@ -1974,6 +3079,31 @@ DIGEST
   [[ "${status}" -ne 0 ]] || fail "expected digest linter to fail"
   assert_contains "${output}" "section count 2 is outside expected range"
   assert_contains "${output}" "Bad section"
+}
+
+test_digest_linter_ignores_placeholder_x_urls_without_arithmetic_error() {
+  local tmp_home digest output status
+  tmp_home="$(mktemp -d)"
+  digest="${tmp_home}/placeholder-digest.md"
+  cat > "${digest}" <<'DIGEST'
+---
+created_at: "2026-06-15 18:00:00 +0900"
+digest_prefix: "夕方の"
+---
+
+生成中止:
+直接ソースURLとして https://x.com/ または https://twitter.com/ が必要です。
+DIGEST
+
+  set +e
+  output="$("${REPO_DIR}/scripts/hermes-digest-lint.sh" "${digest}" 2>&1)"
+  status=$?
+  set -e
+
+  [[ "${status}" -ne 0 ]] || fail "expected placeholder-only digest to fail"
+  assert_contains "${output}" "section count 0 is outside expected range"
+  assert_contains "${output}" "digest has no direct X/Twitter source URLs"
+  [[ "${output}" != *"division by 0"* ]] || fail "expected no arithmetic error"
 }
 
 test_discord_feedback_hook_writes_fallback_artifact() {
@@ -2021,6 +3151,85 @@ STUB
       "${REPO_DIR}/scripts/hermes-gbrain-remember.sh"
 
   assert_file_contains "${capture_log}" "event string safe memory"
+}
+
+test_mnemo_memory_captures_only_configured_channel_and_recalls() {
+  local tmp_home db export_dir output status
+  tmp_home="$(mktemp -d)"
+  db="${tmp_home}/mnemo.sqlite"
+  export_dir="${tmp_home}/knowledge"
+
+  output="$(
+    printf '%s\n' '{"text":"朝の通知は少なめが好き [[discord-posting]]","user_id":"u1","channel_id":"memory-channel","message_id":"m1"}' \
+      | HERMES_MNEMO_MEMORY_CHANNEL_IDS="memory-channel" \
+        "${REPO_DIR}/scripts/hermes-mnemo-memory.py" \
+          --db "${db}" \
+          --export-dir "${export_dir}" \
+          capture-event \
+          --print-slug
+  )"
+
+  assert_contains "${output}" "memory"
+  [[ -f "${db}" ]] || fail "mnemo sqlite database should be created"
+  find "${export_dir}/memory" -type f -name '*.md' -print -quit | grep -q . || fail "expected exported memory markdown"
+
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" recall "朝の通知")"
+  assert_contains "${output}" "覚えていること"
+  assert_contains "${output}" "朝の通知は少なめが好き"
+
+  printf '%s\n' '{"message":{"content":"ネストしたmessage本文も記憶する [[nested-message]]"},"user_id":"u1","channel_id":"memory-channel","message_id":"m1-nested"}' \
+    | HERMES_MNEMO_MEMORY_CHANNEL_IDS="memory-channel" \
+      "${REPO_DIR}/scripts/hermes-mnemo-memory.py" \
+        --db "${db}" \
+        --export-dir "${export_dir}" \
+        capture-event
+
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" recall "ネストしたmessage")"
+  assert_contains "${output}" "ネストしたmessage本文も記憶する"
+
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" backlinks "discord-posting")"
+  assert_contains "${output}" "[[discord-posting]] backlinks"
+  assert_contains "${output}" "memory:"
+
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" red-links)"
+  assert_contains "${output}" "[[discord-posting]]"
+
+  printf '%s\n' '{"text":"保存されないはず","user_id":"u1","channel_id":"ordinary-channel","message_id":"m2"}' \
+    | HERMES_MNEMO_MEMORY_CHANNEL_IDS="memory-channel" \
+      "${REPO_DIR}/scripts/hermes-mnemo-memory.py" \
+        --db "${db}" \
+        --export-dir "${export_dir}" \
+        capture-event
+
+  set +e
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" recall "保存されない" --strict 2>&1)"
+  status=$?
+  set -e
+  [[ "${status}" -ne 0 ]] || fail "recall should not find ignored ordinary-channel message"
+  assert_contains "${output}" "覚えている記憶は見つかりませんでした"
+}
+
+test_mnemo_memory_classifies_source_notes_as_knowledge() {
+  local tmp_home db export_dir output
+  tmp_home="$(mktemp -d)"
+  db="${tmp_home}/mnemo.sqlite"
+  export_dir="${tmp_home}/knowledge"
+
+  output="$(
+    printf '%s\n' '{"text":"Source: Discord\nWhy captured: Codex設定の判断に関係する\nConnections: [[codex]] [[agent-memory]]\nCodexの通知は公式更新を優先する","user_id":"u1","channel_id":"memory-channel"}' \
+      | HERMES_MNEMO_MEMORY_CHANNEL_IDS="memory-channel" \
+        "${REPO_DIR}/scripts/hermes-mnemo-memory.py" \
+          --db "${db}" \
+          --export-dir "${export_dir}" \
+          capture-event \
+          --print-slug
+  )"
+
+  assert_contains "${output}" "knowledge"
+  find "${export_dir}/knowledge" -type f -name '*.md' -print -quit | grep -q . || fail "expected exported knowledge markdown"
+  output="$("${REPO_DIR}/scripts/hermes-mnemo-memory.py" --db "${db}" --export-dir "${export_dir}" graph --format mermaid)"
+  assert_contains "${output}" "flowchart LR"
+  assert_contains "${output}" "codex"
 }
 
 test_tech_digest_cron_falls_back_to_jina_reader_when_x_search_fails() {
@@ -2094,6 +3303,163 @@ STUB
   assert_file_contains "${log_file}" "jina_reader fallback curation succeeded after x_search failure"
 }
 
+test_tech_digest_cron_uses_direct_jina_reader_when_mcp_returns_invalid_digest() {
+  local tmp_home hermes_stub curl_stub output metadata_file log_file
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/.local/bin"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  curl_stub="${tmp_home}/.local/bin/curl"
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$*" == *"-t x_search"* ]]; then
+  echo "x_search credits exhausted" >&2
+  exit 42
+fi
+
+if [[ "$*" == *"-t jina_reader"* ]]; then
+  cat <<'DIGEST'
+実行結果: ダイジェスト生成を中止しました
+
+Jina Reader MCP returned HTTP 401 Unauthorized.
+DIGEST
+  exit 0
+fi
+
+cat <<'EVAL'
+## スコア
+- 総合: 4
+EVAL
+STUB
+  chmod +x "${hermes_stub}"
+
+  cat > "${curl_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+
+url="${*: -1}"
+case "${url}" in
+  *openai.com*) title="OpenAI News"; link="https://openai.com/news/example" ;;
+  *github.blog*) title="GitHub Changelog"; link="https://github.blog/changelog/example" ;;
+  *web.dev*) title="web.dev Blog"; link="https://web.dev/blog/example" ;;
+  *developer.chrome.com*) title="Chrome Developers Blog"; link="https://developer.chrome.com/blog/example" ;;
+  *) title="Fallback Source"; link="https://example.com/source" ;;
+esac
+
+cat <<EOF
+Title: ${title}
+
+# ${title}
+
+[Latest item](${link})
+EOF
+STUB
+  chmod +x "${curl_stub}"
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${hermes_stub}" \
+    CURL_BIN="${curl_stub}" \
+    HERMES_PROMPT_DIR="${REPO_DIR}/prompts" \
+    HERMES_TECH_DIGEST_JINA_FALLBACK=1 \
+    HERMES_DIGEST_LINT_SCRIPT="${REPO_DIR}/scripts/hermes-digest-lint.sh" \
+    HERMES_DIGEST_LINT_STRICT=1 \
+    "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh"
+  )"
+
+  assert_contains "${output}" "Jina Reader direct fallback digest"
+  assert_contains "${output}" "参照ページ: https://web.dev/blog/"
+  metadata_file="$(find "${tmp_home}/.hermes/state/digest-metadata" -type f -name '*.json' -print -quit)"
+  [[ -n "${metadata_file}" ]] || fail "expected direct Jina fallback metadata"
+  assert_eq "$(jq -r '.status' "${metadata_file}")" "pass" "direct Jina fallback digest status"
+  assert_eq "$(jq -r '.curation_source' "${metadata_file}")" "jina_reader" "direct Jina fallback curation source"
+  assert_eq "$(jq -r '.section_count' "${metadata_file}")" "4" "direct Jina fallback section count"
+  log_file="${tmp_home}/.hermes/logs/hermes-tech-digest-cron.log"
+  assert_file_contains "${log_file}" "jina_reader MCP fallback did not return a valid digest; trying direct Reader fallback"
+  assert_file_contains "${log_file}" "jina_reader fallback curation succeeded after x_search failure"
+}
+
+test_tech_digest_cron_skips_x_search_when_xai_is_blocked() {
+  local tmp_home hermes_stub curl_stub output log_file
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/.local/bin" "${tmp_home}/.hermes/logs"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  curl_stub="${tmp_home}/.local/bin/curl"
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "x_search should not run during blocked xAI preflight" >&2
+exit 99
+STUB
+  chmod +x "${hermes_stub}"
+
+  cat > "${curl_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+url="${*: -1}"
+case "${url}" in
+  *openai.com*) title="OpenAI News"; link="https://openai.com/news/example" ;;
+  *github.blog*) title="GitHub Changelog"; link="https://github.blog/changelog/example" ;;
+  *web.dev*) title="web.dev Blog"; link="https://web.dev/blog/example" ;;
+  *developer.chrome.com*) title="Chrome Developers Blog"; link="https://developer.chrome.com/blog/example" ;;
+  *) title="Fallback Source"; link="https://example.com/source" ;;
+esac
+cat <<EOF
+Title: ${title}
+
+[Latest item](${link})
+EOF
+STUB
+  chmod +x "${curl_stub}"
+  printf 'personal-team-blocked:spending-limit\n' > "${tmp_home}/.hermes/logs/gateway.error.log"
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${hermes_stub}" \
+    CURL_BIN="${curl_stub}" \
+    HERMES_PROMPT_DIR="${REPO_DIR}/prompts" \
+    HERMES_DIGEST_LINT_SCRIPT="${REPO_DIR}/scripts/hermes-digest-lint.sh" \
+    HERMES_DIGEST_LINT_STRICT=1 \
+    "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh"
+  )"
+
+  assert_contains "${output}" "Jina Reader direct fallback digest"
+  log_file="${tmp_home}/.hermes/logs/hermes-tech-digest-cron.log"
+  assert_file_contains "${log_file}" "x_search preflight skipped: xAI/Grok spending or subscription access is blocked"
+  assert_file_contains "${log_file}" "direct Jina Reader degraded fallback succeeded"
+}
+
+test_disk_watchdog_alerts_only_over_threshold() {
+  local tmp_home df_stub output
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/bin"
+  df_stub="${tmp_home}/bin/df"
+  cat > "${df_stub}" <<'STUB'
+#!/usr/bin/env bash
+cat <<'DF'
+Filesystem 1024-blocks Used Available Capacity Mounted on
+/dev/disk1 100 95 5 95% /
+DF
+STUB
+  chmod +x "${df_stub}"
+
+  output="$(
+    PATH="${tmp_home}/bin:${PATH}" \
+    HERMES_DISK_WATCHDOG_THRESHOLD=90 \
+    "${REPO_DIR}/scripts/hermes-disk-watchdog-cron.sh"
+  )"
+
+  assert_contains "${output}" "Hermes disk watchdog: attention needed"
+  assert_contains "${output}" "95% used"
+}
+
+test_ssl_watchdog_silent_without_hosts() {
+  local output
+  output="$("${REPO_DIR}/scripts/hermes-ssl-expiry-watchdog-cron.sh")"
+  [[ -z "${output}" ]] || fail "ssl watchdog should be silent without configured hosts"
+}
+
 test_tech_digest_cron_logs_when_jina_reader_fallback_fails_after_linkless_retry() {
   local tmp_home hermes_stub output log_file
   tmp_home="$(mktemp -d)"
@@ -2109,6 +3475,7 @@ Digest without direct X links
 
 ### Browser platform update
 The browser platform shipped a practical update.
+The prompt requires a direct https://x.com/ or https://twitter.com/ URL.
 
 ### Developer tools update
 A developer tool shipped a workflow improvement.
@@ -2137,6 +3504,7 @@ STUB
   output="$(
     HOME="${tmp_home}" \
     HERMES_BIN="${hermes_stub}" \
+    CURL_BIN="${tmp_home}/missing-curl" \
     HERMES_PROMPT_DIR="${REPO_DIR}/prompts" \
     HERMES_TECH_DIGEST_JINA_FALLBACK=1 \
     "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh"
@@ -2148,8 +3516,8 @@ STUB
   assert_file_contains "${log_file}" "warning: jina_reader fallback failed after missing X links; proceeding with linkless x_search curation"
 }
 
-test_tech_digest_cron_runs_lint_and_low_score_alert() {
-  local tmp_home hermes_stub output metadata_file alert_log
+test_tech_digest_cron_runs_lint_and_defers_evaluation() {
+  local tmp_home hermes_stub output metadata_file eval_file log_file
   tmp_home="$(mktemp -d)"
   mkdir -p "${tmp_home}/.local/bin"
   hermes_stub="${tmp_home}/.local/bin/hermes"
@@ -2248,6 +3616,61 @@ STUB
   metadata_file="$(find "${tmp_home}/.hermes/state/digest-metadata" -type f -name '*.json' -print -quit)"
   [[ -n "${metadata_file}" ]] || fail "expected digest metadata"
   assert_eq "$(jq -r '.status' "${metadata_file}")" "pass" "digest status"
+  eval_file="$(find "${tmp_home}/.hermes/state/evaluations" -type f -name '*.md' -print -quit 2>/dev/null || true)"
+  [[ -z "${eval_file}" ]] || fail "tech digest delivery script should defer evaluation"
+  log_file="${tmp_home}/.hermes/logs/hermes-tech-digest-cron.log"
+  assert_file_contains "${log_file}" "deferred digest evaluation and gbrain write-back"
+}
+
+test_tech_digest_evaluate_cron_runs_low_score_alert() {
+  local tmp_home hermes_stub digest_file eval_file alert_log
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/.local/bin" "${tmp_home}/.hermes/state/digests"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+
+cat <<'EVAL'
+# 自己評価 2026-06-08 09:00
+
+## スコア
+- 関連性: 2
+- 新規性: 2
+- 出典品質: 2
+- 多様性: 2
+- 具体性: 2
+- トーン: 2
+- 総合: 2
+
+## 次回の改善指示
+- より一次情報を優先する。
+EVAL
+STUB
+  chmod +x "${hermes_stub}"
+
+  digest_file="${tmp_home}/.hermes/state/digests/20260608-090000.md"
+  cat > "${digest_file}" <<'DIGEST'
+---
+created_at: "2026-06-08 09:00:00 +0900"
+digest_prefix: "朝の"
+curation_source: "x_search"
+---
+
+### AI model release
+OpenAI account: practical model release with visible traction.
+https://x.com/openai/status/1001
+DIGEST
+
+  HOME="${tmp_home}" \
+    HERMES_BIN="${hermes_stub}" \
+    HERMES_PROMPT_DIR="${REPO_DIR}/prompts" \
+    HERMES_ALERT_SCRIPT="${REPO_DIR}/scripts/hermes-alert.sh" \
+    "${REPO_DIR}/scripts/hermes-tech-digest-evaluate-cron.sh"
+
+  eval_file="${tmp_home}/.hermes/state/evaluations/20260608-090000.md"
+  [[ -f "${eval_file}" ]] || fail "expected delayed digest evaluation"
+  assert_file_contains "${eval_file}" "総合: 2"
   alert_log="${tmp_home}/.hermes/logs/hermes-alerts.log"
   assert_file_contains "${alert_log}" "Hermes digest self-evaluation is low"
 }
@@ -2258,6 +3681,8 @@ main() {
     test_register_cronjobs_rejects_unknown_channel
     test_register_cronjobs_uses_local_channel_overrides
     test_morning_brief_cron_reads_direct_feeds
+    test_morning_brief_time_label_comes_from_cron_config
+    test_runtime_morning_brief_time_label_comes_from_runtime_config
     test_morning_brief_includes_today_calendar_events
     test_monday_morning_brief_includes_weekly_calendar_events
     test_installer_uses_builtin_gateway_only
@@ -2271,6 +3696,8 @@ main() {
     test_dreaming_cron_recomposes_memory_and_writes_report
     test_review_cron_reports_gbrain_and_honcho_status
     test_review_cron_finds_bun_for_gbrain
+    test_health_check_cron_silent_when_healthy
+    test_health_check_cron_reports_failures
     test_scheduled_prompts_require_direct_source_links
     test_register_webhooks_preserves_existing_secret
     test_register_webhooks_uses_local_channel_overrides
@@ -2278,22 +3705,38 @@ main() {
     test_posting_admin_escapes_test_payload_and_rejects_unknown_routes
     test_signal_watcher_scores_local_feed
     test_signal_watcher_reads_env_file_for_secret
+    test_signal_watcher_skips_artifacts_when_secret_missing
     test_signal_watcher_parses_nested_html_links
     test_signal_watcher_tracks_standalone_document_hash_changes
     test_signal_watcher_document_parser_validates_media_type_and_source_key
+    test_signal_watcher_fetches_official_news_body_and_bypasses_ai_latest_cooldown
+    test_signal_watcher_fetches_openai_feed_body_and_dedupes_official_pages
     test_signal_watcher_retries_candidates_blocked_by_cooldown
     test_signal_watcher_keeps_custom_routes_out_of_batch
+    test_signal_watcher_writes_ai_latest_summary_artifacts_for_snapshot_changes
+    test_signal_watcher_writes_one_infographic_per_new_feature
+    test_signal_watcher_uses_full_summary_for_infographic_features
+    test_signal_watcher_skips_images_for_version_only_ai_latest_changes
+    test_signal_watcher_splits_ai_latest_artifacts_by_provider
     test_x_pulse_watcher_primes_sample_urls
     test_x_pulse_watcher_detects_sample_pulse
     test_x_pulse_watcher_rejects_low_engagement_url_bundle
     test_x_pulse_watcher_treats_search_failure_as_nonfatal
     test_digest_linter_writes_metadata
     test_digest_linter_rejects_missing_section_urls
+    test_digest_linter_ignores_placeholder_x_urls_without_arithmetic_error
     test_discord_feedback_hook_writes_fallback_artifact
     test_discord_feedback_and_remember_hooks_accept_string_event_payloads
+    test_mnemo_memory_captures_only_configured_channel_and_recalls
+    test_mnemo_memory_classifies_source_notes_as_knowledge
     test_tech_digest_cron_falls_back_to_jina_reader_when_x_search_fails
+    test_tech_digest_cron_uses_direct_jina_reader_when_mcp_returns_invalid_digest
+    test_tech_digest_cron_skips_x_search_when_xai_is_blocked
+    test_disk_watchdog_alerts_only_over_threshold
+    test_ssl_watchdog_silent_without_hosts
     test_tech_digest_cron_logs_when_jina_reader_fallback_fails_after_linkless_retry
-    test_tech_digest_cron_runs_lint_and_low_score_alert
+    test_tech_digest_cron_runs_lint_and_defers_evaluation
+    test_tech_digest_evaluate_cron_runs_low_score_alert
   )
   local test_name
 

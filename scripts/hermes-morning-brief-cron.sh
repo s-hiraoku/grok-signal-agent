@@ -4,6 +4,22 @@ set -euo pipefail
 LOG_DIR="${HERMES_LOG_DIR:-${HOME}/.hermes/logs}"
 LOG_FILE="${LOG_DIR}/hermes-morning-brief-cron.log"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+if [[ -z "${HERMES_CRONJOBS_CONFIG:-}" ]]; then
+  cronjobs_config="${REPO_DIR}/config/hermes-cronjobs.json"
+  runtime_dir="${HERMES_POSTING_RUNTIME:-${HOME}/.hermes/runtime/grok-signal-agent}"
+  if [[ ! -f "${cronjobs_config}" && -f "${runtime_dir}/config/hermes-cronjobs.json" ]]; then
+    cronjobs_config="${runtime_dir}/config/hermes-cronjobs.json"
+  elif [[ ! -f "${cronjobs_config}" && -f "${runtime_dir}/repo-path" ]]; then
+    repo_hint="$(<"${runtime_dir}/repo-path")"
+    if [[ -f "${repo_hint}/config/hermes-cronjobs.json" ]]; then
+      cronjobs_config="${repo_hint}/config/hermes-cronjobs.json"
+    fi
+  fi
+  export HERMES_CRONJOBS_CONFIG="${cronjobs_config}"
+fi
 
 mkdir -p "${LOG_DIR}"
 
@@ -61,6 +77,8 @@ GOOGLE_API_PYTHON = os.environ.get(
     "HERMES_GOOGLE_API_PYTHON",
     str(DEFAULT_GOOGLE_API_PYTHON) if DEFAULT_GOOGLE_API_PYTHON.exists() else sys.executable,
 )
+CRONJOBS_CONFIG = Path(os.environ.get("HERMES_CRONJOBS_CONFIG", ""))
+MORNING_BRIEF_TIME_LABEL = os.environ.get("HERMES_MORNING_BRIEF_TIME_LABEL", "").strip()
 
 
 @dataclass
@@ -95,6 +113,42 @@ def current_time() -> datetime:
             dt = dt.replace(tzinfo=local_tz())
         return dt.astimezone(timezone.utc)
     return datetime.now(timezone.utc)
+
+
+def cron_schedule_time_label(schedule: str) -> str:
+    parts = schedule.split()
+    if len(parts) < 2:
+        return ""
+    minute_raw, hour_raw = parts[0], parts[1]
+    if not re.fullmatch(r"\d{1,2}", minute_raw) or not re.fullmatch(r"\d{1,2}", hour_raw):
+        return ""
+    minute = int(minute_raw)
+    hour = int(hour_raw)
+    if not (0 <= minute <= 59 and 0 <= hour <= 23):
+        return ""
+    return f"{hour}:{minute:02d}"
+
+
+def morning_brief_time_label() -> str:
+    if MORNING_BRIEF_TIME_LABEL:
+        return MORNING_BRIEF_TIME_LABEL
+    if not CRONJOBS_CONFIG.is_file():
+        return ""
+    try:
+        config = json.loads(CRONJOBS_CONFIG.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    for job in config.get("jobs", []):
+        if job.get("enabled", True) is not True:
+            continue
+        if job.get("channel") != "morning-brief":
+            continue
+        if job.get("script") != "hermes-morning-brief-cron.sh":
+            continue
+        label = cron_schedule_time_label(str(job.get("schedule", "")))
+        if label:
+            return label
+    return ""
 
 
 def parse_feed_env(name: str, default: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -350,6 +404,8 @@ def main() -> int:
     now = current_time()
     tz = local_tz()
     local_now = now.astimezone(tz)
+    brief_time_label = morning_brief_time_label()
+    brief_name = f"{brief_time_label} の morning brief" if brief_time_label else "morning brief"
     today_start = datetime(local_now.year, local_now.month, local_now.day, tzinfo=tz)
     today_end = today_start + timedelta(days=1)
     week_start = today_start - timedelta(days=today_start.weekday())
@@ -374,7 +430,7 @@ def main() -> int:
 
     body = f"""おはよう、ヘルメスちゃんです！
 
-もうすぐ仕事だよー。9:50 の morning brief だよ。ニュースは直接フィードから確認できたものを優先して拾ってきたよ☀️
+もうすぐ仕事だよー。{brief_name} だよ。ニュースは直接フィードから確認できたものを優先して拾ってきたよ☀️
 
 {calendar_section("今日の予定", today_events, "今日の予定は見つからなかったよ。集中作業や仕込みに使えそうです。", tz, today_calendar_error)}
 """

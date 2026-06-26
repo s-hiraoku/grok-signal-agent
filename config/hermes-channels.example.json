@@ -2,13 +2,11 @@
   "version": 1,
   "channels": {
     "tech-digest": "discord:replace-with-tech-digest-channel-id",
-    "x-buzz-info": "discord:replace-with-x-buzz-info-channel-id",
-    "zenn-dev-info": "discord:replace-with-zenn-dev-info-channel-id",
-    "wbsb-dev-info": "discord:replace-with-wbsb-dev-info-channel-id",
+    "ai-latest": "discord:replace-with-ai-latest-channel-id",
     "tech-signals": "discord:replace-with-tech-signals-channel-id",
     "morning-brief": "discord:replace-with-morning-brief-channel-id",
     "weekly-review": "discord:replace-with-weekly-review-channel-id",
-    "daily-review": "discord:replace-with-daily-review-channel-id",
-    "ask-hermes": "discord:replace-with-ask-hermes-channel-id"
+    "hermes-info": "discord:replace-with-hermes-info-channel-id",
+    "hermes-chat": "discord:replace-with-hermes-chat-channel-id"
   }
 }
