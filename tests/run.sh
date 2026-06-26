@@ -1801,6 +1801,117 @@ JSON
   assert_file_contains "${tmp_home}/watcher.log" "dry-run route=signal-catchup candidates=2"
 }
 
+test_signal_watcher_tracks_standalone_document_hash_changes() {
+  local tmp_home document config state log_file output seen_count
+  tmp_home="$(mktemp -d)"
+  document="${tmp_home}/codex-whitepaper.pdf"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  printf '%s\n' '%PDF-1.7 test codex whitepaper v1' > "${document}"
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": true,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET"
+  },
+  "keyword_weights": {
+    "openai": 22,
+    "codex": 28,
+    "whitepaper": 12
+  },
+  "sources": [
+    {
+      "id": "local-document",
+      "enabled": true,
+      "type": "document",
+      "url": "file://${document}",
+      "title": "OpenAI Codex maxxing whitepaper",
+      "description": "Standalone OpenAI Codex whitepaper PDF.",
+      "content_type": "application/pdf",
+      "base_score": 30,
+      "min_score": 70,
+      "route": "signal-catchup",
+      "tags": ["openai", "codex", "whitepaper", "pdf"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}")"
+  seen_count="$(jq -r '.seen | length' "${state}")"
+
+  assert_json_eq "${output}" ".observed" "1"
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_json_eq "${output}" ".sent" "0"
+  assert_json_eq "${output}" ".prime_only" "true"
+  assert_eq "${seen_count}" "1" "seen_count"
+  assert_file_contains "${log_file}" "primed 1 observed items; no webhook sent"
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+  assert_json_eq "${output}" ".observed" "1"
+  assert_json_eq "${output}" ".candidates" "0"
+
+  printf '%s\n' 'updated document bytes' >> "${document}"
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+
+  assert_json_eq "${output}" ".observed" "1"
+  assert_json_eq "${output}" ".candidates" "1"
+}
+
+test_signal_watcher_document_parser_validates_media_type_and_source_key() {
+  python3 - "${REPO_DIR}" <<'PY'
+import hashlib
+import importlib.util
+import sys
+
+repo_dir = sys.argv[1]
+module_path = f"{repo_dir}/scripts/hermes-signal-watcher.py"
+spec = importlib.util.spec_from_file_location("hermes_signal_watcher", module_path)
+watcher = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+sys.modules[spec.name] = watcher
+spec.loader.exec_module(watcher)
+
+raw = b"%PDF-1.7 test"
+source = {
+    "id": "document-source",
+    "url": "https://example.com/source.pdf?stable=1",
+    "content_type": "application/pdf",
+}
+items = watcher.parse_document(
+    source,
+    raw,
+    {"content-type": "application/pdf; charset=binary", "content-length": str(len(raw))},
+    "https://cdn.example.net/redirected/source.pdf?token=abc",
+)
+expected_hash = hashlib.sha256(raw).hexdigest()
+assert items[0].item_id == f"https://example.com/source.pdf?stable=1#{expected_hash}"
+assert items[0].url == "https://cdn.example.net/redirected/source.pdf?token=abc"
+
+try:
+    watcher.parse_document(
+        source,
+        b"<html>temporary error</html>",
+        {"content-type": "text/html; charset=utf-8"},
+        "https://cdn.example.net/redirected/source.pdf?token=abc",
+    )
+except ValueError as exc:
+    assert "unexpected content type text/html; charset=utf-8" in str(exc)
+else:
+    raise AssertionError("expected parse_document to reject text/html")
+PY
+}
+
 test_signal_watcher_fetches_official_news_body_and_bypasses_ai_latest_cooldown() {
   local tmp_home index article hn_feed config state log_file output output2 artifact_dir
   tmp_home="$(mktemp -d)"
@@ -3843,6 +3954,8 @@ main() {
     test_signal_watcher_skips_artifacts_when_secret_missing
     test_signal_watcher_alerts_on_partial_source_failures
     test_signal_watcher_parses_nested_html_links
+    test_signal_watcher_tracks_standalone_document_hash_changes
+    test_signal_watcher_document_parser_validates_media_type_and_source_key
     test_signal_watcher_fetches_official_news_body_and_bypasses_ai_latest_cooldown
     test_signal_watcher_fetches_openai_feed_body_and_dedupes_official_pages
     test_signal_watcher_retries_candidates_blocked_by_cooldown

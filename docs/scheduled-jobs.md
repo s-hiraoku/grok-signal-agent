@@ -266,17 +266,19 @@ repository keeps dynamic webhook subscriptions in
 registers them with `hermes webhook subscribe`.
 
 `scripts/hermes-signal-watcher.py` is the default upstream watcher. It reads
-`config/signal-watchers.json`, fetches configured feeds/pages, dedupes stable
-URLs, scores new items with keyword weights, applies route cooldowns, and sends
-only threshold-crossing payloads to Hermes webhooks. Official AI sources route
-to `ai-latest-trigger` as `#ai-latest` posts. Zenn and generic technical
-signals route to `signal-catchup` as consolidated `#tech-signals` posts.
+`config/signal-watchers.json`, fetches configured feeds/pages/documents,
+dedupes stable URLs or document content hashes, scores new items with keyword
+weights, applies route cooldowns, and sends only threshold-crossing payloads to
+Hermes webhooks. Official AI sources route to `ai-latest-trigger` as
+`#ai-latest` posts. Zenn and generic technical signals route to
+`signal-catchup` as consolidated `#tech-signals` posts.
 Generic sources include Anthropic News/Engineering/Research, Anthropic Claude
 Code and Claude Platform snapshot diffs, Google AI, Mistral, Meta AI, Hugging
 Face, LangChain, GitHub Changelog, OpenAI News, OpenAI Codex/API changelog
-snapshot diffs, Cloudflare Changelog, Hacker News frontpage/best, Publickey,
-and release feeds. For `ai-latest-trigger`, the watcher writes local artifacts
-under `~/.hermes/state/ai-latest/`: `signals.json`, `analysis.md`,
+snapshot diffs, the OpenAI Codex maxxing whitepaper PDF, Cloudflare Changelog,
+Hacker News frontpage/best, Publickey, and release feeds. For
+`ai-latest-trigger`, the watcher writes local artifacts under
+`~/.hermes/state/ai-latest/`: `signals.json`, `analysis.md`,
 `summary.html`, and `index.html`. It splits `ai-latest-trigger` by provider, so
 OpenAI and Anthropic create separate Discord payloads and separate latest
 directories such as `~/.hermes/public/ai-latest/latest/openai/` and

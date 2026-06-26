@@ -161,8 +161,11 @@ installer.
 
 The signal watcher LaunchAgent runs from
 `~/.hermes/runtime/grok-signal-agent/`, where the installer copies the watcher
-script and `config/signal-watchers.json`. Re-run the installer after changing
-watcher code or source thresholds.
+script and `config/signal-watchers.json`. The watcher can track feed/page
+items and standalone document URLs such as PDFs; document sources are keyed by
+content hash so a replacement at the same URL can trigger a catch-up post after
+the first-run prime. Re-run the installer after changing watcher code or source
+thresholds.
 
 The X pulse watcher uses the same runtime directory and runs every 30 minutes
 through `com.shiraoku.grok-signal-agent.x-pulse-watcher`. It samples recent

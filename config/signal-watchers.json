@@ -78,6 +78,19 @@
   },
   "sources": [
     {
+      "id": "openai-codex-maxxing-whitepaper",
+      "enabled": true,
+      "type": "document",
+      "url": "https://cdn.openai.com/pdf/8a9f00cf-d379-4e20-b06f-dd7ba5196a11/OAI_WhitePaper_Codex-maxxing26.pdf",
+      "title": "OpenAI Codex maxxing whitepaper",
+      "description": "OpenAI-hosted Codex maxxing whitepaper PDF. The watcher tracks the document bytes and posts when this standalone document first appears after priming or changes later.",
+      "content_type": "application/pdf",
+      "base_score": 56,
+      "min_score": 64,
+      "route": "signal-catchup",
+      "tags": ["openai", "codex", "ai-agent", "whitepaper", "pdf", "official"]
+    },
+    {
       "id": "zenn-trending",
       "enabled": true,
       "type": "feed",
