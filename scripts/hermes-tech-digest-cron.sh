@@ -59,16 +59,40 @@ has_reference_sections() {
   (( section_count >= 4 && reference_count >= section_count ))
 }
 
+is_postable_digest() {
+  local text="$1" section_count
+  section_count="$(grep -Ec '^###[[:space:]]+' <<< "${text}" || true)"
+  (( section_count >= 1 ))
+}
+
+check_consecutive_fallback_streak() {
+  local threshold="${HERMES_DIGEST_FALLBACK_ALERT_STREAK:-3}" file source streak=0
+
+  while IFS= read -r file; do
+    source="$(awk -F '"' '/^curation_source:/ { print $2; exit }' "${file}" 2>/dev/null || true)"
+    [[ -n "${source}" ]] || break
+    if [[ "${source}" == "x_search" ]]; then
+      break
+    fi
+    streak=$((streak + 1))
+  done < <(find "${DIGEST_DIR}" -maxdepth 1 -type f -name '[0-9]*.md' -print 2>/dev/null | sort -r)
+
+  if (( streak >= threshold )); then
+    send_alert "Hermes tech digest has used a fallback source ${streak} times in a row" \
+      "curation_source has not been x_search for the last ${streak} tech-digest runs. Check xAI/Grok subscription or spending-limit status."
+  fi
+}
+
 reader_url_for() {
   printf '%s%s' "${JINA_READER_BASE_URL}" "$1"
 }
 
-run_jina_direct_fallback() {
+collect_jina_direct_material() {
   command -v "${CURL_BIN}" >/dev/null 2>&1 || return 1
 
   local fallback_sources source label url page title links output sections reader_url
   fallback_sources="${JINA_FALLBACK_URLS//;/$'\n'}"
-  output="Jina Reader direct fallback digest"
+  output=""
   sections=0
   while IFS= read -r source; do
     [[ -n "${source}" ]] || continue
@@ -90,18 +114,79 @@ run_jina_direct_fallback() {
       | awk '!seen[$0]++' \
       | sed -n '1,3p' || true)"
 
-    output+=$'\n\n'"### ${label}"$'\n'
-    output+="${title} をJina Readerの公開エンドポイントで確認しました。X/Twitterの反応指標は使えないため、一次情報ページを優先してください。"$'\n'
+    output+=$'\n\n'"## ${label}"$'\n'
+    output+="ページタイトル: ${title}"$'\n'
     if [[ -n "${links}" ]]; then
-      output+="関連リンク:"$'\n'"${links}"$'\n'
+      output+="見つかったリンク:"$'\n'"${links}"$'\n'
     fi
-    output+="参照ページ: ${url}"$'\n'
+    output+="参照元URL: ${url}"$'\n'
     sections=$((sections + 1))
     (( sections >= 4 )) && break
   done <<< "${fallback_sources}"
 
   (( sections >= 4 )) || return 1
   printf '%s\n' "${output}"
+}
+
+run_jina_direct_fallback() {
+  local material
+  material="$(collect_jina_direct_material)" || return 1
+
+  local render_prompt rendered
+  render_prompt="$(cat <<PROMPT
+$(read_optional_file "${PROMPT_FILE}" 260)
+
+# Runtime context
+
+Current local time is ${now}.
+This is the ${digest_prefix} digest.
+x_search and the Jina Reader MCP tool are both unavailable right now. You have
+already been given raw material fetched from official pages below. Do not call
+any tools. Write the digest directly from this material.
+
+# Raw material collected from official pages
+
+${material}
+
+# Output requirements
+
+- Write the digest in the exact structure and voice described above, using
+  this raw material as your only source.
+- Every section must include a direct source line in this exact form:
+  参照ページ: <direct URL>, using one of the "参照元URL" values above.
+- Since there are no X/Twitter posts or engagement metrics for this run,
+  omit 反応: lines and do not invent traction numbers. It is fine to note
+  once, briefly, that this digest is based on official pages rather than
+  X discussion.
+- Use 4 to 8 sections, one per official source with usable material above.
+
+# Persistent identity
+
+$(read_optional_file "${IDENTITY_FILE}" 180)
+
+# Posting style for Discord
+
+$(read_optional_file "${POST_STYLE_FILE}" 180)
+
+# Current self-memory and preferences
+
+$(read_optional_file "${MEMORY_FILE}" 160)
+${gbrain_context:+
+# Retrieved gbrain guidance
+
+${gbrain_context}
+}
+PROMPT
+)"
+
+  if rendered="$("${HERMES_BIN}" -z "${render_prompt}" 2>>"${LOG_FILE}")" \
+      && has_reference_sections "${rendered}"; then
+    printf '%s\n' "${rendered}"
+    return 0
+  fi
+
+  log "jina direct material could not be rendered into a valid digest"
+  return 1
 }
 
 run_jina_fallback() {
@@ -299,6 +384,24 @@ fi
 
 [[ -n "${curation//[[:space:]]/}" ]] || { log "curation returned empty output"; exit 1; }
 
+if ! is_postable_digest "${curation}"; then
+  log "curation has no ### sections; treating as a failed run instead of posting"
+  digest_file="${DIGEST_DIR}/.failed-${timestamp}.md"
+  {
+    printf -- '---\n'
+    printf 'created_at: "%s"\n' "${now}"
+    printf 'digest_prefix: "%s"\n' "${digest_prefix}"
+    printf 'curation_source: "%s"\n' "${curation_source}"
+    printf 'status: "not_posted"\n'
+    printf -- '---\n\n'
+    printf '%s\n' "${curation}"
+  } > "${digest_file}"
+  send_alert "Hermes tech digest produced no postable sections" "Saved (not posted): ${digest_file}
+Source: ${curation_source}"
+  log "saved non-postable curation for inspection: ${digest_file}"
+  exit 1
+fi
+
 digest_file="${DIGEST_DIR}/${timestamp}.md"
 {
   printf -- '---\n'
@@ -309,6 +412,8 @@ digest_file="${DIGEST_DIR}/${timestamp}.md"
   printf '%s\n' "${curation}"
 } > "${digest_file}"
 log "saved digest ${digest_file}"
+
+check_consecutive_fallback_streak
 
 metadata_file="${METADATA_DIR}/${timestamp}.json"
 quality_report="${QUALITY_DIR}/${timestamp}.md"

@@ -167,23 +167,25 @@ content hash so a replacement at the same URL can trigger a catch-up post after
 the first-run prime. Re-run the installer after changing watcher code or source
 thresholds.
 
-The X pulse watcher uses the same runtime directory and runs every 30 minutes
-through `com.shiraoku.grok-signal-agent.x-pulse-watcher`. It samples recent
-`x_search` results and triggers `x-buzz-trigger` only when new direct X/Twitter
-posts pass the engagement filter. The watcher prioritizes the latest 120
-minutes, can look back up to 240 minutes, and qualifies candidates by likes,
-reposts, replies/quotes, views/impressions when available, official or notable
-accounts with visible traction, or independent same-topic posts that also have
-enough direct engagement. URL count alone is not treated as buzz. The full X
-tech digest is posted by cron on weekdays at 18:00.
+X/Twitter buzz used to be handled by an always-on `x-pulse-watcher`
+LaunchAgent polling `x_search` every 30 minutes and posting through the
+`x-buzz-trigger` webhook. That was retired in favor of
+`hermes-x-buzz-digest-cron.sh`, a Hermes cron job that runs twice daily
+(08:45 and 18:40) and posts a short trending-X roundup directly to
+`#tech-signals`, matching the fixed-schedule pattern of the other digest
+jobs instead of continuous polling. The full X tech digest is posted by cron
+on weekdays at 18:00.
 
 By default, event-triggered posts route to:
 
 - `tech-digest-trigger` posts to `#tech-digest`.
 - `ai-latest-trigger` posts to `#ai-latest`.
-- `x-buzz-trigger` posts to `#tech-signals`.
 - `signal-catchup` posts to `#tech-signals`.
 - `nightly-dreaming-trigger` posts to `#hermes-chat`.
+
+`x-buzz-trigger` remains registered for manual `hermes-posting-admin.sh
+test-webhooks` use, but nothing sends it automatically now that the X buzz
+digest posts directly through cron.
 
 The legacy `zenn-dev-trigger` and `wbsb-trigger` subscriptions are disabled by
 default. Zenn watcher signals now route through `signal-catchup` so
@@ -198,6 +200,8 @@ The active cron posts route to:
   schedule.
 - `Hermes health check` posts to `#hermes-info` only when attention is needed.
 - `金曜17時gbrainサマリー` posts gbrain/honcho status to `#weekly-review`.
+- `X buzz digest 08:45` and `X buzz digest 18:40` post trending X/Twitter
+  roundups to `#tech-signals` daily.
 
 Webhook subscription definitions live in `config/hermes-webhooks.json`; the
 registration script reads that file and creates or updates Hermes webhook
@@ -212,7 +216,7 @@ scripts/register-hermes-webhooks.sh
 hermes cron list
 hermes webhook list
 launchctl print gui/$(id -u)/ai.hermes.gateway
-launchctl print gui/$(id -u)/com.shiraoku.grok-signal-agent.x-pulse-watcher
+launchctl print gui/$(id -u)/com.shiraoku.grok-signal-agent.signal-watcher
 ```
 
 Before running the registration scripts or installer, copy
@@ -320,12 +324,13 @@ The default `signal-catchup` subscription listens at
 `/webhooks/signal-catchup` and posts to the `tech-signals` Discord channel when
 an external service POSTs a signed event. This is for event-driven sources such
 as GitHub, release monitors, uptime alerts, RSS-to-webhook bridges, or custom
-watchers. Zenn feed signals use the same consolidated route. X/news services
-that do not provide push events still need an upstream watcher; Hermes should
-receive the watcher's event, not poll on a cron. The full X tech digest,
-morning brief, and weekly gbrain/honcho review posts are registered as Hermes
-cron jobs because they are intentionally time-based. X pulse events use
-`/webhooks/x-buzz-trigger` for short buzzing-post introductions.
+watchers. Zenn feed signals use the same consolidated route. The full X tech
+digest, X buzz digest, morning brief, and weekly gbrain/honcho review posts
+are registered as Hermes cron jobs because they are intentionally
+time-based rather than push-driven; `x_search` has no push/webhook mode of
+its own, so both digests poll it on a fixed schedule instead of waiting for
+an event. `/webhooks/x-buzz-trigger` remains registered for manual testing
+but is no longer driven by an always-on watcher.
 
 ## 7. Operate the Service
 

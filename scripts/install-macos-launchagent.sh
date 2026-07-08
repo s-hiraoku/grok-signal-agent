@@ -6,7 +6,7 @@ LEGACY_HEALTHCHECK_LABEL="com.shiraoku.grok-signal-agent.hermes-gateway-healthch
 HEARTBEAT_LABEL="com.shiraoku.grok-signal-agent.discord-heartbeat"
 WEEKLY_REFLECTION_LABEL="com.shiraoku.grok-signal-agent.weekly-self-reflection"
 SIGNAL_WATCHER_LABEL="com.shiraoku.grok-signal-agent.signal-watcher"
-X_PULSE_WATCHER_LABEL="com.shiraoku.grok-signal-agent.x-pulse-watcher"
+LEGACY_X_PULSE_WATCHER_LABEL="com.shiraoku.grok-signal-agent.x-pulse-watcher"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HERMES_BIN="${HOME}/.local/bin/hermes"
 GUI_DOMAIN="gui/$(id -u)"
@@ -32,7 +32,6 @@ mkdir -p \
   "${HOME}/.hermes/state/digest-quality" \
   "${HOME}/.hermes/state/user-feedback" \
   "${HOME}/.hermes/state/signal-watcher" \
-  "${HOME}/.hermes/state/x-pulse-watcher" \
   "${HOME}/.hermes/state/weekly-reflections" \
   "${HOME}/.hermes/mnemo/knowledge" \
   "${RUNTIME_DIR}/config" \
@@ -81,23 +80,14 @@ install -m 755 \
   "${REPO_DIR}/scripts/hermes-signal-watcher.sh" \
   "${HOME}/.hermes/bin/hermes-signal-watcher.sh"
 install -m 755 \
-  "${REPO_DIR}/scripts/hermes-x-pulse-watcher.sh" \
-  "${HOME}/.hermes/bin/hermes-x-pulse-watcher.sh"
-install -m 755 \
   "${REPO_DIR}/scripts/hermes-signal-watcher.py" \
   "${RUNTIME_DIR}/scripts/hermes-signal-watcher.py"
-install -m 755 \
-  "${REPO_DIR}/scripts/hermes-x-pulse-watcher.py" \
-  "${RUNTIME_DIR}/scripts/hermes-x-pulse-watcher.py"
 install -m 644 \
   "${REPO_DIR}/config/hermes-cronjobs.json" \
   "${RUNTIME_DIR}/config/hermes-cronjobs.json"
 install -m 644 \
   "${REPO_DIR}/config/signal-watchers.json" \
   "${RUNTIME_DIR}/config/signal-watchers.json"
-install -m 644 \
-  "${REPO_DIR}/config/x-pulse-watchers.json" \
-  "${RUNTIME_DIR}/config/x-pulse-watchers.json"
 printf '%s\n' "${REPO_DIR}" > "${RUNTIME_DIR}/repo-path"
 for cron_script in "${REPO_DIR}"/scripts/*-cron.sh; do
   [[ -e "${cron_script}" ]] || continue
@@ -108,6 +98,7 @@ install -m 644 \
   "${REPO_DIR}/prompts/evaluate-digest.md" \
   "${REPO_DIR}/prompts/hermes-post-style.md" \
   "${REPO_DIR}/prompts/tech-digest.md" \
+  "${REPO_DIR}/prompts/x-buzz-digest.md" \
   "${REPO_DIR}/prompts/nightly-dreaming.md" \
   "${REPO_DIR}/prompts/weekly-self-reflection.md" \
   "${HOME}/.hermes/prompts/"
@@ -225,11 +216,12 @@ pmset -g log 2>/dev/null | awk '
 
 render_plist "${WEEKLY_REFLECTION_LABEL}"
 render_plist "${SIGNAL_WATCHER_LABEL}"
-render_plist "${X_PULSE_WATCHER_LABEL}"
 
 remove_legacy_agent "${HEARTBEAT_LABEL}"
 remove_legacy_agent "${LEGACY_GATEWAY_LABEL}"
 remove_legacy_agent "${LEGACY_HEALTHCHECK_LABEL}"
+remove_legacy_agent "${LEGACY_X_PULSE_WATCHER_LABEL}"
+rm -f "${HOME}/.hermes/bin/hermes-x-pulse-watcher.sh" "${RUNTIME_DIR}/scripts/hermes-x-pulse-watcher.py" "${RUNTIME_DIR}/config/x-pulse-watchers.json"
 "${REPO_DIR}/scripts/register-hermes-cronjobs.sh"
 set +e
 webhook_list_output="$("${HERMES_BIN}" webhook list 2>&1)"
@@ -245,7 +237,6 @@ else
 fi
 install_agent "${WEEKLY_REFLECTION_LABEL}"
 install_agent "${SIGNAL_WATCHER_LABEL}"
-install_agent "${X_PULSE_WATCHER_LABEL}"
 
 if [[ ! -f "${BUILTIN_GATEWAY_PLIST}" ]]; then
   "${HERMES_BIN}" gateway install
@@ -261,10 +252,10 @@ for _ in {1..20}; do
 done
 
 echo "Installed and restarted Hermes built-in gateway service"
-echo "Removed legacy ${HEARTBEAT_LABEL}, ${LEGACY_GATEWAY_LABEL}, and ${LEGACY_HEALTHCHECK_LABEL}"
+echo "Removed legacy ${HEARTBEAT_LABEL}, ${LEGACY_GATEWAY_LABEL}, ${LEGACY_HEALTHCHECK_LABEL}, and ${LEGACY_X_PULSE_WATCHER_LABEL}"
 echo "Installed ${WEEKLY_REFLECTION_LABEL}; it will update self-memory weekly"
 echo "Installed ${SIGNAL_WATCHER_LABEL}; it will catch up source changes via webhook thresholds"
-echo "Installed ${X_PULSE_WATCHER_LABEL}; it will trigger lightweight X buzz posts on X discussion pulses"
+echo "X buzz digest now runs twice daily via Hermes cron (see config/hermes-cronjobs.json)"
 echo "Installed and approved Gateway memory/feedback hooks"
 echo "Installed Hermes posting admin helper and skill"
 echo "Installed watcher runtime under ${RUNTIME_DIR}"

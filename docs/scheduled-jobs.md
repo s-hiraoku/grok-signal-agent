@@ -64,12 +64,17 @@ running it. Run `scripts/install-macos-launchagent.sh` or
 `~/.hermes/bin/hermes-posting-admin.sh sync` after changing script-backed
 routes.
 
-The `x-buzz-trigger` route uses `mode: "prompt"` and receives X pulse watcher
-signals. It does not run the full digest. It posts a short Hermes-chan style
-introduction to the engagement-qualified X/Twitter posts in
-`payload.qualified_candidates`. It delivers to `#tech-signals`, and the X
-pulse watcher uses stricter engagement thresholds and a longer cooldown so
-silence is the default.
+X/Twitter buzz is no longer webhook-driven. `X buzz digest 08:45` and
+`X buzz digest 18:40` are Hermes cron jobs that call
+`hermes-x-buzz-digest-cron.sh` twice daily; it does not run the full digest,
+it posts a short Hermes-chan style roundup (1-4 topics) of X/Twitter posts
+that are genuinely trending since the previous run, straight to
+`#tech-signals`. It is intentionally conservative — the prompt returns
+`NO_QUALIFIED_BUZZ` on a quiet window instead of padding with weak topics,
+and the script treats that as "nothing to post" rather than a failure. The
+`x-buzz-trigger` webhook route still exists for manual `test-webhooks` use
+but is no longer driven by an always-on watcher; see "X Buzz Digest" below
+for the preflight/streak-alert behavior this job shares with tech-digest.
 
 The `ai-latest-trigger` route uses `mode: "prompt"` and receives official AI,
 model, agent, and tooling source signals. It posts only source-backed official
@@ -110,13 +115,14 @@ Set `HERMES_DIGEST_LINT_STRICT=1` if you prefer failed lint to block delivery.
 Alerts are log-only unless an operator configures
 `HERMES_ALERT_DISCORD_WEBHOOK_URL` or `HERMES_ALERT_COMMAND`.
 
-The feed/page signal watcher and X pulse watcher also use `hermes-alert.sh` for
-operational failures that would otherwise be visible only in logs: missing
-webhook secrets, webhook delivery failures, partial or source-wide feed
-failures, and `x_search` failures. Repeated alerts for the same failure type
-are cooled down by watcher state. Set `HERMES_ALERT_SCRIPT` only when you need
-to point a watcher at a non-default alert helper during tests or custom runtime
-layouts.
+The feed/page signal watcher also uses `hermes-alert.sh` for operational
+failures that would otherwise be visible only in logs: missing webhook
+secrets, webhook delivery failures, and partial or source-wide feed
+failures. Repeated alerts for the same failure type are cooled down by
+watcher state. The X buzz digest cron job uses the same alert helper for its
+own consecutive-unavailable streak alert (see "X Buzz Digest" below). Set
+`HERMES_ALERT_SCRIPT` only when you need to point a watcher or cron job at a
+non-default alert helper during tests or custom runtime layouts.
 
 ## Local Channel Overrides
 
@@ -167,10 +173,49 @@ technical signals and X buzz to `#tech-signals`.
   checked.
 - `金曜17時gbrainサマリー`: Friday 17:00 `#weekly-review`, using
   `hermes-weekly-review-cron.sh` to summarize gbrain and honcho updates/status.
+- `X buzz digest 08:45` and `X buzz digest 18:40`: daily `#tech-signals`,
+  using `hermes-x-buzz-digest-cron.sh`. See "X Buzz Digest" below.
 
 The old morning/lunch tech digests, nightly dreaming post, and daily
 gbrain/honcho review remain disabled in the same file so
 `scripts/register-hermes-cronjobs.sh` can remove stale registered jobs by name.
+
+## X Buzz Digest
+
+`hermes-x-buzz-digest-cron.sh` calls `x_search` once per run to look for
+X/Twitter posts that are genuinely trending in AI/developer-tool/Web topics
+since the previous run, and posts a short roundup (1-4 topics) directly to
+`#tech-signals` — the script's own stdout is what Hermes cron delivers, the
+same pattern as `tech-digest 18:00`, with no separate webhook or secret
+involved. This replaced the always-on `x-pulse-watcher` LaunchAgent described
+above.
+
+The prompt ([prompts/x-buzz-digest.md](../prompts/x-buzz-digest.md)) asks the
+model to only include posts with checkable engagement (likes, reposts,
+replies+quotes, or views) and to return the exact string `NO_QUALIFIED_BUZZ`
+when nothing in the window qualifies — the cron script treats that as
+"nothing to post" and exits cleanly without alerting or saving a Discord
+message.
+
+### Preflight Behavior
+
+Like the tech digest, this script checks `~/.hermes/logs/gateway.error.log`
+for a known xAI/Grok spending-limit or missing-OAuth condition before calling
+`x_search`. If detected, the run is skipped quietly (exit 0, no post, no
+per-run alert) rather than failing loudly every scheduled run. A streak
+counter in `~/.hermes/state/x-buzz-digest-state.json` tracks consecutive
+skips; once it reaches `HERMES_X_BUZZ_UNAVAILABLE_ALERT_STREAK` (default `4`,
+i.e. two days at the twice-daily schedule) and every multiple of that streak
+afterward, an alert fires so an operator notices a persistent subscription
+problem. There is no Jina Reader-style fallback here — substituting official
+pages for a live X-buzz roundup would defeat its point, so during an outage
+this job simply waits for `x_search` to come back.
+
+If real posts stop appearing even when `x_search` is healthy, check
+`~/.hermes/logs/hermes-x-buzz-digest-cron.log` first — the prompt is
+intentionally conservative about padding with weak topics, so an empty
+`NO_QUALIFIED_BUZZ` window is expected on quiet days and is not itself a
+bug.
 
 ## Source Links
 
@@ -307,28 +352,21 @@ For launchd reliability, the installer copies the watcher script and config to
 of the repository checkout. Re-run `scripts/install-macos-launchagent.sh` after
 changing watcher code or `config/signal-watchers.json`.
 
-`scripts/hermes-x-pulse-watcher.py` is the X/Twitter discussion watcher. X does
-not provide a local push feed here, so it samples `x_search` every 30 minutes
-through `com.shiraoku.grok-signal-agent.x-pulse-watcher`. First run primes
-current X URLs; later runs trigger `x-buzz-trigger` only when the sample
-contains new direct X/Twitter posts that pass the engagement filter. It
-prioritizes the latest 120 minutes, can look back up to 240 minutes, and
-qualifies candidates by likes, reposts, replies/quotes, views/impressions when
-available, official or notable accounts with visible traction, or independent
-same-topic posts that also have enough direct engagement. URL count alone is
-not treated as buzz. It uses
-`config/x-pulse-watchers.json`, route cooldowns, and the same signed webhook
-delivery path as the feed watcher. The full X tech digest remains time-based
-and is posted by Hermes cron in the morning, at lunch, and in the evening.
+X/Twitter buzz used to be handled by `scripts/hermes-x-pulse-watcher.py`, an
+always-on watcher that sampled `x_search` every 30 minutes through
+`com.shiraoku.grok-signal-agent.x-pulse-watcher` and posted through the
+`x-buzz-trigger` webhook. That design was retired: `x_search` is a paid
+xAI/Grok call, and continuous polling burned usage faster than a fixed
+schedule needed to. See "X Buzz Digest" below for the twice-daily cron job
+that replaced it.
 
 The default `signal-catchup` route is intentionally generic: an upstream
 watcher decides that something changed, POSTs the event to
 `/webhooks/signal-catchup`, and Hermes summarizes the payload into the
 `tech-signals` channel. Zenn uses the same consolidated route, and wbsb.dev has
-been removed as a source. X pulse signals use
-`x-buzz-trigger` and `#tech-signals` for short buzzing-post introductions. Full
-tech digest, morning, and weekly review posts are cron jobs because their value
-is tied to a specific local time.
+been removed as a source. Full tech digest, X buzz digest, morning, and weekly
+review posts are cron jobs because their value is tied to a specific local
+time and `x_search` has no push mode to watch instead.
 
 Setup outline:
 
@@ -342,7 +380,6 @@ HERMES_POST_TRIGGER_WEBHOOK_SECRET=<post-trigger-route-secret>
 
 scripts/register-hermes-webhooks.sh
 scripts/hermes-signal-watcher.sh --dry-run --allow-first-run-send
-scripts/hermes-x-pulse-watcher.sh --dry-run --allow-first-run-send
 hermes webhook list
 hermes gateway restart
 ```
