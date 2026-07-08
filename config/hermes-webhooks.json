@@ -39,7 +39,7 @@
     {
       "id": "x-buzz-trigger",
       "name": "x-buzz-trigger",
-      "description": "Event-driven lightweight post for buzzing X/Twitter posts detected by the X pulse watcher.",
+      "description": "Manual/testing route for buzzing X/Twitter posts; not driven automatically since X buzz digest posts directly via cron.",
       "channel": "tech-signals",
       "mode": "prompt",
       "prompt_file": "prompts/webhooks/x-buzz-trigger.md",

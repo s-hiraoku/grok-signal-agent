@@ -8,7 +8,6 @@ JOBS_FILE="${HERMES_CRON_JOBS_FILE:-${HERMES_HOME_DIR}/cron/jobs.json}"
 WEBHOOKS_FILE="${HERMES_WEBHOOK_SUBSCRIPTIONS_FILE:-${HERMES_HOME_DIR}/webhook_subscriptions.json}"
 GATEWAY_STATE_FILE="${HERMES_GATEWAY_STATE_FILE:-${HERMES_HOME_DIR}/gateway_state.json}"
 SIGNAL_STATE_FILE="${HERMES_SIGNAL_WATCHER_STATE_FILE:-${HERMES_HOME_DIR}/state/signal-watcher-state.json}"
-X_PULSE_STATE_FILE="${HERMES_X_PULSE_WATCHER_STATE_FILE:-${HERMES_HOME_DIR}/state/x-pulse-watcher-state.json}"
 FORCE_REPORT="${HERMES_HEALTH_FORCE_REPORT:-0}"
 CHECK_LAUNCHD="${HERMES_HEALTH_CHECK_LAUNCHD:-1}"
 
@@ -146,7 +145,6 @@ check_gateway_state
 check_cron_jobs
 check_webhooks
 check_watcher_state "${SIGNAL_STATE_FILE}" "Signal watcher"
-check_watcher_state "${X_PULSE_STATE_FILE}" "X pulse watcher"
 check_xai_auth_hint
 
 {

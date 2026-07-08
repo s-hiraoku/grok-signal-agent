@@ -141,6 +141,28 @@
       "script": "hermes-ssl-expiry-watchdog-cron.sh",
       "no_agent": true,
       "prompt": "Run the SSL certificate expiry watchdog script."
+    },
+    {
+      "id": "x-buzz-digest-0845",
+      "name": "X buzz digest 08:45",
+      "enabled": true,
+      "schedule": "45 8 * * *",
+      "channel": "tech-signals",
+      "mode": "script",
+      "script": "hermes-x-buzz-digest-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the X buzz digest script."
+    },
+    {
+      "id": "x-buzz-digest-1840",
+      "name": "X buzz digest 18:40",
+      "enabled": true,
+      "schedule": "40 18 * * *",
+      "channel": "tech-signals",
+      "mode": "script",
+      "script": "hermes-x-buzz-digest-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the X buzz digest script."
     }
   ]
 }

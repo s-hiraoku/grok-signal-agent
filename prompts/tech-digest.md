@@ -9,6 +9,8 @@ Cover these categories as evenly as the available high-traction posts allow:
 3. Programming languages, developer tools, IDEs, libraries, databases, testing, build tools, and software engineering practices.
 4. Cloud, infrastructure, security, open source, chips/platform shifts, major product launches, standards, and IT/business news that matters to builders.
 
+Treat OpenAI, Anthropic/Claude, and Addy Osmani updates as priority sources for this operator. In every digest window, explicitly look for official or near-official discussion from OpenAI, OpenAI Developers, Anthropic, Claude, Claude Code, Anthropic Engineering, Addy Osmani, @addyosmani, and https://addyosmani.com/blog/. Include a source-backed section when there is a relevant model, API, Codex/Claude Code, agent, safety, research, product, pricing, platform, developer-documentation, web performance, browser/platform, frontend, or practical software-engineering update, even if the public X traction is still early.
+
 Prefer posts since the previous digest window that are visibly getting traction. Use the runtime `from_date` hints only when needed to cover overnight or early-morning context. Prioritize posts that are newest AND talked about.
 
 Rank candidates by engagement and conversation signals: reposts, likes, replies, quote posts, bookmark/share-like signals if available, notable builders commenting, or the same topic being discussed by multiple independent developer/AI/Web/IT accounts.
@@ -29,7 +31,7 @@ reaction line as early traction, quiet but primary-source, or maintainer signal.
 Only return zero topics when x_search finds no direct X/Twitter source URLs at
 all across the requested categories.
 
-Prefer original posts, substantial technical threads, release announcements, hands-on experiments, incident reports, standards updates, and news that developers can act on.
+Prefer original posts, official lab posts, substantial technical threads, release announcements, hands-on experiments, incident reports, standards updates, and news that developers can act on.
 
 Do not over-focus on AI agents unless they clearly dominate the conversation. Aim for a balanced mix of AI, Web development, programming, and IT news.
 

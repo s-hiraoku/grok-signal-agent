@@ -21,7 +21,7 @@ Commands:
       Install posting scripts/config/skill to ~/.hermes, register cron/webhooks,
       and restart the Hermes gateway.
   dry-run-watchers
-      Run signal and X pulse watchers in dry-run mode using runtime config.
+      Run the signal watcher in dry-run mode using runtime config.
   test-webhooks [route...]
       Send Hermes webhook test events. Defaults to lightweight posting routes.
   set-source-route <source-id> <route>
@@ -63,7 +63,6 @@ validate_json() {
   jq -e '.version == 1' "${repo_dir}/config/hermes-cronjobs.json" >/dev/null
   jq -e '.version == 1 and (.subscriptions | type == "array")' "${repo_dir}/config/hermes-webhooks.json" >/dev/null
   jq -e '.version == 1 and (.sources | type == "array")' "${repo_dir}/config/signal-watchers.json" >/dev/null
-  jq -e '.version == 1' "${repo_dir}/config/x-pulse-watchers.json" >/dev/null
   local channels_config="${CHANNELS_CONFIG:-${repo_dir}/config/hermes-channels.local.json}"
   if [[ -f "${channels_config}" ]]; then
     jq -e '.version == 1 and (.channels | type == "object")' "${channels_config}" >/dev/null
@@ -131,12 +130,10 @@ cmd_sync() {
   install -m 755 "${repo_dir}/scripts/hermes-digest-lint.sh" "${HERMES_HOME_DIR}/bin/hermes-digest-lint.sh"
   install -m 755 "${repo_dir}/scripts/register-hermes-webhooks.sh" "${HERMES_HOME_DIR}/bin/register-hermes-webhooks.sh"
   install -m 755 "${repo_dir}/scripts/hermes-signal-watcher.sh" "${HERMES_HOME_DIR}/bin/hermes-signal-watcher.sh"
-  install -m 755 "${repo_dir}/scripts/hermes-x-pulse-watcher.sh" "${HERMES_HOME_DIR}/bin/hermes-x-pulse-watcher.sh"
   install -m 755 "${repo_dir}/scripts/hermes-signal-watcher.py" "${RUNTIME_DIR}/scripts/hermes-signal-watcher.py"
-  install -m 755 "${repo_dir}/scripts/hermes-x-pulse-watcher.py" "${RUNTIME_DIR}/scripts/hermes-x-pulse-watcher.py"
   install -m 644 "${repo_dir}/config/hermes-cronjobs.json" "${RUNTIME_DIR}/config/hermes-cronjobs.json"
   install -m 644 "${repo_dir}/config/signal-watchers.json" "${RUNTIME_DIR}/config/signal-watchers.json"
-  install -m 644 "${repo_dir}/config/x-pulse-watchers.json" "${RUNTIME_DIR}/config/x-pulse-watchers.json"
+  rm -f "${HERMES_HOME_DIR}/bin/hermes-x-pulse-watcher.sh" "${RUNTIME_DIR}/scripts/hermes-x-pulse-watcher.py" "${RUNTIME_DIR}/config/x-pulse-watchers.json"
   for cron_script in "${repo_dir}"/scripts/*-cron.sh; do
     [[ -e "${cron_script}" ]] || continue
     install -m 755 "${cron_script}" "${HERMES_HOME_DIR}/scripts/"
@@ -146,6 +143,7 @@ cmd_sync() {
     "${repo_dir}/prompts/hermes-post-style.md" \
     "${repo_dir}/prompts/evaluate-digest.md" \
     "${repo_dir}/prompts/tech-digest.md" \
+    "${repo_dir}/prompts/x-buzz-digest.md" \
     "${repo_dir}/prompts/nightly-dreaming.md" \
     "${repo_dir}/prompts/weekly-self-reflection.md"; do
     [[ -e "${prompt_file}" ]] || continue
@@ -167,7 +165,6 @@ cmd_sync() {
 
 cmd_dry_run_watchers() {
   "${HERMES_HOME_DIR}/bin/hermes-signal-watcher.sh" --dry-run --allow-first-run-send
-  "${HERMES_HOME_DIR}/bin/hermes-x-pulse-watcher.sh" --dry-run --allow-first-run-send
 }
 
 cmd_test_webhooks() {

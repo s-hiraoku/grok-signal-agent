@@ -56,6 +56,7 @@ DEFAULT_GENERAL_FEEDS = [
 DEFAULT_TECH_FEEDS = [
     ("GitHub Changelog", "https://github.blog/changelog/feed/"),
     ("OpenAI News", "https://openai.com/news/rss.xml"),
+    ("Addy Osmani Blog", "https://addyosmani.com/rss.xml"),
     ("Cloudflare Changelog", "https://developers.cloudflare.com/changelog/rss/index.xml"),
     ("Publickey", "https://www.publickey1.jp/atom.xml"),
     ("Zenn", "https://zenn.dev/feed"),

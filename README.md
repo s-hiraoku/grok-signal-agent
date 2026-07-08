@@ -29,7 +29,6 @@ docs/setup.md
 systemd/hermes-gateway.service
 config/hermes-cronjobs.json
 config/hermes-webhooks.json
-config/x-pulse-watchers.json
 launchd/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist
 scripts/install-macos-launchagent.sh
 scripts/uninstall-macos-launchagent.sh
@@ -41,8 +40,7 @@ scripts/hermes-dreaming-cron.sh
 scripts/hermes-review-cron.sh
 scripts/hermes-daily-review-cron.sh
 scripts/hermes-weekly-review-cron.sh
-scripts/hermes-x-pulse-watcher.py
-scripts/hermes-x-pulse-watcher.sh
+scripts/hermes-x-buzz-digest-cron.sh
 scripts/hermes-weekly-self-reflection.sh
 scripts/hermes-gbrain-backfill.sh
 scripts/hermes-gbrain-retrieval.sh
@@ -56,6 +54,7 @@ scripts/hermes-jina-mcp-setup.sh
 scripts/hermes-google-calendar-mcp-setup.sh
 prompts/x-daily-summary.md
 prompts/tech-digest.md
+prompts/x-buzz-digest.md
 prompts/hermes-chan-identity.md
 prompts/evaluate-digest.md
 prompts/nightly-dreaming.md
@@ -235,8 +234,6 @@ intended split is:
   `~/.hermes/archive/ai-latest/`.
   Anthropic and OpenAI changelog-style pages are watched as snapshots, so
   Markdown/HTML diffs can be preserved even when a source has no RSS feed.
-- X pulse watcher: sample recent X discussion with `x_search`; trigger a short
-  `x-buzz-trigger` post only when strongly engagement-qualified X posts appear.
 - GitHub PR event source: send review-request, CI, workflow, or stale-review
   payloads to `github-pr-review-trigger` so Hermes summarizes action items only
   when there is a concrete PR signal.
@@ -266,15 +263,16 @@ installer copies the watcher runtime to
 `~/.hermes/runtime/grok-signal-agent/`; re-run the installer after changing the
 watcher code or config.
 
-The X pulse configuration is in
-[config/x-pulse-watchers.json](config/x-pulse-watchers.json). It runs every 30
-minutes, primes existing X URLs on the first run, and triggers
-`x-buzz-trigger` only when recent `x_search` results contain new direct
-X/Twitter posts that pass the engagement filter. The watcher prioritizes the
-latest 120 minutes, can look back up to 240 minutes, and qualifies candidates by
-likes, reposts, replies/quotes, views/impressions when available, official or
-notable accounts with visible traction, or independent same-topic posts that
-also have enough direct engagement. URL count alone is not treated as buzz.
+X/Twitter buzz is posted by `X buzz digest 08:45` and `X buzz digest 18:40`,
+twice-daily Hermes cron jobs (`scripts/hermes-x-buzz-digest-cron.sh`,
+[prompts/x-buzz-digest.md](prompts/x-buzz-digest.md)) that call `x_search`
+once per run and post a short trending-topic roundup straight to
+`#tech-signals`. This replaced an earlier always-on `x-pulse-watcher`
+LaunchAgent that polled `x_search` every 30 minutes through the
+`x-buzz-trigger` webhook; continuous polling burned xAI/Grok usage faster
+than a fixed twice-daily schedule needs. See "X Buzz Digest" in
+[docs/scheduled-jobs.md](docs/scheduled-jobs.md) for its preflight and
+streak-alert behavior.
 
 ## Digest Quality And Feedback
 
@@ -305,10 +303,11 @@ HERMES_ALERT_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 HERMES_ALERT_COMMAND='your-command-that-reads-stdin'
 ```
 
-The signal and X pulse watchers call the same alert helper when webhook
-delivery fails, required webhook secrets are missing, or X search cannot run.
-The `Hermes health check` cron job also reports gateway, cron, webhook, watcher,
-and xAI/Grok access issues to `#hermes-info`; normal runs stay silent.
+The signal watcher and the X buzz digest cron job call the same alert helper
+when webhook delivery fails, required webhook secrets are missing, or
+`x_search` cannot run for several runs in a row. The `Hermes health check`
+cron job also reports gateway, cron, webhook, watcher, and xAI/Grok access
+issues to `#hermes-info`; normal runs stay silent.
 
 Explicit Discord feedback and follow-up requests can be captured with the
 Gateway hook `~/.hermes/bin/hermes-discord-feedback.sh`. Supported message
