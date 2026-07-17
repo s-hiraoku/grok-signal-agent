@@ -159,6 +159,7 @@ cmd_sync() {
 
   "${repo_dir}/scripts/register-hermes-cronjobs.sh"
   "${repo_dir}/scripts/register-hermes-webhooks.sh"
+  "${HERMES_BIN}" config set cron.script_timeout_seconds 600 >/dev/null
   "${HERMES_BIN}" gateway restart
   echo "posting sync complete"
 }
