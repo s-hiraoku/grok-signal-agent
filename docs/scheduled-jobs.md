@@ -142,7 +142,13 @@ scripts/register-hermes-webhooks.sh
 
 `config/hermes-channels.local.json` is ignored by git. Registration rejects
 placeholder targets, so every channel used by enabled cron and webhook jobs
-must resolve to a real `platform:chat_id` value. Set
+must resolve to a real `platform:chat_id` value. When channel keys are renamed
+in the repository (as in the 2026-07 consolidation to `ai-news`,
+`tech-signals`, `digest`, and `hermes`), an existing local override still
+holding the old keys makes registration fail fast with an "Unknown channel"
+error until the file is rewritten. This is intentional: silently aliasing old
+keys would keep delivering to retired Discord channels, so the operator must
+re-map the keys by hand before re-registering. Set
 `HERMES_CHANNELS_CONFIG=/path/to/channels.json` when you want to use a
 different override file in tests or automation.
 
