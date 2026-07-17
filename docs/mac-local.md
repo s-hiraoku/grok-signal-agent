@@ -171,17 +171,17 @@ X/Twitter buzz used to be handled by an always-on `x-pulse-watcher`
 LaunchAgent polling `x_search` every 30 minutes and posting through the
 `x-buzz-trigger` webhook. That was retired in favor of
 `hermes-x-buzz-digest-cron.sh`, a Hermes cron job that runs twice daily
-(08:45 and 18:40) and posts a short trending-X roundup directly to
+(06:45 and 18:40) and posts a short trending-X roundup directly to
 `#tech-signals`, matching the fixed-schedule pattern of the other digest
 jobs instead of continuous polling. The full X tech digest is posted by cron
 on weekdays at 18:00.
 
 By default, event-triggered posts route to:
 
-- `tech-digest-trigger` posts to `#tech-digest`.
-- `ai-latest-trigger` posts to `#ai-latest`.
+- `tech-digest-trigger` posts to `#digest`.
+- `ai-latest-trigger` posts to `#ai-news`.
 - `signal-catchup` posts to `#tech-signals`.
-- `nightly-dreaming-trigger` posts to `#hermes-chat`.
+- `nightly-dreaming-trigger` posts to `#hermes`.
 
 `x-buzz-trigger` remains registered for manual `hermes-posting-admin.sh
 test-webhooks` use, but nothing sends it automatically now that the X buzz
@@ -194,13 +194,13 @@ wbsb.dev is no longer monitored.
 
 The active cron posts route to:
 
-- `tech-digest 18:00` posts to `#tech-digest` on weekdays.
-- `平日8:00リマインダー` posts to `#morning-brief`, including today's Google
+- `tech-digest 18:00` posts to `#digest` on weekdays.
+- `平日6:00リマインダー` posts to `#digest`, including today's Google
   Workspace Calendar events. Monday posts also include the current week's
   schedule.
-- `Hermes health check` posts to `#hermes-info` only when attention is needed.
-- `金曜17時gbrainサマリー` posts gbrain/honcho status to `#weekly-review`.
-- `X buzz digest 08:45` and `X buzz digest 18:40` post trending X/Twitter
+- `Hermes health check` posts to `#hermes` only when attention is needed.
+- `金曜17時gbrainサマリー` posts gbrain/honcho status to `#digest`.
+- `X buzz digest 06:45` and `X buzz digest 18:40` post trending X/Twitter
   roundups to `#tech-signals` daily.
 
 Webhook subscription definitions live in `config/hermes-webhooks.json`; the

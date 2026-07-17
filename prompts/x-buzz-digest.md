@@ -16,11 +16,20 @@ Cover these topics as evenly as the available high-traction posts allow:
 4. Cloud, infrastructure, security incidents/CVEs, open source, and major
    product launches that matter to builders.
 
-Only include a post if it has clear, checkable engagement: likes, reposts,
-replies+quotes, or views/impressions. Prefer posts from the last few hours;
+Only include a post if it has clear, checkable engagement AND that engagement
+meets at least one of these minimum thresholds:
+
+- likes >= 500
+- reposts >= 100
+- replies + quotes >= 100
+- views/impressions >= 100,000
+
+Posts below every threshold are not buzz — exclude them even if the topic is
+interesting. When in doubt, exclude. Prefer posts from the last few hours;
 use the runtime `window_hours` hint for how far back to look. Do not invent
 engagement numbers — if a number is not visible, treat it as 0 for that
-metric and rely on the other metrics instead.
+metric and rely on the other metrics instead. Order the topics you do include
+by raw engagement, strongest first.
 
 Prefer original posts, official accounts, substantial technical threads,
 release announcements, incident reports, and posts multiple independent

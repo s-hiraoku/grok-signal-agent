@@ -139,10 +139,10 @@ def morning_brief_time_label() -> str:
         config = json.loads(CRONJOBS_CONFIG.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return ""
+    # Assumes at most one enabled job runs this script; with several, the
+    # first match in config order decides the label.
     for job in config.get("jobs", []):
         if job.get("enabled", True) is not True:
-            continue
-        if job.get("channel") != "morning-brief":
             continue
         if job.get("script") != "hermes-morning-brief-cron.sh":
             continue

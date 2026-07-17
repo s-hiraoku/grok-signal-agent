@@ -111,6 +111,7 @@ while IFS= read -r job; do
 
   if [[ -z "${deliver}" ]]; then
     echo "Unknown channel '${channel}' for job '${name}'." >&2
+    echo "Map every current channel key in config/hermes-channels.local.json (start from config/hermes-channels.example.json). Older local override files predate the ai-news/tech-signals/digest/hermes channel keys and must be rewritten by hand." >&2
     exit 1
   fi
 
