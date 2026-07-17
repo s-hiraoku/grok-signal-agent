@@ -260,7 +260,7 @@ installer copies the watcher runtime to
 `~/.hermes/runtime/grok-signal-agent/`; re-run the installer after changing the
 watcher code or config.
 
-X/Twitter buzz is posted by `X buzz digest 08:45` and `X buzz digest 18:40`,
+X/Twitter buzz is posted by `X buzz digest 06:45` and `X buzz digest 18:40`,
 twice-daily Hermes cron jobs (`scripts/hermes-x-buzz-digest-cron.sh`,
 [prompts/x-buzz-digest.md](prompts/x-buzz-digest.md)) that call `x_search`
 once per run and post a short trending-topic roundup straight to

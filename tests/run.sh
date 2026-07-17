@@ -1190,6 +1190,7 @@ test_scheduled_prompts_require_direct_source_links() {
   assert_file_contains "${REPO_DIR}/README.md" '`#digest`'
   assert_file_contains "${REPO_DIR}/README.md" '`#hermes`'
   assert_file_contains "${REPO_DIR}/README.md" "wbsb.dev is no longer monitored"
+  assert_file_contains "${REPO_DIR}/README.md" 'X buzz digest 06:45` and `X buzz digest 18:40'
   assert_file_contains "${REPO_DIR}/docs/scheduled-jobs.md" "Google/Web-derived items must include the original page URL"
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "signal-catchup"'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"channel": "tech-signals"'
