@@ -1176,6 +1176,10 @@ test_scheduled_prompts_require_direct_source_links() {
   assert_file_contains "${REPO_DIR}/prompts/tech-digest.md" "反応: <likes/reposts/replies/quotes/views"
   assert_file_contains "${REPO_DIR}/prompts/tech-digest.md" "Posting Style"
   assert_file_contains "${REPO_DIR}/prompts/hermes-post-style.md" "ヘルメスちゃんが届けている"
+  assert_file_contains "${REPO_DIR}/scripts/hermes-review-cron.sh" "digest チャンネル向けに、この1週間"
+  assert_file_contains "${REPO_DIR}/scripts/hermes-review-cron.sh" "hermes チャンネル向けに、今日"
+  assert_file_not_contains "${REPO_DIR}/scripts/hermes-review-cron.sh" "weekly-review チャンネル向け"
+  assert_file_not_contains "${REPO_DIR}/scripts/hermes-review-cron.sh" "hermes-info チャンネル向け"
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-x-buzz-digest-cron.sh"'
   assert_file_contains "${REPO_DIR}/prompts/x-buzz-digest.md" "NO_QUALIFIED_BUZZ"
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-morning-brief-cron.sh"'
