@@ -111,7 +111,7 @@ install -m 644 \
   "${REPO_DIR}/.agents/skills/hermes-posting-admin/SKILL.md" \
   "${HOME}/.hermes/skills/devops/hermes-posting-admin/SKILL.md"
 
-"${HERMES_BIN}" config set cron.script_timeout_seconds 300 >/dev/null
+"${HERMES_BIN}" config set cron.script_timeout_seconds 600 >/dev/null
 
 render_plist() {
   local label="$1"

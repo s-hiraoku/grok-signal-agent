@@ -64,7 +64,7 @@ running it. Run `scripts/install-macos-launchagent.sh` or
 `~/.hermes/bin/hermes-posting-admin.sh sync` after changing script-backed
 routes.
 
-X/Twitter buzz is no longer webhook-driven. `X buzz digest 08:45` and
+X/Twitter buzz is no longer webhook-driven. `X buzz digest 06:45` and
 `X buzz digest 18:40` are Hermes cron jobs that call
 `hermes-x-buzz-digest-cron.sh` twice daily; it does not run the full digest,
 it posts a short Hermes-chan style roundup (1-4 topics) of X/Twitter posts
@@ -78,7 +78,7 @@ for the preflight/streak-alert behavior this job shares with tech-digest.
 
 The `ai-latest-trigger` route uses `mode: "prompt"` and receives official AI,
 model, agent, and tooling source signals. It posts only source-backed official
-or engineering-focused updates to `#ai-latest`.
+or engineering-focused updates to `#ai-news`.
 
 The `github-pr-review-trigger` route uses `mode: "prompt"` and receives GitHub
 webhook or external PR monitor payloads. It is intentionally event-driven: it
@@ -94,9 +94,10 @@ memory; it replaces only the current working memory view
 `~/.hermes/state/hermes-chan-memory.md` with the recomposed section from the
 report.
 
-`hermes-chat` is the main conversation channel for direct interaction. Runtime
-health and operational failures are kept out of the conversation channel and
-sent to `#hermes-info` only when attention is needed.
+`#hermes` is the combined Hermes home channel: it hosts direct conversation
+with Hermes, and it receives runtime health and operational failure reports
+only when attention is needed. Health, watchdog, and evaluation jobs are
+silent on normal runs, so the channel stays usable for conversation.
 
 ## Quality Gate
 
@@ -145,35 +146,37 @@ must resolve to a real `platform:chat_id` value. Set
 `HERMES_CHANNELS_CONFIG=/path/to/channels.json` when you want to use a
 different override file in tests or automation.
 
-The committed default maps `ai-latest` and `tech-signals` to separate Discord
-channels. Keep official AI/model/tooling updates in `#ai-latest`; route broader
-technical signals and X buzz to `#tech-signals`.
+The committed default maps `ai-news` and `tech-signals` to separate Discord
+channels. Keep official AI/model/tooling updates in `#ai-news`; route broader
+technical signals and X buzz to `#tech-signals`. All scheduled reading digests
+(morning brief, evening tech digest, weekly review) share `#digest`, and
+`#hermes` combines conversation with operational alerts.
 
 ## Current Cron Jobs
 
 `config/hermes-cronjobs.json` declares these active time-based posts:
 
-- `平日8:00リマインダー`: weekday 08:00 `#morning-brief`, using
+- `平日6:00リマインダー`: weekday 06:00 `#digest`, using
   `hermes-morning-brief-cron.sh` to fetch direct RSS/Atom sources and Google
   Workspace Calendar events before posting. Monday posts include both today's
   schedule and the current week's schedule.
-- `tech-digest 18:00`: weekday 18:00 `#tech-digest`.
-- `tech-digest evaluation 18:20`: weekday 18:20 `#hermes-info`, normally
+- `tech-digest 18:00`: weekday 18:00 `#digest`.
+- `tech-digest evaluation 18:20`: weekday 18:20 `#hermes`, normally
   silent. It evaluates the latest digest and performs optional gbrain write-back
   after the Discord delivery path has completed.
-- `Hermes health check`: daily 08:30 `#hermes-info`, using
+- `Hermes health check`: daily 06:30 `#hermes`, using
   `hermes-health-check-cron.sh`. Normal runs emit no stdout, so Hermes cron
   delivers nothing; failures produce an operational health report.
-- `Hermes disk watchdog`: every 15 minutes `#hermes-info`, using
+- `Hermes disk watchdog`: every 15 minutes `#hermes`, using
   `hermes-disk-watchdog-cron.sh`. Normal runs emit no stdout; set
   `HERMES_DISK_WATCHDOG_THRESHOLD` and `HERMES_DISK_WATCHDOG_PATHS` to tune it.
-- `Hermes SSL expiry watchdog`: daily 09:10 `#hermes-info`, using
+- `Hermes SSL expiry watchdog`: daily 09:10 `#hermes`, using
   `hermes-ssl-expiry-watchdog-cron.sh`. It is silent unless
   `HERMES_SSL_WATCH_HOSTS` is set and a certificate is near expiry or cannot be
   checked.
-- `金曜17時gbrainサマリー`: Friday 17:00 `#weekly-review`, using
+- `金曜17時gbrainサマリー`: Friday 17:00 `#digest`, using
   `hermes-weekly-review-cron.sh` to summarize gbrain and honcho updates/status.
-- `X buzz digest 08:45` and `X buzz digest 18:40`: daily `#tech-signals`,
+- `X buzz digest 06:45` and `X buzz digest 18:40`: daily `#tech-signals`,
   using `hermes-x-buzz-digest-cron.sh`. See "X Buzz Digest" below.
 
 The old morning/lunch tech digests, nightly dreaming post, and daily
@@ -241,7 +244,7 @@ prompt:
 {
   "id": "example-trigger",
   "name": "example-trigger",
-  "channel": "morning-brief",
+  "channel": "digest",
   "mode": "prompt",
   "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
   "events": [],
@@ -257,7 +260,7 @@ artifact persistence, external command calls, or custom post-processing:
 {
   "id": "example-script-trigger",
   "name": "example-script-trigger",
-  "channel": "weekly-review",
+  "channel": "digest",
   "mode": "script",
   "script": "example-script-cron.sh",
   "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
@@ -315,13 +318,14 @@ registers them with `hermes webhook subscribe`.
 dedupes stable URLs or document content hashes, scores new items with keyword
 weights, applies route cooldowns, and sends only threshold-crossing payloads to
 Hermes webhooks. Official AI sources route to `ai-latest-trigger` as
-`#ai-latest` posts. Zenn and generic technical signals route to
+`#ai-news` posts. Zenn and generic technical signals route to
 `signal-catchup` as consolidated `#tech-signals` posts.
 Generic sources include Anthropic News/Engineering/Research, Anthropic Claude
 Code and Claude Platform snapshot diffs, Google AI, Mistral, Meta AI, Hugging
 Face, LangChain, GitHub Changelog, OpenAI News, OpenAI Codex/API changelog
 snapshot diffs, the OpenAI Codex maxxing whitepaper PDF, Cloudflare Changelog,
-Hacker News frontpage/best, Publickey, and release feeds. For
+Hacker News best (frontpage kept as a disabled source), Publickey, and release
+feeds. For
 `ai-latest-trigger`, the watcher writes local artifacts under
 `~/.hermes/state/ai-latest/`: `signals.json`, `analysis.md`,
 `summary.html`, and `index.html`. It splits `ai-latest-trigger` by provider, so

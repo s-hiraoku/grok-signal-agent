@@ -62,13 +62,10 @@ write_channels_config() {
 {
   "version": 1,
   "channels": {
-    "tech-digest": "discord:900000000000000001",
-    "ai-latest": "discord:900000000000000002",
+    "ai-news": "discord:900000000000000002",
     "tech-signals": "discord:900000000000000003",
-    "morning-brief": "discord:900000000000000004",
-    "weekly-review": "discord:900000000000000005",
-    "hermes-info": "discord:900000000000000006",
-    "hermes-chat": "discord:900000000000000007"
+    "digest": "discord:900000000000000001",
+    "hermes": "discord:900000000000000006"
   }
 }
 JSON
@@ -88,7 +85,7 @@ printf '\n' >> "${HERMES_STUB_LOG}"
 
   if [[ "$1" == "cron" && "$2" == "list" ]]; then
   if [[ "${HERMES_EXISTING_JOB:-}" == "*" ]]; then
-    for name in "tech-digest 08:00" "tech-digest 12:30" "tech-digest 18:00" "tech-digest evaluation 18:20" "平日9:50リマインダー" "平日8:00リマインダー" "毎晩2:30 dreaming再合成" "金曜17時gbrainサマリー" "毎晩23:30 gbrain/honcho daily review" "Hermes health check" "Hermes disk watchdog" "Hermes SSL expiry watchdog"; do
+    for name in "tech-digest 08:00" "tech-digest 12:30" "tech-digest 18:00" "tech-digest evaluation 18:20" "平日9:50リマインダー" "平日6:00リマインダー" "毎晩2:30 dreaming再合成" "金曜17時gbrainサマリー" "毎晩23:30 gbrain/honcho daily review" "Hermes health check" "Hermes disk watchdog" "Hermes SSL expiry watchdog"; do
       printf '  stub-%s [active]\n' "${name// /-}"
       printf '    Name:      %s\n' "${name}"
     done
@@ -180,13 +177,13 @@ test_register_cronjobs_syncs_enabled_tech_digest_jobs() {
   assert_file_contains "${log_file}" "--script hermes-tech-digest-evaluate-cron.sh"
   assert_file_contains "${log_file}" "--no-agent 20\\ 18\\ \\*\\ \\*\\ 1-5 Evaluate\\ the\\ latest\\ tech\\ digest"
   assert_file_contains "${log_file}" "--script hermes-morning-brief-cron.sh"
-  assert_file_contains "${log_file}" "--no-agent 0\\ 8\\ \\*\\ \\*\\ 1-5 Run\\ the\\ morning\\ brief\\ script."
+  assert_file_contains "${log_file}" "--no-agent 0\\ 6\\ \\*\\ \\*\\ 1-5 Run\\ the\\ morning\\ brief\\ script."
   assert_file_contains "${log_file}" "--script hermes-weekly-review-cron.sh"
   assert_file_contains "${log_file}" "--script hermes-health-check-cron.sh"
   assert_file_contains "${log_file}" "--script hermes-disk-watchdog-cron.sh"
   assert_file_contains "${log_file}" "--script hermes-ssl-expiry-watchdog-cron.sh"
   assert_file_contains "${log_file}" "--deliver discord:900000000000000006"
-  assert_file_contains "${log_file}" "--name X\\ buzz\\ digest\\ 08:45 --deliver discord:900000000000000003 --script hermes-x-buzz-digest-cron.sh"
+  assert_file_contains "${log_file}" "--name X\\ buzz\\ digest\\ 06:45 --deliver discord:900000000000000003 --script hermes-x-buzz-digest-cron.sh"
   assert_file_contains "${log_file}" "--name X\\ buzz\\ digest\\ 18:40 --deliver discord:900000000000000003 --script hermes-x-buzz-digest-cron.sh"
   assert_file_not_contains "${log_file}" "--script hermes-daily-review-cron.sh"
   assert_file_not_contains "${log_file}" "cron remove stub-id"
@@ -238,13 +235,14 @@ test_register_cronjobs_rejects_placeholder_channels() {
     HOME="${tmp_home}" \
     HERMES_BIN="${tmp_home}/.local/bin/hermes" \
     HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
+    HERMES_CHANNELS_CONFIG="${tmp_home}/no-such-channels.json" \
     "${REPO_DIR}/scripts/register-hermes-cronjobs.sh" 2>&1
   )"
   status=$?
   set -e
 
   [[ "${status}" -ne 0 ]] || fail "expected register script to fail for placeholder channels"
-  assert_contains "${output}" "Unknown channel 'tech-digest' for job 'tech-digest 08:00'."
+  assert_contains "${output}" "Unknown channel 'digest' for job 'tech-digest 08:00'."
 }
 
 test_register_cronjobs_uses_local_channel_overrides() {
@@ -257,13 +255,10 @@ test_register_cronjobs_uses_local_channel_overrides() {
 {
   "version": 1,
   "channels": {
-    "tech-digest": "discord:999999999999999999",
-    "ai-latest": "discord:900000000000000002",
+    "ai-news": "discord:900000000000000002",
     "tech-signals": "discord:900000000000000003",
-    "morning-brief": "discord:900000000000000004",
-    "weekly-review": "discord:900000000000000005",
-    "hermes-info": "discord:900000000000000006",
-    "hermes-chat": "discord:900000000000000007"
+    "digest": "discord:999999999999999999",
+    "hermes": "discord:900000000000000006"
   }
 }
 JSON
@@ -278,7 +273,7 @@ JSON
 
   assert_contains "${output}" "Cron registration complete:"
   assert_file_contains "${log_file}" "--name tech-digest\\ 18:00 --deliver discord:999999999999999999"
-  assert_file_contains "${log_file}" "--deliver discord:900000000000000004"
+  assert_file_contains "${log_file}" "--deliver discord:900000000000000006"
 }
 
 test_morning_brief_cron_reads_direct_feeds() {
@@ -614,7 +609,7 @@ STUB
   [[ ! -e "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway-healthcheck.plist" ]] || fail "legacy healthcheck plist should be removed"
   [[ ! -e "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.discord-heartbeat.plist" ]] || fail "legacy heartbeat plist should be removed"
   [[ -e "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.weekly-self-reflection.plist" ]] || fail "weekly reflection plist should be rendered"
-  assert_file_contains "${tmp_home}/hermes-calls.log" "config set cron.script_timeout_seconds 300"
+  assert_file_contains "${tmp_home}/hermes-calls.log" "config set cron.script_timeout_seconds 600"
   assert_file_contains "${tmp_home}/hermes-calls.log" "cron remove"
   assert_contains "${output}" "Skipped webhook registration because Hermes webhook platform is not enabled"
   assert_file_contains "${tmp_home}/hermes-calls.log" "gateway restart"
@@ -1179,25 +1174,25 @@ test_scheduled_prompts_require_direct_source_links() {
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "DEFAULT_GENERAL_FEEDS"
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "DEFAULT_TECH_FEEDS"
   assert_file_contains "${REPO_DIR}/scripts/hermes-morning-brief-cron.sh" "出典:"
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"ai-latest": "discord:replace-with-ai-latest-channel-id"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"ai-news": "discord:replace-with-ai-news-channel-id"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"tech-signals": "discord:replace-with-tech-signals-channel-id"'
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes-info": "discord:replace-with-hermes-info-channel-id"'
-  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes-chat": "discord:replace-with-hermes-chat-channel-id"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"digest": "discord:replace-with-digest-channel-id"'
+  assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"hermes": "discord:replace-with-hermes-channel-id"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-health-check-cron.sh"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-tech-digest-evaluate-cron.sh"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-disk-watchdog-cron.sh"'
   assert_file_contains "${REPO_DIR}/config/hermes-cronjobs.json" '"script": "hermes-ssl-expiry-watchdog-cron.sh"'
   assert_file_contains "${REPO_DIR}/README.md" "Hermes channel routing is organized by what readers expect"
-  assert_file_contains "${REPO_DIR}/README.md" 'current default config keeps `#ai-latest` and `#tech-signals` as separate'
-  assert_file_contains "${REPO_DIR}/README.md" '`#ai-latest`'
-  assert_file_contains "${REPO_DIR}/README.md" '`#hermes-chat`'
-  assert_file_contains "${REPO_DIR}/README.md" '`#hermes-info`'
+  assert_file_contains "${REPO_DIR}/README.md" 'current default config keeps `#ai-news` and `#tech-signals` as separate'
+  assert_file_contains "${REPO_DIR}/README.md" '`#ai-news`'
+  assert_file_contains "${REPO_DIR}/README.md" '`#digest`'
+  assert_file_contains "${REPO_DIR}/README.md" '`#hermes`'
   assert_file_contains "${REPO_DIR}/README.md" "wbsb.dev is no longer monitored"
   assert_file_contains "${REPO_DIR}/docs/scheduled-jobs.md" "Google/Web-derived items must include the original page URL"
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "signal-catchup"'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"channel": "tech-signals"'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "ai-latest-trigger"'
-  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"channel": "ai-latest"'
+  assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"channel": "ai-news"'
   assert_file_contains "${REPO_DIR}/prompts/webhooks/ai-latest-trigger.md" 'payload.artifact.infographics'
   assert_file_contains "${REPO_DIR}/prompts/webhooks/ai-latest-trigger.md" 'MEDIA:<png>'
   assert_file_contains "${REPO_DIR}/config/hermes-webhooks.json" '"name": "tech-digest-trigger"'
@@ -1216,10 +1211,10 @@ test_scheduled_prompts_require_direct_source_links() {
   assert_file_not_contains "${REPO_DIR}/config/signal-watchers.json" '"id": "wbsb-feed"'
   assert_file_not_contains "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh" "wbsb.dev"
   assert_file_contains "${REPO_DIR}/docs/scheduled-jobs.md" "Hermes' webhook platform"
-  assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"ai-latest"'
-  assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"hermes-info"'
-  assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"hermes-chat"'
-  assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"tech-digest"'
+  assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"ai-news"'
+  assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"tech-signals"'
+  assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"digest"'
+  assert_file_contains "${REPO_DIR}/config/hermes-channels.example.json" '"hermes"'
 }
 
 test_register_webhooks_preserves_existing_secret() {
@@ -1295,13 +1290,10 @@ ENV
 {
   "version": 1,
   "channels": {
-    "tech-digest": "discord:900000000000000001",
-    "ai-latest": "discord:900000000000000002",
+    "ai-news": "discord:900000000000000002",
     "tech-signals": "discord:888888888888888888",
-    "morning-brief": "discord:900000000000000004",
-    "weekly-review": "discord:900000000000000005",
-    "hermes-info": "discord:900000000000000006",
-    "hermes-chat": "discord:900000000000000007"
+    "digest": "discord:900000000000000001",
+    "hermes": "discord:900000000000000006"
   }
 }
 JSON
@@ -1362,6 +1354,7 @@ JSON
     HERMES_STUB_LOG="${HERMES_STUB_LOG}" \
     HERMES_WEBHOOKS_CONFIG="${webhooks_config}" \
     HERMES_CRONJOBS_CONFIG="${cron_config}" \
+    HERMES_CHANNELS_CONFIG="${cron_config}" \
     "${REPO_DIR}/scripts/register-hermes-webhooks.sh" 2>&1
   )"
   status=$?

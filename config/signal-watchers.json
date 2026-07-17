@@ -249,7 +249,7 @@
     },
     {
       "id": "hn-frontpage",
-      "enabled": true,
+      "enabled": false,
       "type": "feed",
       "url": "https://hnrss.org/frontpage",
       "description": "Hacker News front page feed for developer community signals.",
