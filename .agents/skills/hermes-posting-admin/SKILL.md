@@ -1,8 +1,6 @@
 ---
 name: hermes-posting-admin
 description: Use when the user asks Hermes to change, inspect, test, or operate Discord posting settings, cron posts, webhook triggers, Zenn routes, watcher thresholds, or tech digest delivery.
-version: 1.0.0
-author: s-hiraoku
 license: MIT
 metadata:
   hermes:
@@ -49,7 +47,7 @@ Edit these repo files first:
 - `config/hermes-webhooks.json`: event-triggered Hermes routes.
 - `config/signal-watchers.json`: feed/page watchers such as Zenn and official AI/developer sources.
 - `prompts/tech-digest.md`: long-form X tech digest prompt.
-- `prompts/x-buzz-digest.md`: twice-daily X buzz roundup prompt (`hermes-x-buzz-digest-cron.sh`, 08:45/18:40).
+- `prompts/x-buzz-digest.md`: twice-daily X buzz roundup prompt (`hermes-x-buzz-digest-cron.sh`, 06:45/18:40).
 - `prompts/hermes-post-style.md`: shared Discord voice for Hermes-chan posts.
 - `scripts/*-cron.sh`: no-agent script handlers used by cron/webhooks.
 
@@ -119,17 +117,17 @@ real Discord posts and may use X search or LLM calls:
 
 ## Current Posting Model
 
-- `morning-brief` stays as Hermes cron at weekday 08:00.
+- `morning-brief` stays as Hermes cron at weekday 06:00 and posts to `#digest`.
 - `weekly-review` stays as Hermes cron at Friday 17:00.
-- `Hermes health check` stays as Hermes cron at daily 08:30 and posts to `#hermes-info` only when attention is needed.
+- `Hermes health check` stays as Hermes cron at daily 06:30 and posts to `#hermes` only when attention is needed.
 - `tech-digest 18:00` stays as the only scheduled tech digest, on weekdays.
 - `tech-digest 08:00`, `tech-digest 12:30`, `daily-review`, and nightly dreaming remain disabled cleanup cron entries.
 - `tech-digest-trigger` is a manual/script route for running the full digest outside the cron schedule.
 - `ai-latest-trigger` is event-driven and receives high-signal official AI source signals.
-- `X buzz digest 08:45` and `X buzz digest 18:40` are Hermes cron jobs (`hermes-x-buzz-digest-cron.sh`) that call `x_search` twice daily and post a short trending-X roundup directly to `#tech-signals`. This replaced the earlier always-on `x-pulse-watcher` LaunchAgent (30-minute polling via the `x-buzz-trigger` webhook), which is retired; `x-buzz-trigger` itself is still registered for manual `test-webhooks` use but nothing sends it automatically anymore.
+- `X buzz digest 06:45` and `X buzz digest 18:40` are Hermes cron jobs (`hermes-x-buzz-digest-cron.sh`) that call `x_search` twice daily and post a short trending-X roundup directly to `#tech-signals`. This replaced the earlier always-on `x-pulse-watcher` LaunchAgent (30-minute polling via the `x-buzz-trigger` webhook), which is retired; `x-buzz-trigger` itself is still registered for manual `test-webhooks` use but nothing sends it automatically anymore.
 - `zenn-dev-trigger` and `wbsb-trigger` are disabled cleanup webhook entries. Zenn signals route through `signal-catchup`; wbsb.dev is no longer monitored.
 - `signal-catchup` is generic event-driven catch-up.
-- `nightly-dreaming-trigger` is memory maintenance, not a normal news post, and uses the main `#hermes-chat` conversation channel.
+- `nightly-dreaming-trigger` is memory maintenance, not a normal news post, and uses the combined `#hermes` conversation and operations channel.
 
 ## Safety Rules
 

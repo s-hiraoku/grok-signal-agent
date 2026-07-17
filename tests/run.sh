@@ -636,6 +636,12 @@ STUB
   [[ -f "${tmp_home}/.hermes/prompts/x-buzz-digest.md" ]] || fail "x buzz digest prompt should be installed"
   [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/repo-path" ]] || fail "posting admin repo hint should be installed"
   [[ -f "${tmp_home}/.hermes/skills/devops/hermes-posting-admin/SKILL.md" ]] || fail "posting admin skill should be installed"
+  assert_file_contains "${tmp_home}/.hermes/skills/devops/hermes-posting-admin/SKILL.md" 'weekday 06:00 and posts to `#digest`'
+  assert_file_contains "${tmp_home}/.hermes/skills/devops/hermes-posting-admin/SKILL.md" 'daily 06:30 and posts to `#hermes`'
+  assert_file_contains "${tmp_home}/.hermes/skills/devops/hermes-posting-admin/SKILL.md" '`X buzz digest 06:45` and `X buzz digest 18:40`'
+  assert_file_contains "${tmp_home}/.hermes/skills/devops/hermes-posting-admin/SKILL.md" 'uses the combined `#hermes` conversation and operations channel'
+  assert_file_not_contains "${tmp_home}/.hermes/skills/devops/hermes-posting-admin/SKILL.md" '#hermes-info'
+  assert_file_not_contains "${tmp_home}/.hermes/skills/devops/hermes-posting-admin/SKILL.md" '#hermes-chat'
   [[ -f "${tmp_home}/.hermes/prompts/hermes-post-style.md" ]] || fail "posting style prompt should be installed"
   [[ -x "${tmp_home}/.hermes/scripts/hermes-dreaming-cron.sh" ]] || fail "dreaming cron script should be installed"
   [[ -x "${tmp_home}/.hermes/scripts/hermes-morning-brief-cron.sh" ]] || fail "morning brief cron script should be installed"
