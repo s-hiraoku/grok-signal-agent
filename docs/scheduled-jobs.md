@@ -179,9 +179,12 @@ technical signals and X buzz to `#tech-signals`. All scheduled reading digests
 - `X buzz digest 06:45` and `X buzz digest 18:40`: daily `#tech-signals`,
   using `hermes-x-buzz-digest-cron.sh`. See "X Buzz Digest" below.
 
-The old morning/lunch tech digests, nightly dreaming post, and daily
-gbrain/honcho review remain disabled in the same file so
-`scripts/register-hermes-cronjobs.sh` can remove stale registered jobs by name.
+The old morning/lunch tech digests, nightly dreaming post, daily
+gbrain/honcho review, and the pre-rename `平日8:00リマインダー` and
+`X buzz digest 08:45` jobs remain disabled in the same file so
+`scripts/register-hermes-cronjobs.sh` can remove stale registered jobs by
+name. Renaming a job leaves its old-named registration invisible to sync, so
+every rename needs a matching disabled cleanup entry under the old name.
 
 ## X Buzz Digest
 

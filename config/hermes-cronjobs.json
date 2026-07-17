@@ -63,10 +63,21 @@
       "prompt": "Run the morning brief script."
     },
     {
-      "id": "weekday-0800-reminder",
+      "id": "weekday-0600-reminder",
       "name": "平日6:00リマインダー",
       "enabled": true,
       "schedule": "0 6 * * 1-5",
+      "channel": "digest",
+      "mode": "script",
+      "script": "hermes-morning-brief-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the morning brief script."
+    },
+    {
+      "id": "weekday-0800-reminder",
+      "name": "平日8:00リマインダー",
+      "enabled": false,
+      "schedule": "0 8 * * 1-5",
       "channel": "digest",
       "mode": "script",
       "script": "hermes-morning-brief-cron.sh",
@@ -107,7 +118,7 @@
       "prompt": "Run the daily gbrain/honcho review script."
     },
     {
-      "id": "hermes-health-0830",
+      "id": "hermes-health-0630",
       "name": "Hermes health check",
       "enabled": true,
       "schedule": "30 6 * * *",
@@ -140,10 +151,21 @@
       "prompt": "Run the SSL certificate expiry watchdog script."
     },
     {
-      "id": "x-buzz-digest-0845",
+      "id": "x-buzz-digest-0645",
       "name": "X buzz digest 06:45",
       "enabled": true,
       "schedule": "45 6 * * *",
+      "channel": "tech-signals",
+      "mode": "script",
+      "script": "hermes-x-buzz-digest-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the X buzz digest script."
+    },
+    {
+      "id": "x-buzz-digest-0845",
+      "name": "X buzz digest 08:45",
+      "enabled": false,
+      "schedule": "45 8 * * *",
       "channel": "tech-signals",
       "mode": "script",
       "script": "hermes-x-buzz-digest-cron.sh",
