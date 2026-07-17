@@ -1483,6 +1483,71 @@ JSON
   assert_json_eq "${output}" ".dry_run" "true"
 }
 
+test_signal_watcher_feed_excludes_prerelease_urls() {
+  local tmp_home feed config output
+  tmp_home="$(mktemp -d)"
+  feed="${tmp_home}/releases.xml"
+  config="${tmp_home}/watchers.json"
+  cat > "${feed}" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Release notes from codex</title>
+  <entry>
+    <id>tag:github.com,2008:Repository/example/rust-v0.28.0</id>
+    <title>Codex agent MCP release 0.28.0</title>
+    <link href="https://github.com/openai/codex/releases/tag/rust-v0.28.0"/>
+    <updated>2026-06-07T10:15:27Z</updated>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/example/rust-v0.29.0-alpha.1</id>
+    <title>Codex agent MCP release 0.29.0-alpha.1</title>
+    <link href="https://github.com/openai/codex/releases/tag/rust-v0.29.0-alpha.1"/>
+    <updated>2026-06-07T11:15:27Z</updated>
+  </entry>
+</feed>
+XML
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${tmp_home}/state.json",
+    "log_file": "${tmp_home}/watcher.log",
+    "prime_only_on_first_run": true,
+    "source_timeout_seconds": 5,
+    "max_items_per_source": 10,
+    "default_min_score": 70,
+    "default_cooldown_minutes": 90,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "secret_env": "HERMES_SIGNAL_CATCHUP_WEBHOOK_SECRET",
+    "post_trigger_secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET"
+  },
+  "keyword_weights": {
+    "agent": 30,
+    "mcp": 20,
+    "release": 15
+  },
+  "sources": [
+    {
+      "id": "local-releases",
+      "enabled": true,
+      "type": "feed",
+      "url": "file://${feed}",
+      "exclude_url_patterns": ["-alpha", "-beta", "-rc."],
+      "base_score": 20,
+      "min_score": 70,
+      "route": "signal-catchup",
+      "tags": ["test"]
+    }
+  ]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run --allow-first-run-send)"
+
+  assert_json_eq "${output}" ".observed" "1"
+  assert_json_eq "${output}" ".candidates" "1"
+}
+
 test_signal_watcher_reads_env_file_for_secret() {
   local tmp_home feed config env_file output log_file alert_script alert_log
   tmp_home="$(mktemp -d)"
@@ -3799,6 +3864,7 @@ main() {
     test_register_webhooks_rejects_script_names_outside_runtime_cron_pattern
     test_posting_admin_escapes_test_payload_and_rejects_unknown_routes
     test_signal_watcher_scores_local_feed
+    test_signal_watcher_feed_excludes_prerelease_urls
     test_signal_watcher_reads_env_file_for_secret
     test_signal_watcher_skips_artifacts_when_secret_missing
     test_signal_watcher_alerts_on_partial_source_failures

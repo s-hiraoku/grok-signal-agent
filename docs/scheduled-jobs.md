@@ -344,6 +344,10 @@ evidence in `facts.json` and `factcheck.md`. Version-only release notes stay in
 the HTML and Markdown artifact without a separate summary image. Snapshot
 sources store the previous normalized page content in watcher state and emit a
 signal only when the fetched Markdown or HTML text changes.
+Feed sources accept the same `include_url_patterns` / `exclude_url_patterns`
+filters as `html_links` sources, matched against each item's URL path. The
+OpenAI Codex release feed uses this to drop pre-release tags
+(`-alpha` / `-beta` / `-rc.`) so only stable releases become signals.
 The batch trigger threshold is intentionally set out of normal reach so source
 movement does not automatically start a full tech digest. The macOS installer
 runs it through

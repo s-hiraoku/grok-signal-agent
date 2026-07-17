@@ -225,6 +225,8 @@ def parse_feed(source: dict[str, Any], text: str) -> list[SignalItem]:
     root = ET.fromstring(text)
     source_id = source["id"]
     source_url = source["url"]
+    include = source.get("include_url_patterns", [])
+    exclude = source.get("exclude_url_patterns", [])
     items: list[SignalItem] = []
 
     nodes = [
@@ -236,6 +238,12 @@ def parse_feed(source: dict[str, Any], text: str) -> list[SignalItem]:
         link = first_link(node) or child_text(node, ("link", "id", "guid"))
         if not title or not link:
             continue
+        url = urllib.parse.urljoin(source_url, link)
+        path = urllib.parse.urlparse(url).path
+        if include and not any(p in path for p in include):
+            continue
+        if exclude and any(p in path for p in exclude):
+            continue
         guid = child_text(node, ("guid", "id")) or link
         summary = child_text(node, ("description", "summary", "content"))
         published = child_text(node, ("pubdate", "published", "updated"))
@@ -246,7 +254,7 @@ def parse_feed(source: dict[str, Any], text: str) -> list[SignalItem]:
                 source_url=source_url,
                 item_id=guid,
                 title=title,
-                url=urllib.parse.urljoin(source_url, link),
+                url=url,
                 summary=summary,
                 published_at=parse_date(published),
                 author=author,
