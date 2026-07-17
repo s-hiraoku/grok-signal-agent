@@ -15,7 +15,7 @@ MEMORY_FILE="${HERMES_CHAN_MEMORY_FILE:-${STATE_DIR}/hermes-chan-memory.md}"
 BUZZ_DIR="${STATE_DIR}/x-buzz-digests"
 ALERT_SCRIPT="${HERMES_ALERT_SCRIPT:-${HOME}/.hermes/bin/hermes-alert.sh}"
 GATEWAY_ERROR_LOG="${HERMES_GATEWAY_ERROR_LOG:-${LOG_DIR}/gateway.error.log}"
-WINDOW_HOURS="${HERMES_X_BUZZ_WINDOW_HOURS:-12}"
+WINDOW_HOURS="${HERMES_X_BUZZ_WINDOW_HOURS:-13}"
 X_POST_URL_REGEX='https?://(x\.com|twitter\.com)/([^/?#[:space:]]+/status|i/web/status)/[0-9][0-9]*[^[:space:])>]*'
 UNAVAILABLE_ALERT_STREAK="${HERMES_X_BUZZ_UNAVAILABLE_ALERT_STREAK:-4}"
 
