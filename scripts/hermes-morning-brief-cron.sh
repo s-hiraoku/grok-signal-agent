@@ -401,6 +401,44 @@ def calendar_section(title: str, events: list[CalendarEvent], empty_note: str, t
     return "\n".join(lines)
 
 
+def compact_summary(value: str, limit: int = 52) -> str:
+    value = clean_text(value)
+    if len(value) <= limit:
+        return value
+    return value[: limit - 1].rstrip() + "…"
+
+
+def morning_overview(
+    events: list[CalendarEvent],
+    calendar_error: str,
+    general_items: list[Item],
+    tech_items: list[Item],
+    tz: timezone,
+) -> str:
+    schedule_count = "取得失敗" if calendar_error else f"{len(events)}件"
+    lines = [
+        f"今朝の概要｜予定 {schedule_count}・一般 {len(general_items)}件・Tech/AI {len(tech_items)}件"
+    ]
+    if calendar_error:
+        lines.append("- 予定: カレンダーを取得できなかったため本文に状況を記載")
+    elif events:
+        first_event = events[0]
+        lines.append(
+            f"- 予定: {event_time_label(first_event, tz)} {compact_summary(first_event.summary)}"
+        )
+    else:
+        lines.append("- 予定: 登録なし")
+    if general_items:
+        lines.append(f"- 一般: {compact_summary(general_items[0].title)}")
+    else:
+        lines.append("- 一般: 主要項目なし")
+    if tech_items:
+        lines.append(f"- Tech/AI: {compact_summary(tech_items[0].title)}")
+    else:
+        lines.append("- Tech/AI: 主要項目なし")
+    return "\n".join(lines)
+
+
 def main() -> int:
     now = current_time()
     tz = local_tz()
@@ -429,7 +467,17 @@ def main() -> int:
     if errors:
         error_note = "\n\n取得メモ: 一部ソースは取得できなかったよ。確認できたソースを優先して載せています。"
 
-    body = f"""おはよう、ヘルメスちゃんです！
+    overview = morning_overview(
+        today_events,
+        today_calendar_error,
+        selected_general,
+        selected_tech,
+        tz,
+    )
+
+    body = f"""{overview}
+
+おはよう、ヘルメスちゃんです！
 
 もうすぐ仕事だよー。{brief_name} だよ。ニュースは直接フィードから確認できたものを優先して拾ってきたよ☀️
 

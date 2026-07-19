@@ -43,7 +43,7 @@ appends the shared post style when `include_post_style` is true.
 
 `zenn-dev-trigger` and `wbsb-trigger` remain as disabled cleanup entries for
 old subscriptions. Zenn watcher sources now route through `signal-catchup` so
-article notifications are consolidated into `#tech-signals` instead of
+article notifications are consolidated into `#tech-radar` instead of
 creating source-specific channel noise. wbsb.dev is no longer monitored.
 
 The `tech-digest-trigger` route uses `mode: "script"` and calls
@@ -69,7 +69,7 @@ X/Twitter buzz is no longer webhook-driven. `X buzz digest 06:45` and
 `hermes-x-buzz-digest-cron.sh` twice daily; it does not run the full digest,
 it posts a short Hermes-chan style roundup (1-4 topics) of X/Twitter posts
 that are genuinely trending since the previous run, straight to
-`#tech-signals`. It is intentionally conservative — the prompt returns
+`#tech-radar`. It is intentionally conservative — the prompt returns
 `NO_QUALIFIED_BUZZ` on a quiet window instead of padding with weak topics,
 and the script treats that as "nothing to post" rather than a failure. The
 `x-buzz-trigger` webhook route still exists for manual `test-webhooks` use
@@ -78,7 +78,7 @@ for the preflight/streak-alert behavior this job shares with tech-digest.
 
 The `ai-latest-trigger` route uses `mode: "prompt"` and receives official AI,
 model, agent, and tooling source signals. It posts only source-backed official
-or engineering-focused updates to `#ai-news`.
+or engineering-focused updates to `#ai-official`.
 
 The `github-pr-review-trigger` route uses `mode: "prompt"` and receives GitHub
 webhook or external PR monitor payloads. It is intentionally event-driven: it
@@ -94,10 +94,10 @@ memory; it replaces only the current working memory view
 `~/.hermes/state/hermes-chan-memory.md` with the recomposed section from the
 report.
 
-`#hermes` is the combined Hermes home channel: it hosts direct conversation
-with Hermes, and it receives runtime health and operational failure reports
-only when attention is needed. Health, watchdog, and evaluation jobs are
-silent on normal runs, so the channel stays usable for conversation.
+`#hermes-chat` is reserved for direct conversation with Hermes.
+`#hermes-alerts` receives runtime health, gateway, watchdog, evaluation, and
+operational failure reports only when attention is needed. Normal successful
+runs remain silent.
 
 ## Quality Gate
 
@@ -143,8 +143,8 @@ scripts/register-hermes-webhooks.sh
 `config/hermes-channels.local.json` is ignored by git. Registration rejects
 placeholder targets, so every channel used by enabled cron and webhook jobs
 must resolve to a real `platform:chat_id` value. When channel keys are renamed
-in the repository (as in the 2026-07 consolidation to `ai-news`,
-`tech-signals`, `digest`, and `hermes`), an existing local override still
+in the repository (as in the 2026-07 consolidation to `ai-official`,
+`tech-radar`, `briefings`, `hermes-chat`, and `hermes-alerts`), an existing local override still
 holding the old keys makes registration fail fast with an "Unknown channel"
 error until the file is rewritten. This is intentional: silently aliasing old
 keys would keep delivering to retired Discord channels, so the operator must
@@ -152,37 +152,39 @@ re-map the keys by hand before re-registering. Set
 `HERMES_CHANNELS_CONFIG=/path/to/channels.json` when you want to use a
 different override file in tests or automation.
 
-The committed default maps `ai-news` and `tech-signals` to separate Discord
-channels. Keep official AI/model/tooling updates in `#ai-news`; route broader
-technical signals and X buzz to `#tech-signals`. All scheduled reading digests
-(morning brief, evening tech digest, weekly review) share `#digest`, and
-`#hermes` combines conversation with operational alerts.
+The committed default maps `ai-official` and `tech-radar` to separate Discord
+channels. Keep official AI/model/tooling updates in `#ai-official`; route broader
+technical signals and X buzz to `#tech-radar`. Scheduled reader-facing posts
+(morning brief and evening tech digest) share `#briefings`; the internal weekly
+gbrain/honcho summary goes to `#hermes-alerts`.
+Direct conversation stays in `#hermes-chat`; operational alerts stay in
+`#hermes-alerts`.
 
 ## Current Cron Jobs
 
 `config/hermes-cronjobs.json` declares these active time-based posts:
 
-- `平日6:00リマインダー`: weekday 06:00 `#digest`, using
+- `朝6時ブリーフィング｜予定・主要ニュース・Tech/AI`: weekday 06:00 `#briefings`, using
   `hermes-morning-brief-cron.sh` to fetch direct RSS/Atom sources and Google
   Workspace Calendar events before posting. Monday posts include both today's
   schedule and the current week's schedule.
-- `tech-digest 18:00`: weekday 18:00 `#digest`.
-- `tech-digest evaluation 18:20`: weekday 18:20 `#hermes`, normally
+- `tech-digest 18:00`: weekday 18:00 `#briefings`.
+- `tech-digest evaluation 18:20`: weekday 18:20 `#hermes-alerts`, normally
   silent. It evaluates the latest digest and performs optional gbrain write-back
   after the Discord delivery path has completed.
-- `Hermes health check`: daily 06:30 `#hermes`, using
+- `Hermes health check`: daily 06:30 `#hermes-alerts`, using
   `hermes-health-check-cron.sh`. Normal runs emit no stdout, so Hermes cron
   delivers nothing; failures produce an operational health report.
-- `Hermes disk watchdog`: every 15 minutes `#hermes`, using
+- `Hermes disk watchdog`: every 15 minutes `#hermes-alerts`, using
   `hermes-disk-watchdog-cron.sh`. Normal runs emit no stdout; set
   `HERMES_DISK_WATCHDOG_THRESHOLD` and `HERMES_DISK_WATCHDOG_PATHS` to tune it.
-- `Hermes SSL expiry watchdog`: daily 09:10 `#hermes`, using
+- `Hermes SSL expiry watchdog`: daily 09:10 `#hermes-alerts`, using
   `hermes-ssl-expiry-watchdog-cron.sh`. It is silent unless
   `HERMES_SSL_WATCH_HOSTS` is set and a certificate is near expiry or cannot be
   checked.
-- `金曜17時gbrainサマリー`: Friday 17:00 `#digest`, using
+- `金曜17時gbrainサマリー`: Friday 17:00 `#hermes-alerts`, using
   `hermes-weekly-review-cron.sh` to summarize gbrain and honcho updates/status.
-- `X buzz digest 06:45` and `X buzz digest 18:40`: daily `#tech-signals`,
+- `X buzz digest 06:45` and `X buzz digest 18:40`: daily `#tech-radar`,
   using `hermes-x-buzz-digest-cron.sh`. See "X Buzz Digest" below.
 
 The old morning/lunch tech digests, nightly dreaming post, daily
@@ -197,7 +199,7 @@ every rename needs a matching disabled cleanup entry under the old name.
 `hermes-x-buzz-digest-cron.sh` calls `x_search` once per run to look for
 X/Twitter posts that are genuinely trending in AI/developer-tool/Web topics
 since the previous run, and posts a short roundup (1-4 topics) directly to
-`#tech-signals` — the script's own stdout is what Hermes cron delivers, the
+`#tech-radar` — the script's own stdout is what Hermes cron delivers, the
 same pattern as `tech-digest 18:00`, with no separate webhook or secret
 involved. This replaced the always-on `x-pulse-watcher` LaunchAgent described
 above.
@@ -253,7 +255,7 @@ prompt:
 {
   "id": "example-trigger",
   "name": "example-trigger",
-  "channel": "digest",
+  "channel": "briefings",
   "mode": "prompt",
   "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
   "events": [],
@@ -269,7 +271,7 @@ artifact persistence, external command calls, or custom post-processing:
 {
   "id": "example-script-trigger",
   "name": "example-script-trigger",
-  "channel": "digest",
+  "channel": "briefings",
   "mode": "script",
   "script": "example-script-cron.sh",
   "secret_env": "HERMES_POST_TRIGGER_WEBHOOK_SECRET",
@@ -327,8 +329,8 @@ registers them with `hermes webhook subscribe`.
 dedupes stable URLs or document content hashes, scores new items with keyword
 weights, applies route cooldowns, and sends only threshold-crossing payloads to
 Hermes webhooks. Official AI sources route to `ai-latest-trigger` as
-`#ai-news` posts. Zenn and generic technical signals route to
-`signal-catchup` as consolidated `#tech-signals` posts.
+`#ai-official` posts. Zenn and generic technical signals route to
+`signal-catchup` as consolidated `#tech-radar` posts.
 Generic sources include Anthropic News/Engineering/Research, Anthropic Claude
 Code and Claude Platform snapshot diffs, Google AI, Mistral, Meta AI, Hugging
 Face, LangChain, GitHub Changelog, OpenAI News, OpenAI Codex/API changelog

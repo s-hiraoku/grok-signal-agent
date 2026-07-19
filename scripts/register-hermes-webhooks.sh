@@ -128,6 +128,18 @@ env_value() {
   env_file_value "${key}"
 }
 
+webhook_delivery_contract() {
+  cat <<'EOF'
+
+# Webhook Delivery Contract
+
+- Do not call Discord or any other messaging or delivery tool.
+- Return only the post body as the final answer. The webhook router will deliver it to the configured channel.
+- Never return only a delivery acknowledgement such as `投稿完了`, `送信済み`, or `#hermes に配信`.
+- Return the specified silent marker only when the route's suppression conditions apply.
+EOF
+}
+
 script_prompt() {
   local script="$1"
   local workdir="$2"
@@ -168,6 +180,7 @@ ${cd_line}bash "\${script_path}"
 
 この shell コマンドを実行せずに本文を推測しないでください。script の標準出力が Discord 投稿本文です。成功した場合は、その標準出力を最終回答としてそのまま返してください。失敗した場合は、失敗したコマンド、終了コード、重要な stderr を短く報告してください。
 EOF
+  webhook_delivery_contract
 }
 
 load_prompt() {
@@ -193,6 +206,7 @@ load_prompt() {
     }
     prompt_text="${prompt_text}"$'\n\n'"# Posting Style"$'\n\n'"$(cat "${style_file}")"
   fi
+  prompt_text="${prompt_text}"$'\n\n'"$(webhook_delivery_contract)"
   printf '%s' "${prompt_text}"
 }
 
