@@ -449,7 +449,7 @@
       "route": "signal-catchup",
       "max_items": 3,
       "prime_existing": true,
-      "cooldown_minutes": 360,
+      "cooldown_minutes": 240,
       "tags": ["speakerdeck", "slides", "ja-tech"]
     },
     {
@@ -463,7 +463,7 @@
       "route": "signal-catchup",
       "max_items": 3,
       "prime_existing": true,
-      "cooldown_minutes": 360,
+      "cooldown_minutes": 240,
       "tags": ["speakerdeck", "slides", "ja-tech"]
     },
     {
@@ -477,7 +477,7 @@
       "route": "signal-catchup",
       "max_items": 3,
       "prime_existing": true,
-      "cooldown_minutes": 360,
+      "cooldown_minutes": 240,
       "tags": ["speakerdeck", "slides", "ja-tech"]
     },
     {
@@ -491,7 +491,7 @@
       "route": "signal-catchup",
       "max_items": 3,
       "prime_existing": true,
-      "cooldown_minutes": 360,
+      "cooldown_minutes": 240,
       "tags": ["speakerdeck", "slides", "ja-tech"]
     },
     {
@@ -505,7 +505,7 @@
       "route": "signal-catchup",
       "max_items": 3,
       "prime_existing": true,
-      "cooldown_minutes": 360,
+      "cooldown_minutes": 240,
       "tags": ["speakerdeck", "slides", "ja-tech", "ml"]
     },
     {
@@ -519,7 +519,7 @@
       "route": "signal-catchup",
       "max_items": 3,
       "prime_existing": true,
-      "cooldown_minutes": 360,
+      "cooldown_minutes": 240,
       "tags": ["speakerdeck", "slides", "ja-tech"]
     },
     {
@@ -533,7 +533,7 @@
       "route": "signal-catchup",
       "max_items": 3,
       "prime_existing": true,
-      "cooldown_minutes": 360,
+      "cooldown_minutes": 240,
       "tags": ["speakerdeck", "slides", "ja-tech"]
     }
   ]
