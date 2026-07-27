@@ -147,12 +147,12 @@ The webhook registration script reads
 [config/hermes-webhooks.json](config/hermes-webhooks.json) and creates trigger
 routes:
 
-- `tech-digest-trigger` to `#digest`
-- `ai-latest-trigger` to `#ai-news`
-- `x-buzz-trigger` to `#tech-signals`
-- `github-pr-review-trigger` to `#tech-signals`
-- `signal-catchup` to `#tech-signals`
-- `nightly-dreaming-trigger` to `#hermes`
+- `tech-digest-trigger` to `#briefings`
+- `ai-latest-trigger` to `#ai-official`
+- `x-buzz-trigger` to `#tech-radar`
+- `github-pr-review-trigger` to `#tech-radar`
+- `signal-catchup` to `#tech-radar`
+- `nightly-dreaming-trigger` to `#hermes-alerts`
 
 The legacy source-specific route for Zenn remains as a disabled cleanup entry.
 Zenn watcher signals now flow through `signal-catchup` so low-signal article
@@ -167,17 +167,17 @@ registration or installer script. The local override file is ignored by git.
 
 The active cron jobs are:
 
-- `平日6:00リマインダー` to `#digest`, using direct RSS/Atom feeds
+- `朝6時ブリーフィング｜予定・主要ニュース・Tech/AI` to `#briefings`, using direct RSS/Atom feeds
   plus Google Workspace Calendar events
-- `tech-digest 18:00` to `#digest` on weekdays only
-- `tech-digest evaluation 18:20` to `#hermes`, normally silent while it
+- `tech-digest 18:00` to `#briefings` on weekdays only
+- `tech-digest evaluation 18:20` to `#hermes-alerts`, normally silent while it
   evaluates the latest digest and updates memory/gbrain artifacts
-- `Hermes health check` to `#hermes`, posting only when attention is needed
-- `Hermes disk watchdog` to `#hermes`, posting only when disk usage crosses
+- `Hermes health check` to `#hermes-alerts`, posting only when attention is needed
+- `Hermes disk watchdog` to `#hermes-alerts`, posting only when disk usage crosses
   the configured threshold
-- `Hermes SSL expiry watchdog` to `#hermes`, posting only when configured
+- `Hermes SSL expiry watchdog` to `#hermes-alerts`, posting only when configured
   certificates approach expiry
-- `金曜17時gbrainサマリー` to `#digest`, using gbrain/honcho status
+- `金曜17時gbrainサマリー` to `#hermes-alerts`, using gbrain/honcho status
 
 The older `discord-heartbeat` LaunchAgent is treated as legacy and removed by
 the macOS installer.
@@ -189,16 +189,18 @@ channel, not by whether the post was started by cron or a webhook.
 
 | Channel | Purpose |
 | --- | --- |
-| `#ai-news` | High-signal official AI/model/agent/tooling updates. |
-| `#tech-signals` | Sparse X buzz, Zenn/dev article, GitHub PR, and generic technical signals that pass stricter watcher gates. |
-| `#digest` | Scheduled reading digests: weekday morning brief, weekday evening tech digest, and the Friday weekly review. |
-| `#hermes` | Talking with Hermes, plus health, failures, runtime sync status, and operational alerts. |
+| `#hermes-chat` | Direct conversation with Hermes. |
+| `#hermes-alerts` | Health checks, failures, gateway notices, watchdogs, internal evaluations, and the weekly gbrain/honcho summary. |
+| `#ai-official` | High-signal official AI/model/agent/tooling updates. |
+| `#tech-radar` | Sparse X buzz, Zenn/dev article, GitHub PR, and generic technical signals that pass stricter watcher gates. |
+| `#briefings` | Scheduled reading: weekday morning brief and weekday evening tech digest. |
 
-The current default config keeps `#ai-news` and `#tech-signals` as separate
-Discord channels. Keep official AI/model/tooling updates in `#ai-news`; route
-broader technical signals and X buzz to `#tech-signals`.
+The current default config keeps `#ai-official` and `#tech-radar` as separate
+Discord channels. Keep official AI/model/tooling updates in `#ai-official`;
+route broader technical signals and X buzz to `#tech-radar`.
 
-Keep `#digest` focused on deliberate summaries. Automatic notifications
+Keep `#briefings` focused on deliberate summaries and `#hermes-chat` focused
+on conversation. Automatic notifications
 should be quiet by default: source watchers only post when a signal clears the
 stricter thresholds, and lower-signal source movement should remain in logs and
 runtime state rather than becoming Discord noise.
@@ -254,8 +256,8 @@ releases, plus the OpenAI Codex maxxing whitepaper PDF as a standalone document
 source. For `document` sources, the watcher stores a content hash so a later
 PDF replacement at the same URL can still become a new signal. First run primes
 state only so old articles/documents are not posted in bulk; later runs post
-only threshold-crossing new signals. AI official sources route to `#ai-news`;
-broader developer and article sources route to `#tech-signals`. The macOS
+only threshold-crossing new signals. AI official sources route to `#ai-official`;
+broader developer and article sources route to `#tech-radar`. The macOS
 installer copies the watcher runtime to
 `~/.hermes/runtime/grok-signal-agent/`; re-run the installer after changing the
 watcher code or config.
@@ -264,7 +266,7 @@ X/Twitter buzz is posted by `X buzz digest 06:45` and `X buzz digest 18:40`,
 twice-daily Hermes cron jobs (`scripts/hermes-x-buzz-digest-cron.sh`,
 [prompts/x-buzz-digest.md](prompts/x-buzz-digest.md)) that call `x_search`
 once per run and post a short trending-topic roundup straight to
-`#tech-signals`. This replaced an earlier always-on `x-pulse-watcher`
+`#tech-radar`. This replaced an earlier always-on `x-pulse-watcher`
 LaunchAgent that polled `x_search` every 30 minutes through the
 `x-buzz-trigger` webhook; continuous polling burned xAI/Grok usage faster
 than a fixed twice-daily schedule needs. See "X Buzz Digest" in
@@ -304,7 +306,7 @@ The signal watcher and the X buzz digest cron job call the same alert helper
 when webhook delivery fails, required webhook secrets are missing, or
 `x_search` cannot run for several runs in a row. The `Hermes health check`
 cron job also reports gateway, cron, webhook, watcher, and xAI/Grok access
-issues to `#hermes`; normal runs stay silent.
+issues to `#hermes-alerts`; normal runs stay silent.
 
 Explicit Discord feedback and follow-up requests can be captured with the
 Gateway hook `~/.hermes/bin/hermes-discord-feedback.sh`. Supported message

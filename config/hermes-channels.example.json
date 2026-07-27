@@ -1,9 +1,10 @@
 {
   "version": 1,
   "channels": {
-    "ai-news": "discord:replace-with-ai-news-channel-id",
-    "tech-signals": "discord:replace-with-tech-signals-channel-id",
-    "digest": "discord:replace-with-digest-channel-id",
-    "hermes": "discord:replace-with-hermes-channel-id"
+    "ai-official": "discord:replace-with-ai-official-channel-id",
+    "tech-radar": "discord:replace-with-tech-radar-channel-id",
+    "briefings": "discord:replace-with-briefings-channel-id",
+    "hermes-chat": "discord:replace-with-hermes-chat-channel-id",
+    "hermes-alerts": "discord:replace-with-hermes-alerts-channel-id"
   }
 }
