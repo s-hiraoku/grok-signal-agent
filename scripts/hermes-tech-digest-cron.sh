@@ -19,11 +19,17 @@ QUALITY_DIR="${STATE_DIR}/digest-quality"
 LINT_SCRIPT="${HERMES_DIGEST_LINT_SCRIPT:-${HOME}/.hermes/bin/hermes-digest-lint.sh}"
 ALERT_SCRIPT="${HERMES_ALERT_SCRIPT:-${HOME}/.hermes/bin/hermes-alert.sh}"
 JINA_FALLBACK_ENABLED="${HERMES_TECH_DIGEST_JINA_FALLBACK:-1}"
-JINA_FALLBACK_URLS="${HERMES_TECH_DIGEST_JINA_URLS:-OpenAI News|https://openai.com/news/;GitHub Changelog|https://github.blog/changelog/;web.dev Blog|https://web.dev/blog/;Chrome Developers Blog|https://developer.chrome.com/blog/;Zenn Explore|https://zenn.dev/articles/explore}"
+JINA_FALLBACK_URLS="${HERMES_TECH_DIGEST_JINA_URLS:-Google AI|https://blog.google/technology/ai/;Anthropic News|https://www.anthropic.com/news;Hugging Face Blog|https://huggingface.co/blog;Mistral News|https://mistral.ai/news;Meta AI Blog|https://ai.meta.com/blog/;OpenAI News|https://openai.com/news/;LangChain Blog|https://blog.langchain.com/;GitHub Changelog|https://github.blog/changelog/;Zenn Explore|https://zenn.dev/articles/explore}"
 JINA_READER_BASE_URL="${HERMES_TECH_DIGEST_JINA_READER_BASE_URL:-https://r.jina.ai/}"
 CURL_BIN="${CURL_BIN:-curl}"
 GATEWAY_ERROR_LOG="${HERMES_GATEWAY_ERROR_LOG:-${LOG_DIR}/gateway.error.log}"
 FORCE_DIRECT_FALLBACK="${HERMES_TECH_DIGEST_FORCE_DIRECT_FALLBACK:-0}"
+DIRECT_MAX_SECTIONS="${HERMES_TECH_DIGEST_DIRECT_MAX_SECTIONS:-6}"
+DIRECT_LLM_RENDER="${HERMES_TECH_DIGEST_DIRECT_LLM_RENDER:-0}"
+X_SEARCH_TIMEOUT_SECONDS="${HERMES_TECH_DIGEST_X_SEARCH_TIMEOUT_SECONDS:-150}"
+X_SEARCH_RETRY_TIMEOUT_SECONDS="${HERMES_TECH_DIGEST_X_SEARCH_RETRY_TIMEOUT_SECONDS:-90}"
+JINA_MCP_TIMEOUT_SECONDS="${HERMES_TECH_DIGEST_JINA_MCP_TIMEOUT_SECONDS:-90}"
+DIRECT_RENDER_TIMEOUT_SECONDS="${HERMES_TECH_DIGEST_DIRECT_RENDER_TIMEOUT_SECONDS:-90}"
 X_POST_URL_REGEX='https?://(x\.com|twitter\.com)/([^/?#[:space:]]+/status|i/web/status)/[0-9][0-9]*[^[:space:])>]*'
 
 mkdir -p "${LOG_DIR}" "${DIGEST_DIR}" "${METADATA_DIR}" "${QUALITY_DIR}"
@@ -35,6 +41,17 @@ log() {
 read_optional_file() {
   local file="$1" limit="${2:-260}"
   [[ -f "${file}" ]] && sed -n "1,${limit}p" "${file}"
+}
+
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  if command -v perl >/dev/null 2>&1; then
+    perl -e '$seconds = shift @ARGV; alarm $seconds; exec @ARGV or die "exec failed: $!\n"' \
+      "${seconds}" "$@"
+  else
+    "$@"
+  fi
 }
 
 digest_prefix_for_hour() {
@@ -101,18 +118,27 @@ collect_jina_direct_material() {
     [[ "${label}" != "${url}" && "${url}" == http* ]] || continue
 
     reader_url="$(reader_url_for "${url}")"
-    if ! page="$("${CURL_BIN}" -L --max-time 20 -sS "${reader_url}" 2>>"${LOG_FILE}")"; then
+    if ! page="$("${CURL_BIN}" -L --max-time 15 -sS "${reader_url}" 2>>"${LOG_FILE}")"; then
       log "jina_reader direct fetch failed for ${label}"
       continue
     fi
-    [[ -n "${page//[[:space:]]/}" ]] || continue
+    grep -q '[^[:space:]]' <<< "${page}" || continue
 
     title="$(awk -F ': ' '/^Title: / { print $2; exit }' <<< "${page}")"
     [[ -n "${title}" ]] || title="${label}"
-    links="$(grep -Eo '\[[^][]+\]\(https?://[^) ]+\)' <<< "${page}" \
+    links="$(grep -E '^[#]{1,4}[[:space:]]+.*\[[^][]+\]\(https?://' <<< "${page}" \
+      | grep -Eo '\[[^][]+\]\(https?://[^) ]+\)' \
       | sed -E 's/^\[([^]]+)\]\(([^)]+)\)$/  - \1: \2/' \
+      | grep -Eiv '^  - (skip to|image|home|log in|sign in|subscribe|privacy|terms|help|learn more|contact sales|start building|request a demo|get started)(:|[[:space:]])' \
       | awk '!seen[$0]++' \
       | sed -n '1,3p' || true)"
+    if [[ -z "${links}" ]]; then
+      links="$(grep -Eo '\[[^][]+\]\(https?://[^) ]+\)' <<< "${page}" \
+        | sed -E 's/^\[([^]]+)\]\(([^)]+)\)$/  - \1: \2/' \
+        | grep -Eiv '^  - (skip to|image|home|log in|sign in|subscribe|privacy|terms|help|learn more|contact sales|start building|request a demo|get started)(:|[[:space:]])' \
+        | awk '!seen[$0]++' \
+        | sed -n '1,3p' || true)"
+    fi
 
     output+=$'\n\n'"## ${label}"$'\n'
     output+="ページタイトル: ${title}"$'\n'
@@ -121,11 +147,49 @@ collect_jina_direct_material() {
     fi
     output+="参照元URL: ${url}"$'\n'
     sections=$((sections + 1))
-    (( sections >= 4 )) && break
+    (( sections >= DIRECT_MAX_SECTIONS )) && break
   done <<< "${fallback_sources}"
 
   (( sections >= 4 )) || return 1
   printf '%s\n' "${output}"
+}
+
+render_direct_material() {
+  local material="$1" line label="" page_title="" source_url="" links="" sections="" toc=""
+
+  flush_section() {
+    [[ -n "${label}" && -n "${source_url}" ]] || return 0
+    toc+="- ${label}"$'\n'
+    sections+=$'\n---\n'
+    sections+="### ${label}"$'\n'
+    sections+="${page_title:-${label}} の公式ページから、現在確認できる更新入口をまとめたよ。"$'\n'
+    if [[ -n "${links}" ]]; then
+      sections+=$'\n最近の掲載項目:\n'
+      sections+="${links}"$'\n'
+    fi
+    sections+=$'\n'"参照ページ: ${source_url}"$'\n'
+  }
+
+  while IFS= read -r line; do
+    case "${line}" in
+      "## "*)
+        flush_section
+        label="${line#\#\# }"
+        page_title=""
+        source_url=""
+        links=""
+        ;;
+      "ページタイトル: "*) page_title="${line#ページタイトル: }" ;;
+      "参照元URL: "*) source_url="${line#参照元URL: }" ;;
+      "  - "*) links+="${line}"$'\n' ;;
+    esac
+  done <<< "${material}"
+  flush_section
+
+  [[ "$(grep -c '^- ' <<< "${toc}" || true)" -ge 4 ]] || return 1
+  printf '%s公式AI・開発情報をまとめたよ\n\n' "${digest_prefix}"
+  printf 'X検索や外部MCPが使えない時でも止まらないよう、各社の公式ページを直接確認した縮退版です。\n\n'
+  printf 'それじゃ、気になった話題を一緒に見ていこう！\n\n---\n目次\n%s%s' "${toc}" "${sections}"
 }
 
 run_jina_direct_fallback() {
@@ -179,9 +243,17 @@ ${gbrain_context}
 PROMPT
 )"
 
-  if rendered="$("${HERMES_BIN}" -z "${render_prompt}" 2>>"${LOG_FILE}")" \
-      && has_reference_sections "${rendered}"; then
-    printf '%s\n' "${rendered}"
+  if [[ "${DIRECT_LLM_RENDER}" == "1" ]]; then
+    if rendered="$(run_with_timeout "${DIRECT_RENDER_TIMEOUT_SECONDS}" "${HERMES_BIN}" -z "${render_prompt}" 2>>"${LOG_FILE}")" \
+        && has_reference_sections "${rendered}"; then
+      printf '%s\n' "${rendered}"
+      return 0
+    fi
+    log "jina direct material could not be rendered by the LLM; using deterministic renderer"
+  fi
+
+  if render_direct_material "${material}"; then
+    log "deterministic official-source fallback rendered successfully"
     return 0
   fi
 
@@ -240,7 +312,7 @@ ${gbrain_context}
 PROMPT
 )"
 
-  if mcp_output="$("${HERMES_BIN}" -t jina_reader -z "${fallback_prompt}" 2>>"${LOG_FILE}")" \
+  if mcp_output="$(run_with_timeout "${JINA_MCP_TIMEOUT_SECONDS}" "${HERMES_BIN}" -t jina_reader -z "${fallback_prompt}" 2>>"${LOG_FILE}")" \
       && has_reference_sections "${mcp_output}"; then
     printf '%s\n' "${mcp_output}"
     return 0
@@ -334,11 +406,11 @@ if [[ -n "${xai_reason}" ]]; then
     curation_source="jina_reader"
   else
     send_alert "Hermes tech digest degraded fallback failed" "Reason: ${xai_reason}"
-    exit 1
+    exit 0
   fi
 else
   set +e
-  curation="$("${HERMES_BIN}" -t x_search -z "${prompt}" 2>>"${LOG_FILE}")"
+  curation="$(run_with_timeout "${X_SEARCH_TIMEOUT_SECONDS}" "${HERMES_BIN}" -t x_search -z "${prompt}" 2>>"${LOG_FILE}")"
   code=$?
   set -e
   if [[ "${code}" -ne 0 ]]; then
@@ -348,7 +420,8 @@ else
       curation_source="jina_reader"
     else
       log "jina_reader fallback curation failed after x_search failure"
-      exit "${code}"
+      send_alert "Hermes tech digest source collection failed" "x_search exit=${code}; official-source fallback also failed."
+      exit 0
     fi
   else
     curation_source="x_search"
@@ -357,7 +430,7 @@ else
   if [[ "${curation_source}" == "x_search" ]] && ! has_source_links "${curation}"; then
     log "curation had no direct X links; retrying"
     set +e
-    curation="$("${HERMES_BIN}" -t x_search -z "${retry_prompt}" 2>>"${LOG_FILE}")"
+    curation="$(run_with_timeout "${X_SEARCH_RETRY_TIMEOUT_SECONDS}" "${HERMES_BIN}" -t x_search -z "${retry_prompt}" 2>>"${LOG_FILE}")"
     code=$?
     set -e
     if [[ "${code}" -ne 0 ]]; then
@@ -367,7 +440,8 @@ else
         curation_source="jina_reader"
       else
         log "jina_reader fallback curation failed after x_search retry failure"
-        exit 1
+        send_alert "Hermes tech digest source collection failed" "x_search retry and official-source fallback both failed."
+        exit 0
       fi
     elif ! has_source_links "${curation}"; then
       log "x_search retry still had no direct X links; trying jina_reader fallback"
@@ -376,13 +450,15 @@ else
         log "jina_reader fallback curation succeeded after missing X links"
         curation_source="jina_reader"
       else
-        log "warning: jina_reader fallback failed after missing X links; proceeding with linkless x_search curation"
+        log "jina_reader fallback failed after missing X links; refusing linkless x_search curation"
+        send_alert "Hermes tech digest had no source-backed fallback" "x_search returned no direct X links and official-source fallback failed."
+        exit 0
       fi
     fi
   fi
 fi
 
-[[ -n "${curation//[[:space:]]/}" ]] || { log "curation returned empty output"; exit 1; }
+[[ -n "${curation//[[:space:]]/}" ]] || { log "curation returned empty output"; exit 0; }
 
 if ! is_postable_digest "${curation}"; then
   log "curation has no ### sections; treating as a failed run instead of posting"
@@ -399,7 +475,7 @@ if ! is_postable_digest "${curation}"; then
   send_alert "Hermes tech digest produced no postable sections" "Saved (not posted): ${digest_file}
 Source: ${curation_source}"
   log "saved non-postable curation for inspection: ${digest_file}"
-  exit 1
+  exit 0
 fi
 
 digest_file="${DIGEST_DIR}/${timestamp}.md"
