@@ -181,6 +181,9 @@ The active cron jobs are:
 - `Hermes SSL expiry watchdog` to `#hermes-alerts`, posting only when configured
   certificates approach expiry
 - `金曜17時gbrainサマリー` to `#hermes-alerts`, using gbrain/honcho status
+- `毎日英会話｜AIプロンプト英語` to `#english-conversation` at 08:00
+- `Hermes curiosity research 20:45` to `#hermes-lab`, publishing at most one
+  source-backed research note without raw reasoning or automatic memory writes
 
 The older `discord-heartbeat` LaunchAgent is treated as legacy and removed by
 the macOS installer. It is replaced by the narrower runtime health watchdog,
@@ -198,6 +201,8 @@ channel, not by whether the post was started by cron or a webhook.
 | `#ai-official` | High-signal official AI/model/agent/tooling updates. |
 | `#tech-radar` | Sparse X buzz, Zenn/dev article, GitHub PR, and generic technical signals that pass stricter watcher gates. |
 | `#briefings` | Scheduled reading: weekday morning brief and weekday evening tech digest. |
+| `#english-conversation` | Daily English conversation practice. |
+| `#hermes-lab` | One bounded, source-backed curiosity research note per day; no raw reasoning. |
 
 The current default config keeps `#ai-official` and `#tech-radar` as separate
 Discord channels. Keep official AI/model/tooling updates in `#ai-official`;

@@ -48,8 +48,14 @@ Edit these repo files first:
 - `config/signal-watchers.json`: feed/page watchers such as Zenn and official AI/developer sources.
 - `prompts/tech-digest.md`: long-form X tech digest prompt.
 - `prompts/x-buzz-digest.md`: twice-daily X buzz roundup prompt (`hermes-x-buzz-digest-cron.sh`, 06:45/18:40).
+- `prompts/curiosity-candidate.md` and `prompts/curiosity-research.md`: bounded daily question selection and source-backed public research note (`hermes-curiosity-cron.sh`, 20:45 to `#hermes-lab`).
 - `prompts/hermes-post-style.md`: shared Discord voice for Hermes-chan posts.
 - `scripts/*-cron.sh`: no-agent script handlers used by cron/webhooks.
+
+The curiosity job publishes conclusions and evidence, never private memory or
+raw chain-of-thought. Keep its one-topic daily budget, direct-URL requirement,
+append-only event log, and prohibition on self-modifying code, prompts,
+schedules, permissions, or memory write-back.
 
 Runtime files under `~/.hermes/runtime/grok-signal-agent/` are generated copies.
 Do not edit runtime copies as the source of truth.

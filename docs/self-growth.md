@@ -46,6 +46,14 @@ evaluations and rewrites:
 
 That memory is then included in future digest prompts.
 
+A separate bounded curiosity job runs daily at 20:45. It selects at most one
+question from recent public digests, evaluations, and prior curiosity reports,
+researches it with Jina Reader, and publishes a source-backed research note to
+`#hermes-lab`. The channel receives only the finished note: question, reason,
+findings, confidence, unknowns, next check condition, and direct URLs. Raw
+reasoning, candidate lists, private memory, and operational details stay out of
+Discord.
+
 ## Files
 
 - `prompts/hermes-chan-identity.md`: stable identity, values, and voice.
@@ -54,6 +62,8 @@ That memory is then included in future digest prompts.
 - `prompts/evaluate-digest.md`: per-digest self-evaluation rubric.
 - `prompts/nightly-dreaming.md`: nightly memory recomposition prompt.
 - `prompts/weekly-self-reflection.md`: weekly memory update prompt.
+- `prompts/curiosity-candidate.md`: chooses one bounded research question.
+- `prompts/curiosity-research.md`: defines the public, source-backed note.
 - `prompts/tech-digest.md`: prompt used by the `tech-digest` handler.
 - `config/hermes-webhooks.json`: declarative webhook trigger/channel registry.
 - `config/hermes-cronjobs.json`: active time-based review jobs plus disabled
@@ -67,6 +77,9 @@ That memory is then included in future digest prompts.
   generates, saves, lints, evaluates, and prints the digest for Hermes delivery.
 - `scripts/hermes-dreaming-cron.sh`: nightly recomposition script; it saves a
   reviewable dreaming report and refreshes the current working memory view.
+- `scripts/hermes-curiosity-cron.sh`: daily one-question research loop. It
+  stores reports and an append-only event log under
+  `~/.hermes/state/curiosity/` and prints only validated public output.
 - `scripts/hermes-weekly-self-reflection.sh`: weekly memory update.
 - `scripts/hermes-gbrain-retrieval.sh`: prints high-priority guidance from
   prior digests/evaluations plus user notes, feedback, and follow-up requests.
@@ -116,11 +129,22 @@ Run nightly dreaming manually:
 ~/.hermes/scripts/hermes-dreaming-cron.sh
 ```
 
+Run curiosity research manually (this prints a deliverable note on success):
+
+```bash
+~/.hermes/scripts/hermes-curiosity-cron.sh
+```
+
 ## Safety Boundary
 
 ヘルメスちゃん may update runtime memory, but she does not rewrite this
 repository or change LaunchAgents by herself. Code, prompts in this repo, and
 service schedules remain human-reviewed.
+
+The curiosity loop also cannot promote its findings into gbrain or working
+memory by itself. Research completion and Discord delivery are recorded as
+separate events, and one failed run stays silent; repeated failures alert after
+three consecutive attempts.
 
 ## gbrain Integration Design
 

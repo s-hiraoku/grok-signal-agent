@@ -166,6 +166,8 @@ technical signals and X buzz to `#tech-radar`. Scheduled reader-facing posts
 gbrain/honcho summary goes to `#hermes-alerts`.
 Direct conversation stays in `#hermes-chat`; operational alerts stay in
 `#hermes-alerts`.
+English practice posts stay in `#english-conversation`; the bounded curiosity
+research notebook stays in `#hermes-lab`.
 
 ## Current Cron Jobs
 
@@ -197,6 +199,10 @@ Direct conversation stays in `#hermes-chat`; operational alerts stay in
   `hermes-weekly-review-cron.sh` to summarize gbrain and honcho updates/status.
 - `X buzz digest 06:45` and `X buzz digest 18:40`: daily `#tech-radar`,
   using `hermes-x-buzz-digest-cron.sh`. See "X Buzz Digest" below.
+- `Hermes curiosity research 20:45`: daily `#hermes-lab`, using
+  `hermes-curiosity-cron.sh` to select at most one useful, verifiable question
+  and publish a finished research note with direct sources. It never publishes
+  raw reasoning or writes findings into memory automatically.
 
 The old morning/lunch tech digests, nightly dreaming post, daily
 gbrain/honcho review, and the pre-rename `平日8:00リマインダー` and
