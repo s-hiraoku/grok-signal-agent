@@ -6,6 +6,7 @@ LEGACY_HEALTHCHECK_LABEL="com.shiraoku.grok-signal-agent.hermes-gateway-healthch
 HEARTBEAT_LABEL="com.shiraoku.grok-signal-agent.discord-heartbeat"
 WEEKLY_REFLECTION_LABEL="com.shiraoku.grok-signal-agent.weekly-self-reflection"
 SIGNAL_WATCHER_LABEL="com.shiraoku.grok-signal-agent.signal-watcher"
+HEALTH_WATCHDOG_LABEL="com.shiraoku.grok-signal-agent.health-watchdog"
 LEGACY_X_PULSE_WATCHER_LABEL="com.shiraoku.grok-signal-agent.x-pulse-watcher"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HERMES_BIN="${HOME}/.local/bin/hermes"
@@ -61,6 +62,9 @@ install -m 755 \
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-alert.sh" \
   "${HOME}/.hermes/bin/hermes-alert.sh"
+install -m 755 \
+  "${REPO_DIR}/scripts/hermes-health-watchdog.sh" \
+  "${HOME}/.hermes/bin/hermes-health-watchdog.sh"
 install -m 755 \
   "${REPO_DIR}/scripts/hermes-obsidian-mcp-setup.sh" \
   "${HOME}/.hermes/bin/hermes-obsidian-mcp-setup.sh"
@@ -216,6 +220,7 @@ pmset -g log 2>/dev/null | awk '
 
 render_plist "${WEEKLY_REFLECTION_LABEL}"
 render_plist "${SIGNAL_WATCHER_LABEL}"
+render_plist "${HEALTH_WATCHDOG_LABEL}"
 
 remove_legacy_agent "${HEARTBEAT_LABEL}"
 remove_legacy_agent "${LEGACY_GATEWAY_LABEL}"
@@ -237,6 +242,7 @@ else
 fi
 install_agent "${WEEKLY_REFLECTION_LABEL}"
 install_agent "${SIGNAL_WATCHER_LABEL}"
+install_agent "${HEALTH_WATCHDOG_LABEL}"
 
 if [[ ! -f "${BUILTIN_GATEWAY_PLIST}" ]]; then
   "${HERMES_BIN}" gateway install
@@ -255,6 +261,7 @@ echo "Installed and restarted Hermes built-in gateway service"
 echo "Removed legacy ${HEARTBEAT_LABEL}, ${LEGACY_GATEWAY_LABEL}, ${LEGACY_HEALTHCHECK_LABEL}, and ${LEGACY_X_PULSE_WATCHER_LABEL}"
 echo "Installed ${WEEKLY_REFLECTION_LABEL}; it will update self-memory weekly"
 echo "Installed ${SIGNAL_WATCHER_LABEL}; it will catch up source changes via webhook thresholds"
+echo "Installed ${HEALTH_WATCHDOG_LABEL}; it will send runtime failures directly to #hermes-alerts"
 echo "X buzz digest now runs twice daily via Hermes cron (see config/hermes-cronjobs.json)"
 echo "Installed and approved Gateway memory/feedback hooks"
 echo "Installed Hermes posting admin helper and skill"

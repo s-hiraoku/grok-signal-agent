@@ -3,6 +3,7 @@ set -euo pipefail
 
 LABELS=(
   "com.shiraoku.grok-signal-agent.weekly-self-reflection"
+  "com.shiraoku.grok-signal-agent.health-watchdog"
   "com.shiraoku.grok-signal-agent.discord-heartbeat"
   "com.shiraoku.grok-signal-agent.hermes-gateway-healthcheck"
   "com.shiraoku.grok-signal-agent.hermes-gateway"

@@ -10,6 +10,7 @@ GATEWAY_STATE_FILE="${HERMES_GATEWAY_STATE_FILE:-${HERMES_HOME_DIR}/gateway_stat
 SIGNAL_STATE_FILE="${HERMES_SIGNAL_WATCHER_STATE_FILE:-${HERMES_HOME_DIR}/state/signal-watcher-state.json}"
 FORCE_REPORT="${HERMES_HEALTH_FORCE_REPORT:-0}"
 CHECK_LAUNCHD="${HERMES_HEALTH_CHECK_LAUNCHD:-1}"
+CHECK_XAI="${HERMES_HEALTH_CHECK_XAI:-1}"
 
 issues=()
 notes=()
@@ -133,6 +134,7 @@ check_watcher_state() {
 }
 
 check_xai_auth_hint() {
+  [[ "${CHECK_XAI}" == "1" ]] || return 0
   local log="${HERMES_HOME_DIR}/logs/gateway.error.log"
   [[ -f "${log}" ]] || return 0
   if tail -n 200 "${log}" 2>/dev/null | grep -Fq "personal-team-blocked:spending-limit"; then
