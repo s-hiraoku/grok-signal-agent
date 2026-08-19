@@ -155,6 +155,8 @@ cmd_sync() {
     "${repo_dir}/prompts/evaluate-digest.md" \
     "${repo_dir}/prompts/tech-digest.md" \
     "${repo_dir}/prompts/x-buzz-digest.md" \
+    "${repo_dir}/prompts/curiosity-candidate.md" \
+    "${repo_dir}/prompts/curiosity-research.md" \
     "${repo_dir}/prompts/nightly-dreaming.md" \
     "${repo_dir}/prompts/weekly-self-reflection.md"; do
     [[ -e "${prompt_file}" ]] || continue
@@ -170,7 +172,7 @@ cmd_sync() {
 
   "${repo_dir}/scripts/register-hermes-cronjobs.sh"
   "${repo_dir}/scripts/register-hermes-webhooks.sh"
-  "${HERMES_BIN}" config set cron.script_timeout_seconds 420 >/dev/null
+  "${HERMES_BIN}" config set cron.script_timeout_seconds 600 >/dev/null
   "${HERMES_BIN}" gateway restart
   if command -v launchctl >/dev/null 2>&1 \
       && [[ -f "${HOME}/Library/LaunchAgents/ai.hermes.gateway.plist" ]] \

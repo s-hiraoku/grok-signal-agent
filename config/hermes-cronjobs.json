@@ -5,6 +5,7 @@
     "tech-radar": "discord:replace-with-tech-radar-channel-id",
     "briefings": "discord:replace-with-briefings-channel-id",
     "english-conversation": "discord:replace-with-english-conversation-channel-id",
+    "hermes-lab": "discord:replace-with-hermes-lab-channel-id",
     "hermes-chat": "discord:replace-with-hermes-chat-channel-id",
     "hermes-alerts": "discord:replace-with-hermes-alerts-channel-id"
   },
@@ -205,6 +206,17 @@
       "mode": "prompt",
       "prompt": "毎日1回、初心者向けの短い英会話レッスンを日本語で作成してください。AIへのプロンプトを英語で入力できるようにすることが目的です。今日のテーマ、簡単な英語例文1〜3文、日本語訳、重要表現2〜4個、文の組み立て方、AIに使える短いプロンプト例、穴埋めまたは言い換え問題を各1つ含めてください。中学英語〜初級から始め、前回と違う表現を扱い、明るく簡潔に書いてください。",
       "no_agent": false
+    },
+    {
+      "id": "daily-curiosity-research-2045",
+      "name": "Hermes curiosity research 20:45",
+      "enabled": true,
+      "schedule": "45 20 * * *",
+      "channel": "hermes-lab",
+      "mode": "script",
+      "script": "hermes-curiosity-cron.sh",
+      "no_agent": true,
+      "prompt": "Run the bounded Hermes curiosity research script."
     }
   ]
 }

@@ -103,6 +103,8 @@ install -m 644 \
   "${REPO_DIR}/prompts/hermes-post-style.md" \
   "${REPO_DIR}/prompts/tech-digest.md" \
   "${REPO_DIR}/prompts/x-buzz-digest.md" \
+  "${REPO_DIR}/prompts/curiosity-candidate.md" \
+  "${REPO_DIR}/prompts/curiosity-research.md" \
   "${REPO_DIR}/prompts/nightly-dreaming.md" \
   "${REPO_DIR}/prompts/weekly-self-reflection.md" \
   "${HOME}/.hermes/prompts/"
