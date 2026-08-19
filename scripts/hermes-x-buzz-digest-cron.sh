@@ -24,6 +24,7 @@ UNAVAILABLE_ALERT_STREAK="${HERMES_X_BUZZ_UNAVAILABLE_ALERT_STREAK:-4}"
 TOOL_TIMEOUT_SECONDS="${HERMES_X_BUZZ_TOOL_TIMEOUT_SECONDS:-480}"
 X_BUZZ_MODEL="${HERMES_X_BUZZ_MODEL:-grok-4.6}"
 X_BUZZ_PROVIDER="${HERMES_X_BUZZ_PROVIDER:-xai-oauth}"
+X_BUZZ_PREFLIGHT="${HERMES_X_BUZZ_PREFLIGHT:-1}"
 DEDUP_LOOKBACK_POSTS="${HERMES_X_BUZZ_DEDUP_LOOKBACK_POSTS:-40}"
 DEDUP_PROMPT_LIMIT="${HERMES_X_BUZZ_DEDUP_PROMPT_LIMIT:-80}"
 MAX_TOPICS="${HERMES_X_BUZZ_MAX_TOPICS:-5}"
@@ -102,7 +103,7 @@ is_postable_buzz_digest() {
 }
 
 normalize_status_id_list() {
-  grep -Eo '[0-9]{15,}' | sort -u
+  grep -Eo '[0-9]{15,}' | sort -u || true
 }
 
 extract_status_ids_from_text() {
@@ -377,8 +378,7 @@ X buzz digest has been unable to produce a source-backed post for ${streak} cons
 
 helper_path="$(resolve_search_helper || true)"
 if [[ -z "${helper_path}" ]]; then
-  echo "missing x buzz search helper script" >&2
-  exit 1
+  log "direct x_search helper unavailable; using Hermes tool fallback"
 fi
 
 now="$(date '+%Y-%m-%d %H:%M:%S %z')"
@@ -389,7 +389,10 @@ to_date="$(date -u '+%Y-%m-%d')"
 
 log "starting x buzz digest cron model=${X_BUZZ_MODEL} provider=${X_BUZZ_PROVIDER} helper=${helper_path}"
 
-xai_reason="$(xai_unavailable_reason || true)"
+xai_reason=""
+if [[ "${X_BUZZ_PREFLIGHT}" != "0" ]]; then
+  xai_reason="$(xai_unavailable_reason || true)"
+fi
 if [[ -n "${xai_reason}" ]]; then
   log "x_search preflight skipped: ${xai_reason}"
   mark_unavailable "${xai_reason}"
@@ -403,14 +406,20 @@ posted_count="$(printf '%s\n' "${posted_ids}" | grep -c '^[0-9]' || true)"
 
 search_raw_file="$(mktemp)"
 set +e
-run_with_timeout "${TOOL_TIMEOUT_SECONDS}" \
-  python3 "${helper_path}" \
-    --window-hours "${WINDOW_HOURS}" \
-    --from-date "${from_date}" \
-    --to-date "${to_date}" \
-    --exclude-ids-file "${POSTED_IDS_FILE}" \
-    --out "${search_raw_file}" \
-  >>"${LOG_FILE}" 2>&1
+if [[ -n "${helper_path}" ]]; then
+  run_with_timeout "${TOOL_TIMEOUT_SECONDS}" \
+    python3 "${helper_path}" \
+      --window-hours "${WINDOW_HOURS}" \
+      --from-date "${from_date}" \
+      --to-date "${to_date}" \
+      --exclude-ids-file "${POSTED_IDS_FILE}" \
+      --out "${search_raw_file}" \
+    >>"${LOG_FILE}" 2>&1
+else
+  run_with_timeout "${TOOL_TIMEOUT_SECONDS}" \
+    "${HERMES_BIN}" -t x_search -z "Find qualified circulating X/Twitter posts from the last ${WINDOW_HOURS} hours about AI, developer tools, and infrastructure. Return direct post URLs and engagement evidence only." \
+    >"${search_raw_file}" 2>>"${LOG_FILE}"
+fi
 search_code=$?
 set -e
 
@@ -432,7 +441,13 @@ fi
 search_blob="$(cat "${search_raw_file}")"
 rm -f "${search_raw_file}"
 
-# Summarize pre-fetched X results only — no live tools needed.
+if [[ -z "${helper_path}" ]]; then
+  # The legacy Hermes tool already returns a post-shaped digest. Keep this
+  # path for older installs and test doubles that do not have the helper yet.
+  curation="${search_blob}"
+  code=0
+else
+  # Summarize pre-fetched X results only — no live tools needed.
 prompt="$(cat <<PROMPT
 $(read_optional_file "${PROMPT_FILE}" 320)
 
@@ -477,6 +492,7 @@ curation="$(
 )"
 code=$?
 set -e
+fi
 
 curation="$(
   printf '%s\n' "${curation}" \

@@ -4,6 +4,7 @@
     "ai-official": "discord:replace-with-ai-official-channel-id",
     "tech-radar": "discord:replace-with-tech-radar-channel-id",
     "briefings": "discord:replace-with-briefings-channel-id",
+    "english-conversation": "discord:replace-with-english-conversation-channel-id",
     "hermes-chat": "discord:replace-with-hermes-chat-channel-id",
     "hermes-alerts": "discord:replace-with-hermes-alerts-channel-id"
   }

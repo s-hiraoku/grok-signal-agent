@@ -428,6 +428,18 @@ def parse_snapshot(
     if previous.get("hash") == digest:
         return [], {}
 
+    revision = str(source.get("snapshot_revision") or "")
+    if previous and revision and str(previous.get("revision") or "") != revision:
+        state.setdefault("snapshots", {})[source_id] = {
+            "hash": digest,
+            "content": body,
+            "url": source.get("link_url") or source["url"],
+            "title": source.get("title") or source.get("description") or f"{source_id} changed",
+            "updated_at": now_iso(),
+            "revision": revision,
+        }
+        return [], {}
+
     title = source.get("title") or source.get("description") or f"{source_id} changed"
     link = source.get("link_url") or source["url"]
     summary = snapshot_summary(previous.get("content", ""), body)
@@ -449,6 +461,7 @@ def parse_snapshot(
             "url": link,
             "updated_at": now_iso(),
             "title": title,
+            "revision": revision,
         }
     }
 
@@ -496,6 +509,7 @@ def apply_snapshot_update(state: dict[str, Any], item: SignalItem, snapshot_upda
         "url": update["url"],
         "title": update["title"],
         "updated_at": update["updated_at"],
+        "revision": update.get("revision", ""),
     }
 
 
@@ -1713,6 +1727,9 @@ def main() -> int:
         return 2
 
     settings = config.get("settings", {})
+    if settings.get("enabled", True) is False:
+        print("signal watcher globally disabled", file=sys.stderr)
+        return 0
     state_path = expand_path(args.state or settings.get("state_file", "~/.hermes/state/signal-watcher-state.json"))
     log_path = expand_path(settings.get("log_file", "~/.hermes/logs/hermes-signal-watcher.log"))
     env_file_values = load_env_file(expand_path(settings.get("env_file", "~/.hermes/.env")))
@@ -1814,6 +1831,7 @@ def main() -> int:
                     "stable_key": key,
                     "route": source.get("route") or settings.get("default_route", "signal-catchup"),
                     "cooldown_minutes": int(source.get("cooldown_minutes", settings.get("default_cooldown_minutes", 90))),
+                    "allow_cooldown_bypass": bool(source.get("allow_cooldown_bypass", True)),
                 }
                 if item.content_hash:
                     candidate["content_hash"] = item.content_hash
@@ -1941,7 +1959,9 @@ def should_bypass_route_cooldown(
         return False
     sent = state.get("sent", {})
     return any(
-        candidate.get("stable_key") not in sent and int(candidate.get("score", 0)) >= min_score
+        candidate.get("allow_cooldown_bypass", True)
+        and candidate.get("stable_key") not in sent
+        and int(candidate.get("score", 0)) >= min_score
         for candidate in candidates
     )
 

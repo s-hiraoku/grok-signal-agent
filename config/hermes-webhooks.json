@@ -4,7 +4,8 @@
     {
       "id": "signal-catchup",
       "name": "signal-catchup",
-      "description": "Event-driven catch-up post for meaningful external signals.",
+      "enabled": false,
+      "description": "Event-driven catch-up post for meaningful external signals. Disabled while only X digest should post.",
       "channel": "tech-radar",
       "mode": "prompt",
       "prompt_file": "prompts/webhooks/signal-catchup.md",
@@ -16,7 +17,8 @@
     {
       "id": "ai-latest-trigger",
       "name": "ai-latest-trigger",
-      "description": "Event-driven catch-up post for official and engineering-focused AI updates.",
+      "enabled": false,
+      "description": "Event-driven catch-up post for official and engineering-focused AI updates. Disabled while only X digest should post.",
       "channel": "ai-official",
       "mode": "prompt",
       "prompt_file": "prompts/webhooks/ai-latest-trigger.md",

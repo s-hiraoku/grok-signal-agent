@@ -55,6 +55,13 @@ does not run the self-evaluation or gbrain write-back inline; those are handled
 by `hermes-tech-digest-evaluate-cron.sh` so delivery does not spend the full
 cron timeout budget after the post has already been generated.
 
+Source collection is bounded by per-step timeouts. If `x_search` is unavailable
+or returns no direct X post links, the script builds a reduced digest from a
+balanced list of official Google, Anthropic, Hugging Face, Mistral, Meta,
+OpenAI, and LangChain pages (plus GitHub and Zenn). If neither path produces
+source-backed sections, it exits successfully without printing a Discord
+message and sends an operational alert instead of posting incomplete output.
+
 Hermes' webhook CLI currently accepts prompt subscriptions rather than native
 script subscriptions, so
 `scripts/register-hermes-webhooks.sh` renders a deterministic shell prompt for
@@ -175,6 +182,10 @@ Direct conversation stays in `#hermes-chat`; operational alerts stay in
 - `Hermes health check`: daily 06:30 `#hermes-alerts`, using
   `hermes-health-check-cron.sh`. Normal runs emit no stdout, so Hermes cron
   delivers nothing; failures produce an operational health report.
+- `Hermes runtime health watchdog`: independent macOS LaunchAgent running every
+  5 minutes. It invokes the same health check and uses `hermes send` for direct
+  `#hermes-alerts` delivery, so Gateway outages are still visible. Identical
+  failures are cooled down for one hour and recovery produces a follow-up alert.
 - `Hermes disk watchdog`: every 15 minutes `#hermes-alerts`, using
   `hermes-disk-watchdog-cron.sh`. Normal runs emit no stdout; set
   `HERMES_DISK_WATCHDOG_THRESHOLD` and `HERMES_DISK_WATCHDOG_PATHS` to tune it.
@@ -230,6 +241,11 @@ If real posts stop appearing even when `x_search` is healthy, check
 intentionally conservative about padding with weak topics, so an empty
 `NO_QUALIFIED_BUZZ` window is expected on quiet days and is not itself a
 bug.
+
+Tool error/chatter output and results without direct X post URLs are also
+treated as unavailable runs: they increment the same streak and exit 0 without
+posting, so transient provider failures do not become Discord content or cron
+failures.
 
 ## Source Links
 
@@ -354,7 +370,12 @@ rendering images, the watcher re-checks the official source URL and stores the
 evidence in `facts.json` and `factcheck.md`. Version-only release notes stay in
 the HTML and Markdown artifact without a separate summary image. Snapshot
 sources store the previous normalized page content in watcher state and emit a
-signal only when the fetched Markdown or HTML text changes.
+signal only when the fetched Markdown or HTML text changes. Each snapshot
+format has a revision; changing from a noisy HTML capture to a stable Markdown
+body silently establishes a new baseline instead of publishing the whole page
+as an update. Global cooldown bypass is disabled, and provider keyword/base
+scores are kept comparable so one vendor cannot dominate merely because its
+source format or default score is higher.
 Feed sources accept the same `include_url_patterns` / `exclude_url_patterns`
 filters as `html_links` sources, matched against each item's URL path. The
 OpenAI Codex release feed uses this to drop pre-release tags

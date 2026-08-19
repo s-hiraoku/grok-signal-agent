@@ -79,7 +79,7 @@ print_routes() {
   fi
   echo
   echo "Signal watcher sources:"
-  jq -r '.sources[] | "  - \(.id) -> \(.route // .settings.default_route // "signal-catchup") min_score=\(.min_score // "default") url=\(.url)"' \
+  jq -r '.sources[] | select((if has("enabled") then .enabled else true end) == true) | "  - \(.id) -> \(.route // "signal-catchup") min_score=\(.min_score // "default") url=\(.url)"' \
     "${repo_dir}/config/signal-watchers.json"
   echo
   echo "Webhook routes:"
@@ -97,7 +97,18 @@ cmd_status() {
   validate_json
   print_routes
   echo
-  "${HERMES_BIN}" cron status || true
+  local health_url="${HERMES_WEBHOOK_BASE_URL:-http://127.0.0.1:8644}/health"
+  if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 3 "${health_url}" >/dev/null 2>&1; then
+    echo "Gateway health: running (${health_url})"
+  elif "${HERMES_BIN}" gateway status 2>/dev/null | grep -Fq "supervised by launchd"; then
+    echo "Gateway health: launchd-supervised (HTTP health endpoint unavailable)"
+  else
+    echo "Gateway health: not reachable"
+  fi
+  echo
+  "${HERMES_BIN}" cron status 2>&1 \
+    | sed '/^✗ Gateway is not running/,/^$/d; /Gateway is not running/d; /jobs won.t fire automatically/d; /Start it with:/d; /Check status:/d' \
+    || true
   echo
   "${HERMES_BIN}" cron list || true
   echo
@@ -159,8 +170,15 @@ cmd_sync() {
 
   "${repo_dir}/scripts/register-hermes-cronjobs.sh"
   "${repo_dir}/scripts/register-hermes-webhooks.sh"
-  "${HERMES_BIN}" config set cron.script_timeout_seconds 600 >/dev/null
+  "${HERMES_BIN}" config set cron.script_timeout_seconds 420 >/dev/null
   "${HERMES_BIN}" gateway restart
+  if command -v launchctl >/dev/null 2>&1 \
+      && [[ -f "${HOME}/Library/LaunchAgents/ai.hermes.gateway.plist" ]] \
+      && ! launchctl print "gui/$(id -u)/ai.hermes.gateway" 2>/dev/null | grep -Fq "state = running"; then
+    echo "Gateway restart detached from launchd; repairing service registration."
+    "${HERMES_BIN}" gateway stop >/dev/null
+    "${HERMES_BIN}" gateway install --force
+  fi
   echo "posting sync complete"
 }
 

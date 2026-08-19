@@ -173,6 +173,9 @@ The active cron jobs are:
 - `tech-digest evaluation 18:20` to `#hermes-alerts`, normally silent while it
   evaluates the latest digest and updates memory/gbrain artifacts
 - `Hermes health check` to `#hermes-alerts`, posting only when attention is needed
+- independent `Hermes runtime health watchdog` checks every 5 minutes and sends
+  failures directly to `#hermes-alerts`, even when Gateway is down; unchanged
+  failures are limited to one reminder per hour and recovery is also reported
 - `Hermes disk watchdog` to `#hermes-alerts`, posting only when disk usage crosses
   the configured threshold
 - `Hermes SSL expiry watchdog` to `#hermes-alerts`, posting only when configured
@@ -180,7 +183,8 @@ The active cron jobs are:
 - `金曜17時gbrainサマリー` to `#hermes-alerts`, using gbrain/honcho status
 
 The older `discord-heartbeat` LaunchAgent is treated as legacy and removed by
-the macOS installer.
+the macOS installer. It is replaced by the narrower runtime health watchdog,
+which checks the existing health report and bypasses Gateway for alert delivery.
 
 ### Channel Design
 
@@ -256,7 +260,11 @@ releases, plus the OpenAI Codex maxxing whitepaper PDF as a standalone document
 source. For `document` sources, the watcher stores a content hash so a later
 PDF replacement at the same URL can still become a new signal. First run primes
 state only so old articles/documents are not posted in bulk; later runs post
-only threshold-crossing new signals. AI official sources route to `#ai-official`;
+only threshold-crossing new signals. Snapshot format revisions also prime a new
+baseline silently, which prevents a switch from HTML to Markdown from looking
+like a product update. Global cooldown bypass is disabled and provider scoring
+is balanced to keep one vendor from crowding out the others. AI official
+sources route to `#ai-official`;
 broader developer and article sources route to `#tech-radar`. The macOS
 installer copies the watcher runtime to
 `~/.hermes/runtime/grok-signal-agent/`; re-run the installer after changing the
@@ -272,6 +280,11 @@ LaunchAgent that polled `x_search` every 30 minutes through the
 than a fixed twice-daily schedule needs. See "X Buzz Digest" in
 [docs/scheduled-jobs.md](docs/scheduled-jobs.md) for its preflight and
 streak-alert behavior.
+
+The scheduled tech digest uses bounded collection timeouts. When `x_search`
+cannot provide direct post links, it falls back to a balanced set of official
+AI vendor pages; if no source-backed digest can be built, it exits cleanly and
+posts nothing rather than emitting tool errors or an incomplete digest.
 
 ## Digest Quality And Feedback
 
@@ -294,12 +307,14 @@ not leak into references, and that recent source duplicates/topic imbalance are
 visible as warnings. Lint failures log and alert by default but do not block
 Discord delivery unless `HERMES_DIGEST_LINT_STRICT=1` is set.
 
-Operational alerts always append to `~/.hermes/logs/hermes-alerts.log`. To send
-alerts somewhere else, set one of:
+Operational alerts always append to `~/.hermes/logs/hermes-alerts.log` and, by
+default, use `hermes send` to deliver directly to `discord:hermes-alerts` without
+requiring a running Gateway. To change delivery, set one of:
 
 ```bash
 HERMES_ALERT_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 HERMES_ALERT_COMMAND='your-command-that-reads-stdin'
+HERMES_ALERT_TARGET=discord:another-channel
 ```
 
 The signal watcher and the X buzz digest cron job call the same alert helper

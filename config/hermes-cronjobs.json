@@ -4,6 +4,7 @@
     "ai-official": "discord:replace-with-ai-official-channel-id",
     "tech-radar": "discord:replace-with-tech-radar-channel-id",
     "briefings": "discord:replace-with-briefings-channel-id",
+    "english-conversation": "discord:replace-with-english-conversation-channel-id",
     "hermes-chat": "discord:replace-with-hermes-chat-channel-id",
     "hermes-alerts": "discord:replace-with-hermes-alerts-channel-id"
   },
@@ -167,7 +168,7 @@
       "name": "X buzz digest 06:45",
       "enabled": true,
       "schedule": "45 6 * * *",
-      "channel": "tech-radar",
+      "channel": "x-digest",
       "mode": "script",
       "script": "hermes-x-buzz-digest-cron.sh",
       "no_agent": true,
@@ -178,7 +179,7 @@
       "name": "X buzz digest 08:45",
       "enabled": false,
       "schedule": "45 8 * * *",
-      "channel": "tech-radar",
+      "channel": "x-digest",
       "mode": "script",
       "script": "hermes-x-buzz-digest-cron.sh",
       "no_agent": true,
@@ -189,11 +190,21 @@
       "name": "X buzz digest 18:40",
       "enabled": true,
       "schedule": "40 18 * * *",
-      "channel": "tech-radar",
+      "channel": "x-digest",
       "mode": "script",
       "script": "hermes-x-buzz-digest-cron.sh",
       "no_agent": true,
       "prompt": "Run the X buzz digest script."
+    },
+    {
+      "id": "daily-english-conversation",
+      "name": "毎日英会話｜AIプロンプト英語",
+      "enabled": true,
+      "schedule": "0 8 * * *",
+      "channel": "english-conversation",
+      "mode": "prompt",
+      "prompt": "毎日1回、初心者向けの短い英会話レッスンを日本語で作成してください。AIへのプロンプトを英語で入力できるようにすることが目的です。今日のテーマ、簡単な英語例文1〜3文、日本語訳、重要表現2〜4個、文の組み立て方、AIに使える短いプロンプト例、穴埋めまたは言い換え問題を各1つ含めてください。中学英語〜初級から始め、前回と違う表現を扱い、明るく簡潔に書いてください。",
+      "no_agent": false
     }
   ]
 }

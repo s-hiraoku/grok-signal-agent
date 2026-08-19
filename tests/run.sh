@@ -64,7 +64,9 @@ write_channels_config() {
   "channels": {
     "ai-official": "discord:900000000000000002",
     "tech-radar": "discord:900000000000000003",
+    "x-digest": "discord:900000000000000004",
     "briefings": "discord:900000000000000001",
+    "english-conversation": "discord:900000000000000005",
     "hermes-chat": "discord:900000000000000006",
     "hermes-alerts": "discord:900000000000000007"
   }
@@ -174,7 +176,7 @@ test_register_cronjobs_syncs_enabled_tech_digest_jobs() {
   assert_contains "${output}" "Skipped disabled cron job: 毎晩23:30 gbrain/honcho daily review"
   assert_contains "${output}" "Skipped disabled cron job: 平日8:00リマインダー"
   assert_contains "${output}" "Skipped disabled cron job: X buzz digest 08:45"
-  assert_contains "${output}" "Cron registration complete: 8 created, 1 updated, 1 already existed, 8 disabled, 0 removed."
+  assert_contains "${output}" "Cron registration complete: 9 created, 1 updated, 1 already existed, 8 disabled, 0 removed."
   assert_file_contains "${log_file}" "cron edit --name tech-digest\\ 18:00"
   assert_file_contains "${log_file}" "--script hermes-tech-digest-cron.sh"
   assert_file_contains "${log_file}" "--schedule 0\\ 18\\ \\*\\ \\*\\ 1-5"
@@ -188,8 +190,8 @@ test_register_cronjobs_syncs_enabled_tech_digest_jobs() {
   assert_file_contains "${log_file}" "--script hermes-disk-watchdog-cron.sh"
   assert_file_contains "${log_file}" "--script hermes-ssl-expiry-watchdog-cron.sh"
   assert_file_contains "${log_file}" "--deliver discord:900000000000000007"
-  assert_file_contains "${log_file}" "--name X\\ buzz\\ digest\\ 06:45 --deliver discord:900000000000000003 --script hermes-x-buzz-digest-cron.sh"
-  assert_file_contains "${log_file}" "--name X\\ buzz\\ digest\\ 18:40 --deliver discord:900000000000000003 --script hermes-x-buzz-digest-cron.sh"
+  assert_file_contains "${log_file}" "--name X\\ buzz\\ digest\\ 06:45 --deliver discord:900000000000000004 --script hermes-x-buzz-digest-cron.sh"
+  assert_file_contains "${log_file}" "--name X\\ buzz\\ digest\\ 18:40 --deliver discord:900000000000000004 --script hermes-x-buzz-digest-cron.sh"
   assert_file_not_contains "${log_file}" "--script hermes-daily-review-cron.sh"
   assert_file_not_contains "${log_file}" "cron remove stub-id"
 }
@@ -262,7 +264,9 @@ test_register_cronjobs_uses_local_channel_overrides() {
   "channels": {
     "ai-official": "discord:900000000000000002",
     "tech-radar": "discord:900000000000000003",
+    "x-digest": "discord:900000000000000004",
     "briefings": "discord:999999999999999999",
+    "english-conversation": "discord:900000000000000005",
     "hermes-chat": "discord:900000000000000006",
     "hermes-alerts": "discord:900000000000000007"
   }
@@ -628,6 +632,7 @@ STUB
   [[ -x "${tmp_home}/.hermes/bin/hermes-mnemo-memory-hook.sh" ]] || fail "mnemo memory hook should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-discord-feedback.sh" ]] || fail "feedback hook should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-alert.sh" ]] || fail "alert helper should be installed"
+  [[ -x "${tmp_home}/.hermes/bin/hermes-health-watchdog.sh" ]] || fail "health watchdog should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-obsidian-mcp-setup.sh" ]] || fail "obsidian MCP setup helper should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-jina-mcp-setup.sh" ]] || fail "jina MCP setup helper should be installed"
   [[ -x "${tmp_home}/.hermes/bin/hermes-google-calendar-mcp-setup.sh" ]] || fail "google calendar MCP setup helper should be installed"
@@ -668,6 +673,8 @@ STUB
   assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-mnemo-memory-hook.sh"
   assert_file_contains "${tmp_home}/.hermes/shell-hooks-allowlist.json" "hermes-discord-feedback.sh"
   assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.signal-watcher.plist" "${tmp_home}/.hermes/runtime/grok-signal-agent"
+  [[ -f "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.health-watchdog.plist" ]] || fail "health watchdog LaunchAgent should be rendered"
+  assert_file_contains "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.health-watchdog.plist" "discord:hermes-alerts"
   [[ ! -e "${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.x-pulse-watcher.plist" ]] || fail "retired x pulse watcher LaunchAgent plist should not remain"
   assert_file_not_contains "${tmp_home}/hermes-calls.log" "gateway install"
   assert_file_not_contains "${launchctl_log}" "bootstrap gui/$(id -u) ${tmp_home}/Library/LaunchAgents/com.shiraoku.grok-signal-agent.hermes-gateway.plist"
@@ -1175,6 +1182,71 @@ test_health_check_cron_reports_failures() {
   assert_contains "${output}" "Disabled legacy webhook route is still registered: wbsb-trigger"
 }
 
+test_alert_helper_sends_directly_without_gateway() {
+  local tmp_home hermes_stub send_log
+  tmp_home="$(make_tmp_home)"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  send_log="${tmp_home}/send.log"
+
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${HERMES_TEST_SEND_LOG}"
+cat >> "${HERMES_TEST_SEND_LOG}"
+STUB
+  chmod +x "${hermes_stub}"
+
+  printf 'watchdog body\n' \
+    | HOME="${tmp_home}" \
+      HERMES_BIN="${hermes_stub}" \
+      HERMES_TEST_SEND_LOG="${send_log}" \
+      "${REPO_DIR}/scripts/hermes-alert.sh" "watchdog title"
+
+  assert_file_contains "${send_log}" "send --to discord:hermes-alerts --file - --quiet"
+  assert_file_contains "${send_log}" "watchdog title"
+  assert_file_contains "${send_log}" "watchdog body"
+}
+
+test_health_watchdog_cools_down_and_reports_recovery() {
+  local tmp_home health_script alert_script health_output alert_log
+  tmp_home="$(make_tmp_home)"
+  health_script="${tmp_home}/health.sh"
+  alert_script="${tmp_home}/alert.sh"
+  health_output="${tmp_home}/health-output"
+  alert_log="${tmp_home}/alerts.log"
+
+  cat > "${health_script}" <<'STUB'
+#!/usr/bin/env bash
+cat "${HERMES_TEST_HEALTH_OUTPUT}"
+STUB
+  cat > "${alert_script}" <<'STUB'
+#!/usr/bin/env bash
+printf 'TITLE:%s\n' "$1" >> "${HERMES_TEST_ALERT_LOG}"
+cat >> "${HERMES_TEST_ALERT_LOG}"
+STUB
+  chmod +x "${health_script}" "${alert_script}"
+  printf 'Hermes Gateway is down\n' > "${health_output}"
+
+  for _ in 1 2; do
+    HOME="${tmp_home}" \
+      HERMES_HEALTH_SCRIPT="${health_script}" \
+      HERMES_ALERT_SCRIPT="${alert_script}" \
+      HERMES_TEST_HEALTH_OUTPUT="${health_output}" \
+      HERMES_TEST_ALERT_LOG="${alert_log}" \
+      "${REPO_DIR}/scripts/hermes-health-watchdog.sh"
+  done
+  assert_file_occurrences "${alert_log}" "TITLE:Hermes runtime health alert" "1"
+
+  : > "${health_output}"
+  HOME="${tmp_home}" \
+    HERMES_HEALTH_SCRIPT="${health_script}" \
+    HERMES_ALERT_SCRIPT="${alert_script}" \
+    HERMES_TEST_HEALTH_OUTPUT="${health_output}" \
+    HERMES_TEST_ALERT_LOG="${alert_log}" \
+    "${REPO_DIR}/scripts/hermes-health-watchdog.sh"
+  assert_file_occurrences "${alert_log}" "TITLE:Hermes runtime recovered" "1"
+}
+
 test_scheduled_prompts_require_direct_source_links() {
   assert_file_contains "${REPO_DIR}/prompts/x-daily-summary.md" "handle だけの出典は不可"
   assert_file_contains "${REPO_DIR}/prompts/x-daily-summary.md" "Google の検索結果 URL ではなく"
@@ -1267,8 +1339,8 @@ JSON
     "${REPO_DIR}/scripts/register-hermes-webhooks.sh"
   )"
 
-  assert_contains "${output}" "Synced existing webhook: signal-catchup"
-  assert_contains "${output}" "Created webhook: ai-latest-trigger"
+  assert_contains "${output}" "Removed disabled webhook: signal-catchup"
+  assert_contains "${output}" "Skipped disabled webhook: ai-latest-trigger"
   assert_contains "${output}" "Created webhook: tech-digest-trigger"
   assert_contains "${output}" "Created webhook: x-buzz-trigger"
   assert_contains "${output}" "Created webhook: github-pr-review-trigger"
@@ -1277,9 +1349,9 @@ JSON
   assert_contains "${output}" "Skipped disabled webhook: wbsb-trigger"
   assert_contains "${output}" "Skipped disabled webhook: morning-brief-trigger"
   assert_contains "${output}" "Skipped disabled webhook: gbrain-weekly-summary-trigger"
-  assert_contains "${output}" "Webhook registration complete: 5 created, 1 updated, 4 disabled, 0 removed."
-  assert_file_contains "${log_file}" "webhook subscribe signal-catchup"
-  assert_file_contains "${log_file}" "webhook subscribe ai-latest-trigger"
+  assert_contains "${output}" "Webhook registration complete: 4 created, 0 updated, 6 disabled, 1 removed."
+  assert_file_not_contains "${log_file}" "webhook subscribe signal-catchup"
+  assert_file_not_contains "${log_file}" "webhook subscribe ai-latest-trigger"
   assert_file_contains "${log_file}" "webhook subscribe tech-digest-trigger"
   assert_file_contains "${log_file}" "webhook subscribe x-buzz-trigger"
   assert_file_contains "${log_file}" "webhook subscribe github-pr-review-trigger"
@@ -1295,10 +1367,7 @@ JSON
   assert_file_contains "${log_file}" "script_path="
   assert_file_contains "${log_file}" "SCRIPT_UNAVAILABLE"
   assert_file_contains "${log_file}" 'bash "${script_path}"'
-  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 900000000000000001"
-  assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 900000000000000002"
   assert_file_contains "${log_file}" "--deliver discord --deliver-chat-id 900000000000000003"
-  assert_file_contains "${log_file}" "--secret existing-secret"
   assert_file_contains "${log_file}" "--secret post-secret-from-env-file"
 }
 
@@ -1320,6 +1389,7 @@ ENV
     "ai-official": "discord:900000000000000002",
     "tech-radar": "discord:888888888888888888",
     "briefings": "discord:900000000000000001",
+    "english-conversation": "discord:900000000000000005",
     "hermes-chat": "discord:900000000000000006",
     "hermes-alerts": "discord:900000000000000007"
   }
@@ -1337,9 +1407,8 @@ JSON
   assert_contains "${output}" "Created webhook: x-buzz-trigger"
   assert_file_contains "${log_file}" "webhook subscribe x-buzz-trigger"
   assert_file_contains "${log_file}" "--deliver-chat-id 888888888888888888"
-  assert_file_contains "${log_file}" "webhook subscribe signal-catchup"
-  assert_file_contains "${log_file}" "webhook subscribe ai-latest-trigger"
-  assert_file_contains "${log_file}" "--deliver-chat-id 900000000000000002"
+  assert_file_not_contains "${log_file}" "webhook subscribe signal-catchup"
+  assert_file_not_contains "${log_file}" "webhook subscribe ai-latest-trigger"
 }
 
 test_register_webhooks_rejects_script_names_outside_runtime_cron_pattern() {
@@ -2344,6 +2413,107 @@ JSON
   assert_file_contains "${log_file}" "cooldown route=signal-catchup candidates=1"
 }
 
+test_signal_watcher_rebases_snapshot_parser_changes_without_posting() {
+  local tmp_home page config state output
+  tmp_home="$(mktemp -d)"
+  page="${tmp_home}/changelog.md"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  printf '# Changelog\n\n## New release\nUseful API change.\n' > "${page}"
+  cat > "${state}" <<'JSON'
+{
+  "initialized": true,
+  "seen": {},
+  "sent": {},
+  "runs": [],
+  "snapshots": {
+    "official-changelog": {
+      "hash": "old-html-hash",
+      "content": "Navigation noise and stale content",
+      "revision": "1-html"
+    }
+  }
+}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${tmp_home}/watcher.log",
+    "prime_only_on_first_run": false,
+    "default_min_score": 70
+  },
+  "keyword_weights": {"api": 30, "release": 20},
+  "sources": [{
+    "id": "official-changelog",
+    "enabled": true,
+    "type": "snapshot",
+    "url": "file://${page}",
+    "snapshot_format": "text",
+    "snapshot_revision": "2-markdown-body",
+    "base_score": 80,
+    "min_score": 70,
+    "route": "ai-latest-trigger",
+    "tags": ["official"]
+  }]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}")"
+
+  assert_json_eq "${output}" ".observed" "0"
+  assert_json_eq "${output}" ".candidates" "0"
+  assert_eq "$(jq -r '.snapshots["official-changelog"].revision' "${state}")" "2-markdown-body" "snapshot revision"
+  assert_file_contains "${state}" "Useful API change"
+}
+
+test_signal_watcher_respects_per_source_cooldown_bypass_opt_out() {
+  local tmp_home feed config state log_file output
+  tmp_home="$(mktemp -d)"
+  feed="${tmp_home}/feed.xml"
+  config="${tmp_home}/watchers.json"
+  state="${tmp_home}/state.json"
+  log_file="${tmp_home}/watcher.log"
+  cat > "${feed}" <<'XML'
+<rss version="2.0"><channel><item>
+  <title>OpenAI Codex agent release</title>
+  <link>https://example.com/release</link><guid>release-1</guid>
+  <description>AI agent release notes.</description>
+</item></channel></rss>
+XML
+  cat > "${state}" <<'JSON'
+{"initialized":true,"seen":{},"sent":{},"runs":[],"last_sent_routes":{"ai-latest-trigger:openai":9999999999}}
+JSON
+  cat > "${config}" <<JSON
+{
+  "version": 1,
+  "settings": {
+    "state_file": "${state}",
+    "log_file": "${log_file}",
+    "prime_only_on_first_run": false,
+    "default_webhook_base_url": "http://127.0.0.1:8644",
+    "post_trigger_secret_env": "HERMES_TEST_MISSING_SECRET",
+    "summary_cooldown_bypass_min_score": 100,
+    "summary_artifact_routes": ["ai-latest-trigger"],
+    "provider_split_routes": ["ai-latest-trigger"]
+  },
+  "keyword_weights": {"openai":22,"codex":28,"agent":24,"release":16,"ai":14},
+  "sources": [{
+    "id":"openai-test","enabled":true,"type":"feed","url":"file://${feed}",
+    "base_score":80,"min_score":70,"route":"ai-latest-trigger","cooldown_minutes":240,
+    "allow_cooldown_bypass":false,"tags":["openai","official"]
+  }]
+}
+JSON
+
+  output="$("${REPO_DIR}/scripts/hermes-signal-watcher.py" --config "${config}" --dry-run)"
+
+  assert_json_eq "${output}" ".candidates" "1"
+  assert_file_contains "${log_file}" "cooldown route=ai-latest-trigger group=OpenAI"
+  assert_file_not_contains "${log_file}" "cooldown bypass route=ai-latest-trigger"
+}
+
 test_signal_watcher_keeps_custom_routes_out_of_batch() {
   local tmp_home default_feed zenn_feed config log_file output
   tmp_home="$(mktemp -d)"
@@ -3038,6 +3208,7 @@ STUB
     HERMES_BIN="${hermes_stub}" \
     HERMES_PROMPT_DIR="${REPO_DIR}/prompts" \
     HERMES_ALERT_SCRIPT="${REPO_DIR}/scripts/hermes-alert.sh" \
+    HERMES_X_BUZZ_PREFLIGHT=0 \
     "${REPO_DIR}/scripts/hermes-x-buzz-digest-cron.sh"
   )"
   status=$?
@@ -3062,7 +3233,7 @@ if [[ "$*" == *"-t x_search"* ]]; then
 
 ### 新しいMCPサーバーがリリース
 OpenAIアカウント: 新しいMCPサーバー実装がリリースされて、開発者から反応が来ているよ。
-https://x.com/example/status/1234567890
+https://x.com/example/status/123456789012345
 反応: likes 180 / reposts 30 / replies+quotes 25
 BUZZ
   exit 0
@@ -3077,14 +3248,37 @@ STUB
     HERMES_BIN="${hermes_stub}" \
     HERMES_PROMPT_DIR="${REPO_DIR}/prompts" \
     HERMES_ALERT_SCRIPT="${REPO_DIR}/scripts/hermes-alert.sh" \
+    HERMES_X_BUZZ_PREFLIGHT=0 \
     "${REPO_DIR}/scripts/hermes-x-buzz-digest-cron.sh"
   )"
 
   assert_contains "${output}" "新しいMCPサーバーがリリース"
-  assert_contains "${output}" "https://x.com/example/status/1234567890"
+  assert_contains "${output}" "https://x.com/example/status/123456789012345"
   buzz_file="$(find "${tmp_home}/.hermes/state/x-buzz-digests" -type f -name '[0-9]*.md' -print -quit)"
   [[ -n "${buzz_file}" ]] || fail "expected a saved x-buzz-digests artifact"
   assert_file_contains "${buzz_file}" "新しいMCPサーバーがリリース"
+}
+
+test_x_buzz_digest_cron_treats_tool_chatter_as_degraded_not_failed() {
+  local tmp_home hermes_stub output status log_file
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/.local/bin"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+printf 'Xを検索するね。 monologue: x_searchを実行します。\n'
+STUB
+  chmod +x "${hermes_stub}"
+
+  set +e
+  output="$(HOME="${tmp_home}" HERMES_BIN="${hermes_stub}" HERMES_PROMPT_DIR="${REPO_DIR}/prompts" HERMES_X_BUZZ_PREFLIGHT=0 "${REPO_DIR}/scripts/hermes-x-buzz-digest-cron.sh")"
+  status=$?
+  set -e
+
+  assert_eq "${status}" "0" "x buzz degraded exit"
+  [[ -z "${output}" ]] || fail "tool chatter must not be posted"
+  log_file="${tmp_home}/.hermes/logs/hermes-x-buzz-digest-cron.log"
+  assert_file_contains "${log_file}" "curation had no postable sections/links"
 }
 
 test_digest_linter_writes_metadata() {
@@ -3514,6 +3708,7 @@ STUB
     CURL_BIN="${curl_stub}" \
     HERMES_PROMPT_DIR="${REPO_DIR}/prompts" \
     HERMES_TECH_DIGEST_JINA_FALLBACK=1 \
+    HERMES_TECH_DIGEST_DIRECT_LLM_RENDER=1 \
     HERMES_DIGEST_LINT_SCRIPT="${REPO_DIR}/scripts/hermes-digest-lint.sh" \
     HERMES_DIGEST_LINT_STRICT=1 \
     "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh"
@@ -3532,51 +3727,14 @@ STUB
 }
 
 test_tech_digest_cron_skips_x_search_when_xai_is_blocked() {
-  local tmp_home hermes_stub curl_stub output log_file rendered_digest_fixture
+  local tmp_home hermes_stub curl_stub output log_file
   tmp_home="$(mktemp -d)"
   mkdir -p "${tmp_home}/.local/bin" "${tmp_home}/.hermes/logs"
   hermes_stub="${tmp_home}/.local/bin/hermes"
   curl_stub="${tmp_home}/.local/bin/curl"
-  rendered_digest_fixture="${tmp_home}/rendered-digest.md"
-  cat > "${rendered_digest_fixture}" <<'DIGEST'
-夕方のOpenAIとWeb platformが気になるよ
-
-それじゃ、気になった話題を一緒に見ていこう！
-
----
-目次
-- OpenAI News
-- GitHub Changelog
-- web.dev Blog
-- Chrome Developers Blog
-
----
-### OpenAI News
-公式ページで確認できた最新情報だよ。
-参照ページ: https://openai.com/news/example
-
----
-### GitHub Changelog
-公式ページで確認できた最新情報だよ。
-参照ページ: https://github.blog/changelog/example
-
----
-### web.dev Blog
-公式ページで確認できた最新情報だよ。
-参照ページ: https://web.dev/blog/example
-
----
-### Chrome Developers Blog
-公式ページで確認できた最新情報だよ。
-参照ページ: https://developer.chrome.com/blog/example
-DIGEST
-  cat > "${hermes_stub}" <<STUB
+  cat > "${hermes_stub}" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "\$*" == *"-z"* ]]; then
-  cat "${rendered_digest_fixture}"
-  exit 0
-fi
 echo "x_search should not run during blocked xAI preflight" >&2
 exit 99
 STUB
@@ -3586,13 +3744,8 @@ STUB
 #!/usr/bin/env bash
 set -euo pipefail
 url="${*: -1}"
-case "${url}" in
-  *openai.com*) title="OpenAI News"; link="https://openai.com/news/example" ;;
-  *github.blog*) title="GitHub Changelog"; link="https://github.blog/changelog/example" ;;
-  *web.dev*) title="web.dev Blog"; link="https://web.dev/blog/example" ;;
-  *developer.chrome.com*) title="Chrome Developers Blog"; link="https://developer.chrome.com/blog/example" ;;
-  *) title="Fallback Source"; link="https://example.com/source" ;;
-esac
+title="Official AI source"
+link="${url%/}/latest-update"
 cat <<EOF
 Title: ${title}
 
@@ -3612,9 +3765,52 @@ STUB
     "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh"
   )"
 
-  assert_contains "${output}" "OpenAIとWeb platformが気になるよ"
+  assert_contains "${output}" "公式AI・開発情報をまとめたよ"
+  assert_contains "${output}" "### Google AI"
+  assert_contains "${output}" "### Anthropic News"
   log_file="${tmp_home}/.hermes/logs/hermes-tech-digest-cron.log"
   assert_file_contains "${log_file}" "x_search preflight skipped: xAI/Grok spending or subscription access is blocked"
+  assert_file_contains "${log_file}" "deterministic official-source fallback rendered successfully"
+}
+
+test_tech_digest_direct_fallback_handles_large_reader_pages() {
+  local tmp_home hermes_stub curl_stub output
+  tmp_home="$(mktemp -d)"
+  mkdir -p "${tmp_home}/.local/bin" "${tmp_home}/.hermes/logs"
+  hermes_stub="${tmp_home}/.local/bin/hermes"
+  curl_stub="${tmp_home}/.local/bin/curl"
+  cat > "${hermes_stub}" <<'STUB'
+#!/usr/bin/env bash
+exit 99
+STUB
+  chmod +x "${hermes_stub}"
+
+  cat > "${curl_stub}" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+url="${*: -1}"
+printf 'Title: Large official page\n\n'
+head -c 250000 /dev/zero | tr '\0' ' '
+printf '\n## [Actual update](%s/latest-update)\n' "${url%/}"
+printf '[Contact sales](%s/contact)\n' "${url%/}"
+STUB
+  chmod +x "${curl_stub}"
+  printf 'personal-team-blocked:spending-limit\n' > "${tmp_home}/.hermes/logs/gateway.error.log"
+
+  output="$(
+    HOME="${tmp_home}" \
+    HERMES_BIN="${hermes_stub}" \
+    CURL_BIN="${curl_stub}" \
+    HERMES_PROMPT_DIR="${REPO_DIR}/prompts" \
+    HERMES_TECH_DIGEST_DIRECT_MAX_SECTIONS=4 \
+    HERMES_TECH_DIGEST_JINA_URLS='Google AI|https://google.example/ai;Anthropic News|https://anthropic.example/news;Hugging Face Blog|https://huggingface.example/blog;Mistral News|https://mistral.example/news' \
+    HERMES_DIGEST_LINT_SCRIPT=/usr/bin/false \
+    "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh"
+  )"
+
+  assert_contains "${output}" "### Google AI"
+  assert_contains "${output}" "Actual update"
+  [[ "${output}" != *"Contact sales"* ]] || fail "generic sales navigation should be filtered"
 }
 
 test_disk_watchdog_alerts_only_over_threshold() {
@@ -3648,7 +3844,7 @@ test_ssl_watchdog_silent_without_hosts() {
 }
 
 test_tech_digest_cron_logs_when_jina_reader_fallback_fails_after_linkless_retry() {
-  local tmp_home hermes_stub output log_file
+  local tmp_home hermes_stub output status log_file
   tmp_home="$(mktemp -d)"
   mkdir -p "${tmp_home}/.local/bin"
   hermes_stub="${tmp_home}/.local/bin/hermes"
@@ -3688,6 +3884,7 @@ EVAL
 STUB
   chmod +x "${hermes_stub}"
 
+  set +e
   output="$(
     HOME="${tmp_home}" \
     HERMES_BIN="${hermes_stub}" \
@@ -3696,11 +3893,14 @@ STUB
     HERMES_TECH_DIGEST_JINA_FALLBACK=1 \
     "${REPO_DIR}/scripts/hermes-tech-digest-cron.sh"
   )"
+  status=$?
+  set -e
 
-  assert_contains "${output}" "Digest without direct X links"
+  assert_eq "${status}" "0" "linkless degraded exit"
+  [[ -z "${output}" ]] || fail "linkless curation must not be posted"
   log_file="${tmp_home}/.hermes/logs/hermes-tech-digest-cron.log"
   assert_file_contains "${log_file}" "x_search retry still had no direct X links; trying jina_reader fallback"
-  assert_file_contains "${log_file}" "warning: jina_reader fallback failed after missing X links; proceeding with linkless x_search curation"
+  assert_file_contains "${log_file}" "jina_reader fallback failed after missing X links; refusing linkless x_search curation"
 }
 
 test_tech_digest_cron_runs_lint_and_defers_evaluation() {
@@ -3886,6 +4086,8 @@ main() {
     test_review_cron_finds_bun_for_gbrain
     test_health_check_cron_silent_when_healthy
     test_health_check_cron_reports_failures
+    test_alert_helper_sends_directly_without_gateway
+    test_health_watchdog_cools_down_and_reports_recovery
     test_scheduled_prompts_require_direct_source_links
     test_register_webhooks_preserves_existing_secret
     test_register_webhooks_uses_local_channel_overrides
@@ -3902,6 +4104,8 @@ main() {
     test_signal_watcher_fetches_official_news_body_and_bypasses_ai_latest_cooldown
     test_signal_watcher_fetches_openai_feed_body_and_dedupes_official_pages
     test_signal_watcher_retries_candidates_blocked_by_cooldown
+    test_signal_watcher_rebases_snapshot_parser_changes_without_posting
+    test_signal_watcher_respects_per_source_cooldown_bypass_opt_out
     test_signal_watcher_keeps_custom_routes_out_of_batch
     test_signal_watcher_writes_ai_latest_summary_artifacts_for_snapshot_changes
     test_signal_watcher_writes_one_infographic_per_new_feature
@@ -3912,6 +4116,7 @@ main() {
     test_x_buzz_digest_cron_alerts_after_streak
     test_x_buzz_digest_cron_does_not_post_when_no_qualified_buzz
     test_x_buzz_digest_cron_posts_qualified_buzz
+    test_x_buzz_digest_cron_treats_tool_chatter_as_degraded_not_failed
     test_digest_linter_writes_metadata
     test_digest_linter_rejects_missing_section_urls
     test_digest_linter_ignores_placeholder_x_urls_without_arithmetic_error
@@ -3922,6 +4127,7 @@ main() {
     test_tech_digest_cron_falls_back_to_jina_reader_when_x_search_fails
     test_tech_digest_cron_uses_direct_jina_reader_when_mcp_returns_invalid_digest
     test_tech_digest_cron_skips_x_search_when_xai_is_blocked
+    test_tech_digest_direct_fallback_handles_large_reader_pages
     test_disk_watchdog_alerts_only_over_threshold
     test_ssl_watchdog_silent_without_hosts
     test_tech_digest_cron_logs_when_jina_reader_fallback_fails_after_linkless_retry
