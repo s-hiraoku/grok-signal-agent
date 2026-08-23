@@ -27,16 +27,23 @@ X_BUZZ_PROVIDER="${HERMES_X_BUZZ_PROVIDER:-xai-oauth}"
 X_BUZZ_PREFLIGHT="${HERMES_X_BUZZ_PREFLIGHT:-1}"
 DEDUP_LOOKBACK_POSTS="${HERMES_X_BUZZ_DEDUP_LOOKBACK_POSTS:-40}"
 DEDUP_PROMPT_LIMIT="${HERMES_X_BUZZ_DEDUP_PROMPT_LIMIT:-80}"
-MAX_TOPICS="${HERMES_X_BUZZ_MAX_TOPICS:-5}"
-MAX_OFFICIAL_TOPICS="${HERMES_X_BUZZ_MAX_OFFICIAL_TOPICS:-3}"
-MIN_LIKES="${HERMES_X_BUZZ_MIN_LIKES:-80}"
-MIN_REPOSTS="${HERMES_X_BUZZ_MIN_REPOSTS:-10}"
-MIN_REPLIES="${HERMES_X_BUZZ_MIN_REPLIES:-20}"
-MIN_VIEWS="${HERMES_X_BUZZ_MIN_VIEWS:-10000}"
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAX_TOPICS="${HERMES_X_BUZZ_MAX_TOPICS:-4}"
+MAX_OFFICIAL_TOPICS="${HERMES_X_BUZZ_MAX_OFFICIAL_TOPICS:-2}"
+MIN_SCORE="${HERMES_X_BUZZ_MIN_SCORE:-1500}"
+MIN_SOCIAL_LIKES="${HERMES_X_BUZZ_MIN_SOCIAL_LIKES:-250}"
+MIN_SOCIAL_REPOSTS="${HERMES_X_BUZZ_MIN_SOCIAL_REPOSTS:-25}"
+OFFICIAL_MIN_LIKES="${HERMES_X_BUZZ_OFFICIAL_MIN_LIKES:-20}"
+OFFICIAL_MIN_VIEWS="${HERMES_X_BUZZ_OFFICIAL_MIN_VIEWS:-2000}"
 OFFICIAL_HANDLES="${HERMES_X_BUZZ_OFFICIAL_HANDLES:-OpenAI OpenAIDevs AnthropicAI claudeai SpaceX Google GoogleDeepMind GeminiApp xai GoogleAI}"
 SEARCH_HELPER="${HERMES_X_BUZZ_SEARCH_HELPER:-${HERMES_HOME_DIR}/scripts/hermes-x-buzz-search.py}"
+RANK_HELPER="${HERMES_X_BUZZ_RANK_HELPER:-${HERMES_HOME_DIR}/scripts/hermes-x-buzz-rank.py}"
 REPO_SEARCH_HELPER_CANDIDATES=(
   "${HERMES_HOME_DIR}/runtime/grok-signal-agent/scripts/hermes-x-buzz-search.py"
+)
+REPO_RANK_HELPER_CANDIDATES=(
+  "${THIS_DIR}/hermes-x-buzz-rank.py"
+  "${HERMES_HOME_DIR}/runtime/grok-signal-agent/scripts/hermes-x-buzz-rank.py"
 )
 
 mkdir -p "${LOG_DIR}" "${BUZZ_DIR}"
@@ -152,138 +159,43 @@ remember_posted_ids() {
   mv "${tmp}" "${POSTED_IDS_FILE}"
 }
 
+resolve_rank_helper() {
+  if [[ -f "${RANK_HELPER}" ]]; then
+    printf '%s\n' "${RANK_HELPER}"
+    return 0
+  fi
+  local candidate
+  for candidate in "${REPO_RANK_HELPER_CANDIDATES[@]}"; do
+    if [[ -f "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
 filter_already_posted_sections() {
   local text="$1"
   local posted_ids="$2"
-  local tmp
+  local tmp ranker
+  ranker="$(resolve_rank_helper || true)"
+  if [[ -z "${ranker}" ]]; then
+    log "rank helper missing; refusing to post an unranked digest"
+    return 1
+  fi
   tmp="$(mktemp)"
   printf '%s\n' "${text}" > "${tmp}"
-  HERMES_X_BUZZ_TEXT_FILE="${tmp}" \
-    HERMES_X_BUZZ_POSTED_IDS="$(printf '%s\n' "${posted_ids}" | tr '\n' ' ')" \
-    HERMES_X_BUZZ_MAX_TOPICS="${MAX_TOPICS}" \
+  HERMES_X_BUZZ_MAX_TOPICS="${MAX_TOPICS}" \
     HERMES_X_BUZZ_MAX_OFFICIAL_TOPICS="${MAX_OFFICIAL_TOPICS}" \
-    HERMES_X_BUZZ_MIN_LIKES="${MIN_LIKES}" \
-    HERMES_X_BUZZ_MIN_REPOSTS="${MIN_REPOSTS}" \
-    HERMES_X_BUZZ_MIN_REPLIES="${MIN_REPLIES}" \
-    HERMES_X_BUZZ_MIN_VIEWS="${MIN_VIEWS}" \
+    HERMES_X_BUZZ_MIN_SCORE="${MIN_SCORE}" \
+    HERMES_X_BUZZ_MIN_SOCIAL_LIKES="${MIN_SOCIAL_LIKES}" \
+    HERMES_X_BUZZ_MIN_SOCIAL_REPOSTS="${MIN_SOCIAL_REPOSTS}" \
+    HERMES_X_BUZZ_OFFICIAL_MIN_LIKES="${OFFICIAL_MIN_LIKES}" \
+    HERMES_X_BUZZ_OFFICIAL_MIN_VIEWS="${OFFICIAL_MIN_VIEWS}" \
     HERMES_X_BUZZ_OFFICIAL_HANDLES="${OFFICIAL_HANDLES}" \
-    python3 - <<'PY'
-import os
-import re
-import sys
-from pathlib import Path
-
-text = Path(os.environ["HERMES_X_BUZZ_TEXT_FILE"]).read_text()
-posted_raw = os.environ.get("HERMES_X_BUZZ_POSTED_IDS", "")
-max_topics = int(os.environ.get("HERMES_X_BUZZ_MAX_TOPICS", "5"))
-max_official = int(os.environ.get("HERMES_X_BUZZ_MAX_OFFICIAL_TOPICS", "3"))
-min_likes = int(os.environ.get("HERMES_X_BUZZ_MIN_LIKES", "80"))
-min_reposts = int(os.environ.get("HERMES_X_BUZZ_MIN_REPOSTS", "10"))
-min_replies = int(os.environ.get("HERMES_X_BUZZ_MIN_REPLIES", "20"))
-min_views = int(os.environ.get("HERMES_X_BUZZ_MIN_VIEWS", "10000"))
-official_handles = {
-    tok.strip().lstrip("@").lower()
-    for tok in re.split(r"\s+", os.environ.get("HERMES_X_BUZZ_OFFICIAL_HANDLES", ""))
-    if tok.strip()
-}
-
-seen = {tok for tok in re.split(r"\s+", posted_raw) if tok}
-leak_re = re.compile(
-    r"NO_QUALIFIED_BUZZ|already_posted_status_ids|fresh_status_ids_seen|"
-    r"The evidence|the prompt explicitly|The user wants|Let me carefully|"
-    r"If nothing qualifies|the correct output is",
-    re.I,
-)
-metric_re = re.compile(
-    r"(likes|reposts|replies|quotes|views)\s*[=:：]?\s*([0-9][0-9,]*)",
-    re.I,
-)
-status_re = re.compile(r"/status/([0-9][0-9 ]{14,})")
-handle_re = re.compile(r"https?://(?:x.com|twitter.com)/([^/?#]+)/status/", re.I)
-at_re = re.compile(r"@([A-Za-z0-9_]+)")
-
-
-def normalize_id(raw: str) -> str:
-    digits = re.sub(r"\D", "", raw)
-    return digits if len(digits) >= 15 else ""
-
-
-def normalize_section(section: str) -> str:
-    section = re.sub(r"https\s*:\s*//", "https://", section)
-    section = status_re.sub(lambda m: "/status/" + normalize_id(m.group(1)), section)
-    kept = []
-    for line in section.splitlines():
-        if leak_re.search(line):
-            continue
-        kept.append(line)
-    return "\n".join(kept).strip() + "\n"
-
-
-def parse_metrics(section: str) -> dict[str, int]:
-    metrics = {"likes": 0, "reposts": 0, "replies": 0, "quotes": 0, "views": 0}
-    for name, num in metric_re.findall(section):
-        metrics[name.lower()] = int(num.replace(",", ""))
-    return metrics
-
-
-def meets_floor(metrics: dict[str, int]) -> bool:
-    return (
-        metrics["likes"] >= min_likes
-        or metrics["reposts"] >= min_reposts
-        or (metrics["replies"] + metrics["quotes"]) >= min_replies
-        or metrics["views"] >= min_views
-    )
-
-
-def section_handle(section: str) -> str:
-    match = handle_re.search(section)
-    if match:
-        return match.group(1)
-    match = at_re.search(section)
-    if match:
-        return match.group(1)
-    return ""
-
-
-def is_official(section: str) -> bool:
-    return section_handle(section).lower() in official_handles
-
-
-chunks = re.split(r"(?=^### )", text, flags=re.M)
-official_candidates = []
-buzz_candidates = []
-used_ids: set[str] = set()
-for chunk in chunks:
-    if not chunk.startswith("###"):
-        continue
-    section = normalize_section(chunk)
-    ids = []
-    for match in status_re.finditer(section):
-        status_id = normalize_id(match.group(1))
-        if status_id:
-            ids.append(status_id)
-    if not ids:
-        continue
-    if any(status_id in seen or status_id in used_ids for status_id in ids):
-        continue
-    metrics = parse_metrics(section)
-    official = is_official(section)
-    if not official and not meets_floor(metrics):
-        continue
-    used_ids.update(ids)
-    row = (metrics["likes"], metrics["views"], metrics["reposts"], section)
-    if official:
-        official_candidates.append(row)
-    else:
-        buzz_candidates.append(row)
-
-official_candidates.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
-buzz_candidates.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
-selected = [item[3] for item in official_candidates[:max_official]]
-selected.extend(item[3] for item in buzz_candidates[: max(0, max_topics - len(selected))])
-if selected:
-    sys.stdout.write("\n\n".join(s.rstrip("\n") for s in selected) + "\n")
-PY
+    python3 "${ranker}" select \
+      --text-file "${tmp}" \
+      --posted-ids "$(printf '%s\n' "${posted_ids}" | tr '\n' ' ')"
   local status=$?
   rm -f "${tmp}"
   return "${status}"

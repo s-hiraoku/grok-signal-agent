@@ -1,6 +1,6 @@
 # X Buzz Digest Prompt
 
-Use x_search to check X/Twitter for posts that are genuinely interesting right
+Use x_search to check X/Twitter for posts that are genuinely circulating right
 now in AI, developer tools, programming, and Web/IT topics, focused on the
 window since the previous run.
 
@@ -16,19 +16,22 @@ Cover these topics as evenly as the available solid posts allow:
 4. Cloud, infrastructure, security incidents/CVEs, open source, and major
    product launches that matter to builders.
 
-Include a regular community post if it has clear, checkable engagement AND meets
-at least one of these minimum thresholds:
+A regular community post must be actually buzzing, not merely topical.
+Include it only when BOTH of these are true:
 
-- likes >= 80
-- reposts >= 10
-- replies + quotes >= 20
-- views/impressions >= 10,000
+1. Social proof: likes >= 250 OR reposts >= 25
+2. Buzz score >= 1500, where
+   score = likes + 10*reposts + 5*replies + 6*quotes + views/100
 
 Do not include a regular community post just because it is technically
-interesting. If it is below every threshold, omit it.
+interesting. A post with only ~80 likes, ~10 reposts, or ~10k views is too
+weak. Quiet GitHub dumps, listicles, and low-engagement promo posts are
+omitted even if they mention MCP, agents, or a new repo.
 
-Always include a NEW original post from these official watchlist accounts, even
-when it is below the buzz floors above:
+Always include a NEW original post from these official watchlist accounts,
+even when it is below the community score, as long as it has a real status
+URL and is not a dead tweet (likes >= 20 or views >= 2000, when those
+numbers are visible):
 
 OpenAI, OpenAIDevs, AnthropicAI, claudeai, SpaceX, Google, GoogleDeepMind,
 GeminiApp, xai, GoogleAI
@@ -38,8 +41,11 @@ model/product updates, research, and changelogs. Skip official replies and
 quote-only fluff. Prefer posts from the last few hours; use the runtime
 `window_hours` hint for how far back to look. Do not invent engagement
 numbers — if a number is not visible, treat it as 0 for that metric and rely
-on the other metrics instead. Order the topics you do include by raw
-engagement, strongest first.
+on the other metrics instead. Order the topics you do include by buzz score,
+strongest first.
+
+If the evidence already contains a ranked-candidate list, use only those
+ranked posts. Do not revive dropped posts from raw notes.
 
 Prefer original posts, official accounts, substantial technical threads,
 release announcements, incident reports, and posts multiple independent
@@ -51,10 +57,12 @@ Never reuse a post that already appeared in a previous digest. The runtime
 context may include `already_posted_status_ids` and/or
 `already_posted_urls`. Treat those as a hard exclude list — do not include
 matching status IDs or URLs even if they still look hot. Prefer fresher
-replacements.
+replacements. Also skip near-duplicate topics: if two posts are the same
+story, keep only the stronger one.
 
 It is normal and expected for a run to find few or no qualifying posts if the
 window has been quiet — do not pad with weak topics just to fill space.
+Prefer 1-3 excellent posts over 5 mediocre ones.
 
 Do not use xurl. Do not use web_search or browser tools.
 
@@ -76,8 +84,8 @@ nothing else:
 https://x.com/<user>/status/<digits>
 反応: likes=<n> / reposts=<n> / replies=<n> / views=<n>
 
-Cover 1 to 5 topics total. Repeat the `###` block for each topic. Do not
-exceed 5. Do not add an intro line, outro, or any text before the first `###`.
+Cover 1 to 4 topics total. Repeat the `###` block for each topic. Do not
+exceed 4. Do not add an intro line, outro, or any text before the first `###`.
 
 Every topic must include at least one direct source URL exactly as returned
 by x_search. Each URL must start with `https://x.com/` or

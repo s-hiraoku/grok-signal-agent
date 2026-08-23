@@ -649,6 +649,8 @@ STUB
   [[ -f "${tmp_home}/.hermes/runtime/grok-signal-agent/config/signal-watchers.json" ]] || fail "signal watcher runtime config should be installed"
   [[ ! -e "${tmp_home}/.hermes/runtime/grok-signal-agent/config/x-pulse-watchers.json" ]] || fail "retired x pulse watcher runtime config should not be installed"
   [[ -x "${tmp_home}/.hermes/scripts/hermes-x-buzz-digest-cron.sh" ]] || fail "x buzz digest cron script should be installed"
+  [[ -x "${tmp_home}/.hermes/scripts/hermes-x-buzz-search.py" ]] || fail "x buzz search helper should be installed"
+  [[ -x "${tmp_home}/.hermes/scripts/hermes-x-buzz-rank.py" ]] || fail "x buzz rank helper should be installed"
   [[ -x "${tmp_home}/.hermes/scripts/hermes-curiosity-cron.sh" ]] || fail "curiosity cron script should be installed"
   [[ -f "${tmp_home}/.hermes/prompts/x-buzz-digest.md" ]] || fail "x buzz digest prompt should be installed"
   [[ -f "${tmp_home}/.hermes/prompts/curiosity-candidate.md" ]] || fail "curiosity candidate prompt should be installed"
@@ -3426,8 +3428,8 @@ if [[ "$*" == *"-t x_search"* ]]; then
 
 ### 新しいMCPサーバーがリリース
 OpenAIアカウント: 新しいMCPサーバー実装がリリースされて、開発者から反応が来ているよ。
-https://x.com/example/status/123456789012345
-反応: likes 180 / reposts 30 / replies+quotes 25
+https://x.com/example/status/1234567890123456789
+反応: likes=1200 / reposts=80 / replies=60 / views=80000
 BUZZ
   exit 0
 fi
@@ -3446,10 +3448,36 @@ STUB
   )"
 
   assert_contains "${output}" "新しいMCPサーバーがリリース"
-  assert_contains "${output}" "https://x.com/example/status/123456789012345"
+  assert_contains "${output}" "https://x.com/example/status/1234567890123456789"
   buzz_file="$(find "${tmp_home}/.hermes/state/x-buzz-digests" -type f -name '[0-9]*.md' -print -quit)"
   [[ -n "${buzz_file}" ]] || fail "expected a saved x-buzz-digests artifact"
   assert_file_contains "${buzz_file}" "新しいMCPサーバーがリリース"
+}
+
+test_x_buzz_ranker_drops_weak_community_posts() {
+  local output
+  output="$(
+    python3 "${REPO_DIR}/scripts/hermes-x-buzz-rank.py" select --text-file - <<'DIGEST'
+### Strong launch
+A real circulating post.
+foo: shipping
+https://x.com/foo/status/2090141955695198633
+反応: likes=820 / reposts=25 / replies=87 / views=53835
+
+### Weak filler
+A quiet GitHub dump.
+tom_doerr: mcp server
+https://x.com/tom_doerr/status/2089820032897323050
+反応: likes=160 / reposts=16 / replies=0 / views=11363
+
+### Tiny noise
+https://x.com/noise/status/2088742728888623445
+反応: likes=10 / reposts=2 / replies=0 / views=585
+DIGEST
+  )"
+  assert_contains "${output}" "2090141955695198633"
+  [[ "${output}" != *"2089820032897323050"* ]] || fail "weak TradingView-class post should be dropped"
+  [[ "${output}" != *"2088742728888623445"* ]] || fail "tiny noise post should be dropped"
 }
 
 test_x_buzz_digest_cron_treats_tool_chatter_as_degraded_not_failed() {
@@ -4312,6 +4340,7 @@ main() {
     test_x_buzz_digest_cron_alerts_after_streak
     test_x_buzz_digest_cron_does_not_post_when_no_qualified_buzz
     test_x_buzz_digest_cron_posts_qualified_buzz
+    test_x_buzz_ranker_drops_weak_community_posts
     test_x_buzz_digest_cron_treats_tool_chatter_as_degraded_not_failed
     test_digest_linter_writes_metadata
     test_digest_linter_rejects_missing_section_urls

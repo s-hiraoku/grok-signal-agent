@@ -13,6 +13,7 @@ import json
 import re
 import sys
 from datetime import datetime, timedelta, timezone
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
@@ -22,6 +23,7 @@ STATUS_RE = re.compile(
 )
 BARE_STATUS_RE = re.compile(r"/status/(\d+)")
 DEBUG_PATH = Path.home() / ".hermes" / "state" / "x-buzz-digests" / ".last-search.json"
+RANK_HELPER = Path(__file__).with_name("hermes-x-buzz-rank.py")
 
 OFFICIAL_HANDLES = [
     "OpenAI",
@@ -204,16 +206,18 @@ def main() -> int:
                 "These are official watchlist accounts. Include original posts from the "
                 "last window even if engagement is still modest. Prefer announcements, "
                 "launches, model/product updates, research, and changelogs. Skip replies "
-                "and quote-only fluff."
+                "and quote-only fluff. Still include likes/reposts/replies/views when visible."
             )
-            max_posts = 8
+            max_posts = 6
         else:
             engagement_rule = (
-                "Include only posts that are actually circulating. Require at least one of "
-                "likes>=80, reposts>=10, replies>=20, or views>=10000. Skip low-engagement "
-                "posts even if they look technically interesting."
+                "Include only posts that are actually circulating right now. "
+                "Require visible social proof: likes>=250 or reposts>=25, AND a strong "
+                "combined buzz score likes + 10*reposts + 5*replies + views/100 of at least 1500. "
+                "Skip low-engagement filler, repo dumps, and posts that only barely have "
+                "80 likes or 10k views. Prefer the strongest few posts, not a long list."
             )
-            max_posts = 10
+            max_posts = 8
         prompt = (
             f"Find circulating X/Twitter posts from roughly the last {args.window_hours} hours "
             f"about: {label}.\n"
@@ -312,8 +316,23 @@ def main() -> int:
     if not useful:
         useful = bool(all_ids - excluded)
 
+    ranked = ""
+    if useful and RANK_HELPER.exists():
+        try:
+            rank = SourceFileLoader("hermes_x_buzz_rank", str(RANK_HELPER)).load_module()
+            ranked = rank.filter_evidence("\n\n".join(blocks), excluded).strip()
+        except Exception as exc:  # noqa: BLE001
+            debug["rank_error"] = str(exc)
+            ranked = ""
+        if ranked and not ranked.startswith("NO_QUALIFIED_BUZZ"):
+            useful = True
+            debug["ranked"] = True
+        else:
+            debug["ranked"] = False
+
     debug["fresh_status_ids"] = sorted(all_ids - excluded)
     debug["useful"] = useful
+    debug["ranked_preview"] = ranked[:800]
 
     if not useful:
         out = "NO_QUALIFIED_BUZZ\n"
@@ -326,7 +345,11 @@ def main() -> int:
             f"fresh_status_ids_seen={len(all_ids - excluded)}",
             "",
         ]
-        out = "\n\n".join(header + blocks).strip() + "\n"
+        if ranked and not ranked.startswith("NO_QUALIFIED_BUZZ"):
+            body = "\n".join(header + [ranked])
+        else:
+            body = "\n\n".join(header + blocks)
+        out = body.strip() + "\n"
 
     try:
         DEBUG_PATH.parent.mkdir(parents=True, exist_ok=True)

@@ -221,12 +221,12 @@ same pattern as `tech-digest 18:00`, with no separate webhook or secret
 involved. This replaced the always-on `x-pulse-watcher` LaunchAgent described
 above.
 
-The prompt ([prompts/x-buzz-digest.md](../prompts/x-buzz-digest.md)) asks the
-model to only include posts with checkable engagement (likes, reposts,
-replies+quotes, or views) and to return the exact string `NO_QUALIFIED_BUZZ`
-when nothing in the window qualifies — the cron script treats that as
+The prompt ([prompts/x-buzz-digest.md](../prompts/x-buzz-digest.md)) and
+`scripts/hermes-x-buzz-rank.py` only keep posts that are actually circulating.
+Community posts need likes ≥ 250 or reposts ≥ 25, plus a composite buzz score
+of at least 1500. The cron script treats `NO_QUALIFIED_BUZZ` as
 "nothing to post" and exits cleanly without alerting or saving a Discord
-message.
+message. Quiet windows are expected; do not loosen the gate to fill space.
 
 ### Preflight Behavior
 

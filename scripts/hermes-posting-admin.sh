@@ -149,6 +149,12 @@ cmd_sync() {
     [[ -e "${cron_script}" ]] || continue
     install -m 755 "${cron_script}" "${HERMES_HOME_DIR}/scripts/"
   done
+  for extra_script in \
+    "${repo_dir}/scripts/hermes-x-buzz-search.py" \
+    "${repo_dir}/scripts/hermes-x-buzz-rank.py"; do
+    [[ -e "${extra_script}" ]] || continue
+    install -m 755 "${extra_script}" "${HERMES_HOME_DIR}/scripts/"
+  done
   for prompt_file in \
     "${repo_dir}/prompts/hermes-chan-identity.md" \
     "${repo_dir}/prompts/hermes-post-style.md" \

@@ -97,6 +97,12 @@ for cron_script in "${REPO_DIR}"/scripts/*-cron.sh; do
   [[ -e "${cron_script}" ]] || continue
   install -m 755 "${cron_script}" "${HOME}/.hermes/scripts/"
 done
+for extra_script in \
+  "${REPO_DIR}/scripts/hermes-x-buzz-search.py" \
+  "${REPO_DIR}/scripts/hermes-x-buzz-rank.py"; do
+  [[ -e "${extra_script}" ]] || continue
+  install -m 755 "${extra_script}" "${HOME}/.hermes/scripts/"
+done
 install -m 644 \
   "${REPO_DIR}/prompts/hermes-chan-identity.md" \
   "${REPO_DIR}/prompts/evaluate-digest.md" \
